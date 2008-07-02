@@ -1,0 +1,1544 @@
+#----------------------------------------------------------------------------
+# Todo
+#----------------------------------------------------------------------------
+
+  - Indexing interface / implementation
+ 
+  - local tables use a fixed memory pool per table.  if a net server
+    is serving mulitple tables, this can cause large memory usage.
+
+  - might be nice to have a way to manually signal a full compaction
+    on a local table.
+
+  - figure out table creation semantics for net server.
+    - should table be created automatically?
+    - 
+
+#----------------------------------------------------------------------------
+# Known bugs
+#----------------------------------------------------------------------------
+
+
+#----------------------------------------------------------------------------
+# Refactor
+#----------------------------------------------------------------------------
+
+Move serialization stuff out to kdi::marshal.
+
+   
+
+
+#----------------------------------------------------------------------------
+# Error handling strategy
+#----------------------------------------------------------------------------
+
+Operations on Tables may fail immediately by throwing an exception, or
+fail much later somewhere in the system.  For performance reasons, we
+don't want to wait for each mutation to propagate all the way through
+the system before returning from the Table call.  Instead, we'll add a
+sync() method that will block until all mutations submitted so far
+propagate through the system.
+
+Table:
+   sync():
+      waitForMutations();
+      if(errors)
+          throw errors;
+
+Additionally, we'll add a special TableError type to contain the error
+information.  It is not the only exception that may be thrown, but
+when it is, it may contain enough information to allow for recovery,
+or at least an informative error report.  For example, if some cells
+mutations failed, the error may contain the specific cells that failed
+and why.
+
+This strategy allows applications to make their own
+performance/consistency trade-offs.  It is not entirely clear how the
+implementation of this strategy will play out yet.
+
+
+
+#----------------------------------------------------------------------------
+# Multi-threading strategy
+#----------------------------------------------------------------------------
+
+Write most Table implementations assuming single-threaded execution.
+Provide a generic SynchronizedTable for concurrency handling.  Also,
+make a BufferedTable so that multiple operations can be batched to
+avoid excessive locking.  Note that BufferedTable and BufferedScanner
+are NOT thread-safe!  However, multiple Buffered wrappers may be used
+with a single SynchronizedTable in a thread-safe manner.
+
+
+SynchronizedScanner:
+   TablePtr table;
+   mutex & tMutex;
+   CellStreamPtr scan;
+
+   get(Cell x):
+      lock(mutex);
+      return scan->get(x);
+
+
+SynchronizedTable:
+   friend BufferedTable;
+   friend BufferedScanner;
+
+   TablePtr table;
+   mutex tMutex;
+
+   set(...):
+      lock(tMutex);
+      table->set(...);
+
+   erase(...):
+      lock(tMutex);
+      table->erase(...);
+
+   scan(...):
+      lock(tMutex);
+      return LockedScanner(shared_from_this(), tMutex, table->scan(...))
+
+   sync():
+      # Errors are not segregated by originating thread
+      lock(tMutex);
+      table->sync();
+
+
+BufferedScanner:
+   SynchronizedTablePtr table;
+   CellStreamPtr scan;
+   queue<Cell> buffer;
+
+   fillBuffer():
+      lock(table->tMutex);
+      Cell x;
+      while(!buffer.full() && scan->get(x)):
+         buffer.push(x);
+      return !buffer.empty();
+
+   get(Cell x):
+      if(buffer.empty() && !fillBuffer())
+         return false;
+      x = buffer.pop();
+      return true;
+
+
+BufferedTable:
+   SynchronizedTablePtr table;
+   queue<Cell> buffer;
+
+   flush():
+      lock(table->tMutex);
+      while(!buffer.empty())
+         Cell x = buffer.pop();
+         if(x.isErasure())
+            table->table->erase(...);
+         else
+            table->table->set(...);
+
+   set(...):
+      buffer.put(...);
+      if(buffer.full())
+          flush();
+
+   erase(...):
+      buffer.put(...);
+      if(buffer.full())
+          flush();
+
+   scan(...):
+      lock(table->tMutex);
+      return BufferedScanner(table, table->table->scan(...));
+
+   sync():
+      flush();
+      table->sync();
+
+
+#----------------------------------------------------------------------------
+# Asynchronous table strategy
+#----------------------------------------------------------------------------
+
+Provide a wrapper:
+
+
+MutationBuffer:
+   vector<Cell> cells;
+
+   MutationBuffer(sz) : cells(sz)
+
+   full():
+      return cells.size() == cells.capacity()
+
+   set(...):
+      cells.push_back(makeCell(...));
+
+   erase(...):
+      cells.push_back(makeErasureCell(...));
+
+
+
+ScanBuffer:
+   queue<Cell> cells;
+
+   empty():
+      return cells.empty();
+
+   get():
+      Cell x = cells.front();
+      cells.pop_front();
+      return x;
+
+
+WorkerTask:
+   execute():
+      pass
+
+MutationTask: WorkerTask
+   MutationBuffer buffer;
+   TablePtr table;
+
+   execute():
+      for cell in buffer:
+         table->applyMutation(cell);
+
+ScanTask: WorkerTask
+   ScanBuffer buffer;
+   CellStreamPtr scan;
+   
+   execute():
+      Cell x;
+      while(true):
+         if(buffer.full()):
+            buffer.endOfScan = false;
+            break;
+         if(!scan->get(x)):
+            buffer.endOfScan = true;
+            break;
+         buffer.put(x);
+
+workerLoop():
+   while(true):
+      WorkerTask task;
+      if(!workerQueue.get(task))
+         break;
+      task.execute();
+
+
+
+NonBlockingTable:
+
+   setNonBlocking(...):
+      if(buffer.full() && !submit())
+         return WOULD_BLOCK;
+
+      buffer.set(...);
+
+      // optional
+      if(buffer.full())
+         submit();
+
+      return OK;
+
+   eraseNonBlocking(...):
+      if(buffer.full() && !submit())
+         return WOULD_BLOCK;
+
+      buffer.erase(...);
+
+      // optional
+      if(buffer.full())
+         submit();
+
+      return OK;
+
+   scanNonBlocking(...):
+      return NonBlockingScanner(...);
+
+
+
+ScanBuffer:
+   vector<Cell> cells;
+   bool isEndOfStream;
+
+   init(sz):
+      cells(sz)
+
+   push(Cell x):
+      cells.
+
+NonBlockingScanner:
+
+   // worker members
+   CellStreamPtr scan;
+   
+   // client members
+   WorkerPoolPtr workerPool;
+   ScanBufferPtr currentBuffer;
+
+   // shared members
+   SyncQueue<ScanBufferPtr> readyQueue;
+
+
+
+   SyncQueue<BufferPtr> readyQueue;
+   SyncQueue<
+   Buffer buffer;
+   bool eos;
+
+
+   fetch():
+      while(true):
+         if(eos):
+            return END_OF_STREAM;
+
+         if(!scanQueue.get(buffer, false))
+            return WOULD_BLOCK;
+
+         eos = buffer.isTerminal();
+         if(!buffer.empty()):
+            return OK
+
+   getNonBlocking(Cell & x):
+      if(buffer.empty()):
+         Status s = fetch();
+         if(s != OK):
+            return s;
+      
+      buffer.get(x);
+      
+      // optional
+      if(buffer.empty())
+         fetch();
+
+      return OK;
+      
+#----------------------------------------------------------------------------
+# Network
+#----------------------------------------------------------------------------
+
+
+ClientTable    --                                                      --  AsyncTable
+                   ClientConnection  --  socket  --  ServerConnection
+ClientScanner  --                                                      --  AsyncScanner
+
+
+
+MessageChannel(2) <->                                          <-> MessageChannel(2)
+MessageChannel(1) <-> MessageRelay <-> socket <-> MessageRelay <-> MessageChannel(1)
+MessageChannel(3) <->                                          <-> MessageChannel(3)
+
+MessageChannel:
+
+  MessageChannel(relay, channelId):
+     Open a new channel over the relay
+     throws: connection_closed, channel_in_use
+
+  send(msg):
+     Send a message to the peer channel, block until it has been dispatched
+     throws: connection_closed, errors
+
+  receive(&msg):
+     Block until there is a message from the peer channel
+     throws: connection_closed
+
+  close():
+     Close channel
+
+  sendAsync(msg, handler):
+     Queue a message to the peer channel for async dispatch
+     params: strref_t msg,
+             function<void (exception_ptr const & err)> handler
+     throws:
+
+  receiveAsync(handler):
+     
+     params: function<void (strref_t msg, exception_ptr const & err)> handler
+     throws:
+
+
+Errors from MessageChannel are transport exceptions, not protocol
+errors.  It includes things like lost bytes, dropped connections,
+failed checksums, etc.  It doesn't include application-level errors
+like table-not-found.  Applications should define an error message
+type and transmit it like any other message.
+
+
+ChannelHandler:
+
+  virtual ~ChannelHandler() {}
+  virtual uint32_t getChannelId() const = 0;
+  virtual uint32_t onChannelError(err) = 0;
+  virtual uint32_t onChannelReceive(msg) = 0;
+
+Channel: ChannelHandler
+  /// Open next available number
+  Channel(ConnectionPtr conn);
+
+  /// Open specific channel number
+  Channel(ConnectionPtr conn, uint32_t number);
+
+  virtual ~Channel();
+
+
+protected:
+
+  send(msg);
+
+
+TableClient: Channel
+  ClientTable tbl;
+
+protected:
+  onReceive(msg):
+     if(msg.type == CLOSE):
+        closeSelf()
+     else if(msg.type == SYNC_COMPLETE):
+        syncCondition.notify_all()
+     else:
+        onError(unexpected_message);
+
+  onError(err):
+     logError(err)
+     send(close_message);
+     closeSelf();
+
+public:
+  TableChannelClient(...)
+     send(open_table(uri))
+
+  close():
+     send(close_message);
+     closeSelf();
+
+  sync():
+     
+  
+
+
+Connection:
+  socket sock
+
+  Connection(io_service io);
+  Connection(io_service io, endpoint remoteAddr);
+
+  send(Channel * channel, msg);
+  receive(Channel * channel, msg);
+  
+
+Server:
+  Server(io_service io, endpoint localAddr);
+  accept(ConnectionPtr conn, accept_handler handler);
+
+
+Open a MessageRelay to a peer.  Both sides open MessageChannel(0).
+Connection successful.
+
+client openTable:
+
+   C: choose new channel 'i'
+   C: open MessageChannel(i)
+
+   C-0: OPEN_TABLE i uri
+
+   S: open MessageChannel(i)
+   S: open Table(uri)
+
+   On Error:
+     S-i: ERROR code msg
+     S-i: CLOSE
+     S: close MessageChannel(i)
+
+
+client closeTable:
+
+   C-i: CLOSE
+   C: close MessageChannel(i)
+
+   S: close MessageChannel(i)
+
+
+client applyMutations:
+
+   C-i: APPLY mutation-list
+
+   S: apply the mutations
+
+   On Error:
+     S-i: ERROR code msg
+
+
+client syncTable:
+
+   C-i: SYNC
+
+   S: sync table
+
+   On Success:
+     S-i: SYNC_COMPLETE
+
+   On Error:
+     S-i: ERROR code msg
+
+
+client beginScan:
+
+   C: choose new channel 'j'
+   C: open MessageChannel(j)
+
+   C-i: BEGIN_SCAN j pred
+
+   S: open MessageChannel(j)
+   S: start scan
+
+   On Success:
+     S-j: CELLS eos cell-list
+
+   On Error:
+     S-j: ERROR code msg
+     S-j: CLOSE
+     S: close MessageChannel(j)
+
+
+client continueScan:
+
+   C-j: CONTINUE_SCAN
+
+   S-j: CELLS eos cell-list
+
+
+client endScan:
+
+   C-j: CLOSE
+   C: close MessageChannel(j)
+
+   S: close MessageChannel(j)
+
+
+
+
+
+Connection setup:
+
+  Server:
+    - Listen on a port
+
+  Client:
+    - Connect to server
+
+  Server:
+    - Accept connection, read handshake
+
+  Client:
+    - Send handshake:
+      - List supported protocols (e.g. kdi_net/1.4 kdi_net/1.5)
+    - Read response
+
+  Server:
+    - Choose supported protocol, send response (e.g. use kdi_net/1.5)
+    - Set up server-side resources for connection
+    - Connection is established
+
+  Client:
+    - Set up client-side resources for connection
+    - Connection is established
+
+
+
+
+
+Client to Server:
+
+   Open table:
+     --> client sequence number
+     --> table name
+     <-- (Table opened / Error)
+
+   Apply mutations:
+     --> client sequence number
+     --> table id
+     --> mutation list
+
+   Begin scan:
+     --> client sequence number
+     --> table id
+     --> scan predicate (optional)
+     <-- (Scan continues / Error)
+
+   Cancel scan:
+     --> client sequence number
+     --> client sequence from (Begin scan)
+
+   Sync table:
+     --> client sequence number
+     --> table id
+     <-- (Sync complete / Error)
+
+
+Server to Client:
+
+   Table opened:
+     --> server sequence number
+     --> originating client sequence number
+     --> table id
+
+   Scan continues:
+     --> server sequence number
+     --> originating client sequence number
+     --> is final?
+     --> cell list
+   
+   Sync complete:
+     --> server sequence number
+     --> originating client sequence number
+
+   Error:
+     --> server sequence number
+     --> originating client sequence number
+     --> error info
+   
+
+
+When client connects to server, it goes through the ConnectionManager
+to create a ClientConnection.  The manager converts a (host,port) pair
+into a ClientConnectionPtr subject to the following constraints:
+
+  1. A (host,port) pair may resolve to multiple IP addresses.  If
+     there is already an existing connection to any of the resulting
+     addresses, it is reused.
+
+  2. If no exising connection can be reused, the IP addresses are
+     tried in random order until one is found that works.
+
+  3. If multiple connections to the same (host,port) pair are
+     initiated at the same time, they should all wind up using a
+     single connection.
+
+
+Multiple connections may be tried simultaneously, but the first that
+succeeds should cancel the others.
+
+
+Interface:
+
+   future<ClientConnectionPtr> connect(string host, string port);
+
+Details:
+
+
+ConnectionManager:
+   io_service io;
+   thread_group workers;
+
+   tcp::resolver resolver;
+   
+   map<endpoint, ClientConnectionWeakPtr> established;
+   map<endpoint, ConnectionAttemptWeakPtr> pending;
+
+   future<CCP> connect(host, port):
+      promise<CCP> p;
+      resolver.async_resolve(
+         tcp::resolver::query(host,port),
+         bind(
+            handle_resolve,
+            this, p, placeholder::error, placeholder::iterator)
+         );
+      return p;
+
+   void handle_resolve(promise, err, it):
+      if(err)
+         promise.set_exception(system_error(err));
+         return;
+      
+      tcp::resolver::iterator end;
+      if(it == end)
+         promise.fail(host_not_found());
+         return;
+
+      vector<endpoint> endpoints;
+      for(; it != end; ++it)
+         endpoint dst = it->endpoint();
+         ClientConnectionPtr conn;
+         if(auto i = established.find(dst))
+            conn = i->second.lock();
+         if(conn)
+         conn = established.get(dst);
+         if(conn)
+            promise.set(conn);
+            return;
+         endpoints.push_back(dst);
+
+      if(endpoints.empty())
+         promise.fail(host_not_found());
+         return;
+
+      grp = new_shared<ConnectionGroup>(promise)
+      for(dst in endpoints)
+         attemptMgr.get(dst)->add(grp)
+      
+
+AttemptManager:
+   map<endpoint, ConnectionAttemptWeakPtr> map;
+
+   ConnectionAttemptPtr get(endpoint dst):
+      ConnectionAttemptPtr p;
+      if dst in map:
+         p = map[dst].lock();
+      if not p:
+         p.reset(new ConnectionAttemptPtr(io, dst, this));
+         map[dst] = p;
+         p->connect();
+      return p
+
+   void remove(endpoint dst):
+      map.erase(dst)
+
+
+ConnectionAttempt:
+   socket sock;
+   endpoint dst;
+   AttemptManager * mgr;
+
+   CCP conn;
+   error_code err;
+   set<ConnectionGroup *> groups;
+
+   ConnectionAttempt(io, dst, mgr):
+      sock(io), dst(dst), mgr(mgr)
+
+   ~ConnectionAttempt():
+      mgr->remove(dst);
+
+   void add(ConnectionGroup * p):
+      groups.insert(p);
+      if(conn)
+         p->succeed(shared_from_this(), conn);
+      else if(err)
+         p->fail(shared_from_this(), err);
+
+   void remove(ConnectionGroup * p):
+      groups.erase(p);
+
+   void connect():
+      sock.async_connect(dst,
+         bind(
+            handle_connect,
+            shared_from_this(), placeholder::error)
+         );
+
+   void handle_connect(err):
+      if(err)
+         for(g in groups)
+            g.fail(shared_from_this(), err);
+      else
+         conn = CCP(sock)  // assume handshake
+         for(g in groups)
+            g.succeed(shared_from_this(), conn)
+
+
+      
+
+ConnectionGroup:
+   promise<CCP> promise;
+   set<ConnectionAttemptPtr> attempts;
+   
+   void add(ConnectionAttemptPtr p):
+      attempts.insert(p);
+      p->add(shared_from_this());
+
+   void succeed(ConnectionAttemptPtr p, CCP conn):
+      promise.set(conn);
+      for(a in attempts)
+         a->remove(shared_from_this());
+      attempts.clear();
+
+   void fail(ConnectionAttemptPtr p, err):
+      p->remove(shared_from_this());
+      attempts.erase(p)
+      if(attempts.empty())
+         promise.fail(system_error(err))
+
+
+
+
+#----------------------------------------------------------------------------
+# Indexing
+#----------------------------------------------------------------------------
+
+(10:47:27 PM) Josh: interfaces are hard
+(10:47:45 PM) Sriram: true...that is the keypart of thiswork
+(10:47:55 PM) Sriram: let us spend sometime on the index apis
+(10:48:04 PM) Josh: however, I'm pretty happy with the level of abstraction the interface provides.  the system has been building out from it nicely
+(10:48:42 PM) Josh: agreed
+(10:49:06 PM) Josh: so it seems like the inputs to the index interface are:
+(10:49:12 PM) Josh: 1) user query
+(10:49:35 PM) Josh: 2) system specifications such as:
+(10:49:41 PM) Josh: 2a. ) scoring function
+(10:49:46 PM) Josh: 2b. ) scoring parameters
+(10:49:53 PM) Josh: 2c. ) number of results to return
+(10:50:29 PM) Josh: the result of any index query is a (possibly ordered) set of keys
+(10:50:32 PM) Sriram: this is the index query interface
+(10:50:38 PM) Josh: each key may also be augmented with its score
+(10:50:48 PM) Josh: yes, the query interface
+(10:50:49 PM) Josh: sorry
+(10:50:52 PM) Josh: should have said
+(10:51:04 PM) Sriram: the index interface seems like:
+(10:51:16 PM) Sriram: input table, fields to index from the table
+(10:51:54 PM) Sriram: and the tags to associate with each indexed field
+(10:52:14 PM) Sriram: there is a bit of scoring info that is carriedin the index...scores that are query independent
+(10:52:44 PM) Josh: yes...  two additions to that:
+(10:53:16 PM) Josh: we should be able to specify the tokenizer used when indexing
+(10:53:46 PM) Josh: and we'll probably want to take this whole bag and abstract it for different index types
+(10:54:18 PM) Josh: for example, in snowchains, we build two text indexes and a grid index on the same table.  each text index uses a different tokenizer
+(10:54:38 PM) Sriram: seems reasonable
+(10:56:12 PM) Sriram: so...what is the output format of the index? 
+(10:56:20 PM) Sriram: for the web ijndex, youknow the layout
+(10:56:28 PM) Sriram: what is it for snowchains?
+(10:57:03 PM) Josh: for snowchains, the text index is a serialized hash table.  the grid index is a dense 2d quantized grid
+(10:57:25 PM) Josh: however, if we get the query interface right, then we don't care what the format is
+(10:57:45 PM) Josh: as long as there is some query implementation that can provide the query interface given said format
+(10:58:01 PM) Josh: we can change the format whenever we feel like it
+
+
+Query interface:
+
+  --> user-specified query
+      - may have many parts
+        "thai food OR siccode:12345x loc:+37.3-115.2<15mi"
+        "make:toyota year:2008 hybrid"
+  --> user-specified result range (start offset and number of results)
+
+  --> system-specified ranking function + parameters
+      - "textscore070817?a=3.5&b=0.2"
+      - "experimental?omega=42&filter=waffle+house"
+  --> system/data-specified query parser and tokenizer
+
+  <-- ranked result set
+
+
+Index specification:
+
+
+#----------------------------------------------------------------------------
+# Arcturus plan
+#----------------------------------------------------------------------------
+
+Major components:
+
+  - Structured store: KDI
+    - Generic storage independent of application
+    - Available as network service
+    - Scalable to large data sets
+    - Allows incremental updates
+
+  - Ranked retrieval based on dynamic queries: TBD
+    - Typical case is a text query from a user, in which case we would
+      like a ranked list of matches using a structured text score
+      appropriate to the data
+    - Scoring functions should be modular
+
+  - Crawling infrastructure
+    - Three components: queue, fetcher, and storage
+    - Queue is the most interesting point
+      - Politeness-filtered top-K sweep should work
+        - Use 2-stage top-K for politeness (requires URLs to be
+          clustered by politeness group)
+        - Allows arbitrary ranking function
+    - Fetcher can just be wget
+    - Storage will be KDI
+
+#----------------------------------------------------------------------------
+# Performance numbers
+#----------------------------------------------------------------------------
+
+2007-12-14
+
+Local table:
+
+   [josh@dev107 meh3]$ LD_PRELOAD=libkdi_local.so ~/cosmix.main/build/cc/release/kdi/performance_test local://dev107:10000/home/josh/tmp/local1 -n10m
+   Generating test set
+   Writing to local://dev107:10000/home/josh/tmp/local1: 10485760 cells in 46.4105s (225935.313 cells/s)
+   Scanning from local://dev107:10000/home/josh/tmp/local1: 10485760 cells in 9.75815s (1074564.889 cells/s)
+   [josh@dev107 meh3]$ LD_PRELOAD=libkdi_local.so ~/cosmix.main/build/cc/release/kdi/performance_test local://dev107:10000/home/josh/tmp/local1 -n10m
+   Generating test set
+   Writing to local://dev107:10000/home/josh/tmp/local1: 10485760 cells in 51.3027s (204390.154 cells/s)
+   Scanning from local://dev107:10000/home/josh/tmp/local1: 20971520 cells in 21.4149s (979295.998 cells/s)
+   [josh@dev107 meh3]$ LD_PRELOAD=libkdi_local.so ~/cosmix.main/build/cc/release/kdi/performance_test local://dev107:10000/home/josh/tmp/local1 -n10m
+   Generating test set
+   Writing to local://dev107:10000/home/josh/tmp/local1: 10485760 cells in 50.3808s (208130.094 cells/s)
+   Scanning from local://dev107:10000/home/josh/tmp/local1: 31457280 cells in 36.2876s (866888.364 cells/s)
+
+ICE table: (pre-populated with 600k cells)
+
+   [josh@dev107 meh3]$ LD_PRELOAD=libkdi_net.so ~/cosmix.main/build/cc/release/kdi/performance_test kdi://dev107:10000/home/josh/tmp/net1 -n10k
+   Generating test set
+   Writing to kdi://dev107:10000/home/josh/tmp/net1: 10240 cells in 0.555968s (18418.326 cells/s)
+   Scanning from kdi://dev107:10000/home/josh/tmp/net1: 624640 cells in 33.0976s (18872.668 cells/s)
+
+ICE bulk table: (pre-populated with 500k cells)
+
+   [josh@dev107 tmp]$ LD_PRELOAD=libkdi_net.so ~/cosmix.main/build/cc/release/kdi/performance_test kdi://dev107:10000/home/josh/tmp/net1 -n500k
+   Generating test set
+   Writing to kdi://dev107:10000/home/josh/tmp/net1: 512000 cells in 2.22408s (230207.132 cells/s)
+   Scanning from kdi://dev107:10000/home/josh/tmp/net1: 1024000 cells in 2.03635s (502860.263 cells/s)
+   [josh@dev107 tmp]$ LD_PRELOAD=libkdi_net.so ~/cosmix.main/build/cc/release/kdi/performance_test kdi://dev107:10000/home/josh/tmp/net1 -n1m
+   Generating test set
+   Writing to kdi://dev107:10000/home/josh/tmp/net1: 1048576 cells in 4.78383s (219191.781 cells/s)
+   Scanning from kdi://dev107:10000/home/josh/tmp/net1: 2072576 cells in 4.3844s (472716.424 cells/s)
+   [josh@dev107 tmp]$ LD_PRELOAD=libkdi_net.so ~/cosmix.main/build/cc/release/kdi/performance_test kdi://dev107:10000/home/josh/tmp/net1 -n1m
+   Generating test set
+   Writing to kdi://dev107:10000/home/josh/tmp/net1: 1048576 cells in 4.97643s (210708.395 cells/s)
+   Scanning from kdi://dev107:10000/home/josh/tmp/net1: 3121152 cells in 7.30811s (427080.775 cells/s)
+   [josh@dev107 tmp]$ LD_PRELOAD=libkdi_net.so ~/cosmix.main/build/cc/release/kdi/performance_test kdi://dev107:10000/home/josh/tmp/net1 -n1m
+   Generating test set
+   Writing to kdi://dev107:10000/home/josh/tmp/net1: 1048576 cells in 5.00758s (209397.962 cells/s)
+   Scanning from kdi://dev107:10000/home/josh/tmp/net1: 4169728 cells in 10.3678s (402180.559 cells/s)
+
+
+#----------------------------------------------------------------------------
+# More interfaces
+#----------------------------------------------------------------------------
+
+  Basic Table:
+      void set(string row, string column, int64_t time, string value);
+      void erase(string row, string column, int64_t time);
+      CellStreamPtr scan();
+      void sync();
+
+  Extended Table:
+      void put(Cell x);
+      void erase(ScanPredicate p);
+      CellStreamPtr scan(ScanPredicate p);
+      
+     
+
+  Basic Index:
+      
+
+
+  index.query(userQuery, maxResults, resultOffset, rankByFunction, functionParameters)
+    ==>  result count: (beginIdx, endIdx, maxIdx)
+    ==>  for each result in descending rankScore order:
+           row, rankScore, optionalData?
+     
+
+#----------------------------------------------------------------------------
+# Distributed tables
+#----------------------------------------------------------------------------
+
+META tables:
+
+  PathChar := [a-zA-Z0-9_-]
+  PathWord := PathChar *PathChar
+  TableName := PathWord *( "/" PathWord )
+
+  Tablet row:         TableName + "\x01" + TabletLastKey
+  Last tablet row:    TableName + "\x02" + TabletLastKey
+
+  ("location", 0, "dev107:10000")
+  ("state", 0, state.cfg)
+
+
+LockServer:
+
+  Keep a map of named locks/values in memory.
+
+  MetaData:
+    int64_t instanceNumber;
+    int64_t lockGeneration;
+    int64_t aclGeneration;
+
+    // For files
+    int64_t contentGeneration;
+    int64_t contentChecksum;
+
+  OpenInfo:
+    string name;
+    int mode;
+    int events;
+
+  ClientHandle:
+    OpenInfo openInfo;
+    int64_t masterGeneration;
+    char checkData[CHECK_SZ]; // HMAC of identity, provided by master
+        // -- master should generate a secret key, then use that to
+        // supply check data in authenticated handles.  Masters should
+        // verify check data on operations.  After fail-over, the new
+        // master must re-authenticate.  Not really sure how the whole
+        // authentication thing works.  Have to check RPC/ICE docs.
+
+    static ClientHandle open(uri, eventMask, mode);
+    void close();
+
+    // File-like nodes    
+    void setContents(strref_t data, int64_t casGeneration=-1);
+    void getContents(vector<char> & data);
+    void getContentsAndStat(vector<char> & data, MetaData & stat);
+
+    // Dir-like nodes
+    void readDirectory(vector< pair<string,MetaData> > & children);
+    
+    // All nodes
+    void getStat(MetaData & stat);
+    void delete();    
+    
+
+    // Wrap these in RAII helper
+    enum LockType { EXCLUSIVE, SHARED };
+    void lock(lockType);
+    bool tryLock(lockType);
+    void unlock();
+    void getSequencer(vector<char> & seq); // must be locked
+
+    // Sequencer helpers -- not sure how useful this stuff is.  I was
+    // thinking that the set sequencer would be from another handle
+    // somewhere else.
+
+    void setSequencer(strref_t seq); // how useful is this?  what if the handle depends on multiple sequencers?
+    bool checkSequencer(strref_t seq);
+
+Master(lockServer):
+
+  Acquire lock and periodically refresh it.  If the lock is lost, shut
+  down.
+
+#----------------------------------------------------------------------------
+# Tablet server
+#----------------------------------------------------------------------------
+
+Current organization:
+
+  kdiNetServer
+    LocalTable
+      LoggedMemoryTable
+      DiskTable
+
+Future organization:
+
+  kdiTabletServer
+    TabletManager
+      SharedTableMgr
+        SharedLog
+      Tablet
+        SharedTable -> SharedTableMgr
+        DiskTable
+
+
+
+MetaTable:
+
+  Row: (tableName, inclusiveUpperBound)
+
+  Cells:
+     // Equal to inclusiveUpperBound of previous tablet (does not exist for first tablet in table)
+     ("lowerBound", 0, exclusiveLowerBound)
+
+     ("server", 0, tabletManagerProxy)
+
+
+  TabletId:
+    metaRow (includes table name and upper bound)
+    lowerBound
+
+  TabletManager:
+    addTablet(tabletId)
+
+    
+
+    Tablet openTablet(tabletId)
+
+
+#----------------------------------------------------------------------------
+# Overview email to CP
+#----------------------------------------------------------------------------
+Hi CP!
+
+Welcome back!  I'm looking forward to working with you on this stuff.  I'll be back in MV on April 7th.  In the meantime, let's see what I can do to get you going...
+
+This looks like a shared library problem to me.  Different table schemes are registered by different libraries when they load.  The "kdi" scheme is registered by libkdi_net.  The kdi/tmp module doesn't declare a dependency on kdi_net, so that library doesn't get loaded.
+
+You can force the library to load using LD_PRELOAD=libkdi_net.so before your command line.  If you plan on using that scheme in your app, you can make your binary link against the library so it loads automatically.  The tools in kdi/app do that (see the module.mk file there).
+
+So far, I think I have the following table schemes:
+
+	Defined by libkdi.so:
+ 		mem:		in-memory table implemention
+		sync:		thread-safe table wrapper
+
+	Defined by libkdi_local.so:
+		local:		persistent table using files on disk and in-memory tables
+
+	Defined by libkdi_net.so:
+		kdi:			client interface to a table served over the network by kdiNetServer
+
+	Defined by libkdi_meta.so:
+		meta:		makes a single logical table out of many component tables
+
+	Defined by libkdi_wds.so:
+		vega:		read-only translator over WDS data
+
+Anyway, it looks like your table is still there:
+
+[josh@dev107 ~]$ kdiScan kdi://dev107:10000/cp/testcrawl
+kdi://dev107:10000/cp/testcrawl
+("com.accessmylibrary.www","size",2008-03-05T19:17:57.151598Z,"263")
+("com.accessmylibrary.www","size",2008-03-05T18:51:45.625900Z,"263")
+("com.accessmylibrary.www","size",2008-03-05T18:50:00.639108Z,"263")
+("com.eweek.www","size",2008-03-05T19:17:57.420962Z,"0")
+(... etc ... )
+
+I'm sure you won't be surprised to hear that I still have yet to write up a good top-down overview document.  Have you read the BigTable paper?  If not, it might be a good starting point for big-picture architecture.  Here it is:
+
+	http://labs.google.com/papers/bigtable-osdi06.pdf
+
+It describes the system architecture for BigTable, and describes several use cases.  It doesn't go into the interface in too much detail (and in fact, they sort of hint that their application interface is a bit difficult to use).
+
+In contrast, KDI (Kosmix Data Interface) is all about the application interface.  See src/cc/kdi/table.h for the interface.  There are 4 basic functions: set(), erase(), scan(), and sync().  Specific implementations are free to deal with those functions as they see fit, but they should shield the application from the details.  I made the interface with with intention of using a BigTable-like backend as one possible implementation, but as we've seen above, it's not the only one.
+
+Since I'm still here and rambling on, let me just outline the essential concepts in KDI.  Perhaps this email will form the basis of an overview document.
+
+KDI is an application interface for reading and writing structured data.  It is meant to allow applications to work with data in a logical manner and shield them from the dirty details of storage and distribution.  It is also meant to allow pluggable implementations of the dirty details on the other side, to allow us to fit different backends to better match the specific needs of application usage patterns.
+
+The basic storage unit in KDI is the cell.  A cell is a mapping from a (row, column, timestamp) key to a single value.  The row, column, and value are all arbitrary binary strings, and the timestamp is a 64-bit signed integer.  It is commonly interpreted as the number of microseconds since 1970-01-01T00:00:00Z, but as with the other fields, its actual semantic value is application specific.
+
+Cells are ordered by their key value in (row, column, -timestamp) order.  That is, they are first ordered by their row string, then their column string, and then reverse ordered by their timestamps (so the newest cells for a given row,column pair come first).
+
+A Table is a collection of cells.  Cells may be inserted or removed from the collection using the set() and erase() methods on the table.  No two cells in the table may have the same key, so setting a cell with the same (row,column,timestamp) key will overwrite the previous value.  Note that we may still have many cells in the same (row,column) pair, provided they have different timestamps.
+
+The cells of a table can also be read.  The table method scan() returns a Cell Stream, which is an iterator interface over a sequence of cells.  The cell stream offers a single cell at a time, in monotonically increasing cell order.  There are some utility classes available to perform stream algorithms and higher-order aggregations over the single-cell iterator.  For example, there is a RowStream class which will collect all the cells with the same row value into a buffer.
+
+The default scan is a full-table scan that returns all available cells.  The application may also specify a Scan Predicate, which filters the returned set of cells.  The default implementation of a predicate scan is just a filter over a full scan, but implementations can optimize for certain predicate conditions if they choose.
+
+At the moment, there are a few generally useful command line utilities for manipulating tables.  You can check them out for code examples, or use them directly:
+
+	kdiScan -- scans a table and counts or prints the matching cells
+	kdiErase -- erases cells in a table, possibly restricted by a predicate
+	kdiLoad -- load cells into a table from an external file
+
+The default output for kdiScan can be fed directly to kdiLoad.  kdiScan and kdiLoad also have XML format options, but XML can't represent arbitrary binary (in particular, there is no way to represent a null byte), so XML is not sufficiently general for KDI.
+
+Ok, that's enough for now.  I hope that helps get you started.  I'll copy this over and use it to start a KDI document.
+
+Josh
+
+On Mar 27, 2008, at 6:43 PM, Chandraprakash Jain wrote:
+Hi Josh,
+
+I am in MV and just started working with kdi. Basically trying to get comfortable with using big tables (create/read/write/scan etc)
+
+I am working on some test code to access sample tables (cp/testcrawl and cp/testcrawl2) that were created using fetcher code - but it is failing. It syas 'kdi' is unknown table scheme - Do I need to register it with table sever? Here is the error -
+
+throw: RuntimeError: unknown table scheme 'kdi': kdi://dev107.sj.kosmix.com:10000/cp/testcrawl2
+terminate called after throwing: ex::RuntimeError
+  what(): unknown table scheme 'kdi': kdi://dev107.sj.kosmix.com:10000/cp/testcrawl2
+
+I also tried your sample code available in kdi/tmp/ -
+[cpjain@dev107 tmp]$ ./gentable_test --table "sync+kdi://dev107.sj.kosmix.com:10000/cp/testcrawl2" -n 100 -N 1 -r 5 -c 5 -v 5 -b 0
+
+but getting the same error.
+
+Looks like I am missing something very basic :(
+
+Also - do you any draft/notes etc on kdi design?
+
+Thanks,
+CP
+
+
+#----------------------------------------------------------------------------
+# Distributed Table design
+#----------------------------------------------------------------------------
+
+  Table manangement client API:
+    - Create table
+    - Delete table
+    - Change table config (properties setting)
+      - Compression settings
+      - Locality groups & column families (eventually)
+      - Memory vs. disk
+      - Require transactions? (per loc. group?)
+      - Table/group ACLs
+    - Optimize table (request full compaction)
+    - Backup?
+
+  Table client API:
+    - Scan cells using predicates
+    - Set and erase cells
+    - Erase cells using predicates
+    - Row transaction API (maybe)
+
+  
+  M1:
+    - Each logical table may be split into many different slices (tablets).
+    - The tablets may be located on many different servers.
+    - One server may host many tablets.
+      - Tablet compactions must be coordinated
+      - Mutations should be shared (single memory buffer, single log)
+
+  M2:
+    - The tablets may change servers while the table is in use.
+    - Large tablets may split as the table grows.
+    - Tablets may be joined with adjacent tablets if they get too small.
+  
+  M3:
+    - A table may be organized into disjoint column-family "locality groups".
+
+
+#----------------------------------------------------------------------------
+# TabletServer
+#----------------------------------------------------------------------------
+
+class net::TabletServer:
+
+   CompactionMgr compactor;
+   MultiTableLogger sharedTbl;
+   
+
+   TabletMap tablets;
+   SessionList sessions;
+
+   void loadTablet(name):
+      if name in tablets:
+         raise TabletAlreadyLoadedError(name)
+      tablets[name] = Tablet(name)
+
+   net::Session openSession():
+      return net::Session(this)
+
+
+class TableSetManager:
+   map<string, TableSetPtr> sets
+
+class LogGroup:
+   map<string, MemTablePtr> tableMap;
+   FilePtr logFile;
+
+class MultiTableLogger:
+   LogGroupPtr mutableGroup;
+   LogGroupPtr serializingGroup;
+   CommitGroup buffer;
+
+   void replayBuffersToTables(buf, tmap):
+      for tbl,r,c,t,v in buf:
+         if tbl not in tmap:
+            tmap[tbl] = MemTable()
+            tableSetMgr.addTable(tbl, tmap[tbl])
+         if v:
+            tmap[tbl].set(r,c,t,v)
+         else:
+            tmap[tbl].erase(r,c,t)
+
+   void writeLogAndSync(buf, fp):
+      if not fp:
+         fp = fileMgr.newLogFile()
+      for item in buf:
+         fp.write(item)
+      fp.sync()
+
+   void flushBuffer():
+      if not buffer.empty():
+         writeLogAndSync(buffer, mutableGroup->logFile)
+         replayBufferToTables(buffer, mutableGroup->tableMap)
+         buffer.clear()
+         if not serializingGroup and mutableGroup->memUsageOverThreshold():
+            scheduleSerialization()
+
+   void scheduleSerialization():
+      assert not serializingGroup
+      serializingGroup = mutableGroup
+      mutableGroup = LogGroup()
+      wakeSerializationThread()
+
+   void set(table, row, col, time, val):
+      buffer.append_set(table, row, col, time, val)
+      if buffer.full():
+         flushBuffer()
+
+   void erase(table, row, col, time):
+      buffer.append_erase(table, row, col, time)
+      if buffer.full():
+         flushBuffer()
+
+   void sync():
+      flushBuffer()
+
+   void writeTableAndNotify(name, table):
+      fp = fileMgr.newCompactFile(name)
+      TableWriter writer(fp)
+      for cell in table.scan():
+         writer.put(cell)
+      scanner = table.scan()
+      writer.flush()
+      fp.sync()
+      fp.rewind()
+      newTable = DiskTable(fp)
+      tableSetMgr.replaceTable(name, table, newTable)
+
+   void doSerialization():
+      assert serializingGroup
+      for name,table in serializingGroup.tableMap:
+         writeTableAndNotify(name, table)
+         table.reset()
+      serializingGroup.reset()
+      if mutableGroup->memUsageOverThreshold():
+         scheduleSerialization()
+
+
+class net::Session:
+   TabletServer server;
+   Timestamp lastAccess;
+   WeakTableList tables;
+   WeakScannerList scanners;
+
+   bool isExpired():
+      return now() - lastAccess > SESSION_TIMEOUT
+
+   void keepAlive():
+      lastAccess = now()
+
+   void close():
+      for scanner in scanners:
+         s = scanner.lock()
+         if s:
+            s.close()
+      for table in tables:
+         t = table.lock()
+         if t:
+            t.close()
+      tables.clear()
+      scanners.clear()
+
+   IceTable openTablet(name, cur):
+      t = server.getTablet(name)
+      tables.push_back(t)
+      return IceTable(t, this)
+
+class IceTable:
+   TabletSession session;
+   TablePtr table;
+   
+   void set(...):
+      table->set(...)
+
+   void erase(...):
+      table->erase(...)
+   
+   void sync():
+      table->sync()
+
+   CellStreamPtr scan(pred):
+      s
+
+class TableSet:
+   vector<TablePtr> tables;
+   vector<Callback> updateNotifications;
+
+   vector<TablePtr> const & getTables():
+      return tables;
+
+   /// This is called when the set of old tables is replaced by a set
+   /// of new tables.  Here's how the parameters will look for various
+   /// events:
+   ///
+   ///    serialization: old=[MemTable] new=[DiskTable,MemTable]
+   ///    compaction:    old=[Table_i, ..., Table_k] new=[MergedTable]
+   ///
+   /// This will be called from the manager if this TableSet has
+   /// registered for events on at least one of the tables in oldTables
+   /// (though oldTables may contain tables we don't care about).
+   void onTableChange(vector<TablePtr> oldTables,
+                      vector<TablePtr> newTables):
+
+      // find range that applies to us
+      bgn = tables.end()
+      for(i = 0; i < oldTables.size(); ++i)
+         it = find(tables.begin(), tables.end(), oldTables[i])
+         if it != tables.end():
+            bgn = it; break
+      if bgn == tables.end():
+         return; // irrelevant update -- shouldn't happen from manager
+      for(j = tables.size(); j > i; --j)
+         it = find(bgn, tables.end(), oldTables[j-1])
+         if it != tables.end():
+            end = it; break
+      assert end != tables.end() // should at least have bgn == end
+      
+      ++end; // move to proper end
+
+      // our selected tables should be a subsequence of oldTables
+      assert isSubsequence(bgn, end, oldTables.begin(), oldTables.end())
+      
+      // there should be no unselected tables in oldTables
+      assert noCommonElements(tables.begin(), bgn, oldTables.begin(), oldTables.end())
+      assert noCommonElements(end, tables.end(), oldTables.begin(), oldTables.end())
+
+      // replace old table range with new tables
+      bgn = tables.erase(bgn, end)
+      tables.insert(bgn, newTables.begin(), newTables.end())
+
+      // tell everyone a change has happened
+      for cb in updateNotifications:
+         cb();
+
+  
+class Tablet:
+   string name;
+   Interval<string> rows;
+   TableSet readable;
+   MultiTableLoggerPtr writable;
+
+   Tablet(name, logger):
+      load(name)
+      writable = logger
+      tableSetMgr.addSet(name, readable)
+      
+
+   void validateRow(row):
+      if rows.contains(row):
+         raise WrongTabletError
+
+   void load(metaRow):
+      cfg = getConfigFromMetaTable(metaRow)
+
+      // Load disk tables in order
+      for tbl in cfg.diskTables:
+         t = loadDiskTable(tbl)
+         readable.add(t)
+
+      // Get handles to shared mutable table
+      writable = getSharedWriter(cfg.tableName)
+      t = getSharedReader(cfg.tableName)
+      readable.add(t)
+
+   void onUpdate():
+      // Request compaction if there are a lot of tables
+      compactionMgr.requestCompaction(this)
+
+   void doCompaction():
+      // choose a good range of tables
+
+      // compact to a new table
+      
+      // trigger update notification
+
+   void set(row,col,time,val):
+      validateRow(row)
+      writable.set(row,col,time,val)
+
+   void erase(row,col,time):
+      validateRow(row)
+      writable.erase(row,col,time)
+
+   void sync():
+      writable.sync()
+
+   CellStreamPtr scan(pred):
+      if not pred.getRowPredicate():
+         raise WrongTabletError
+      if not rows.contains(pred.getRowPredicate().getHull()):
+         raise WrongTabletError
+
+      // if this is a full scan and we're not already doing a
+      // compaction, maybe initiate an opportunistic compaction here
+
+      return TabletScanner(readable, pred)
+
+
+
+class TabletScanner: (part of this can be factored into a retargetable scan base)
+   TableSetPtr tables;
+   ScanPredicate pred;
+
+   CellStreamPtr cells;
+   Cell lastCell;
+   bool catchUp;
+
+   bool get(Cell & x):
+      Lock sync;
+
+      if catchUp:
+         catchUp = false
+         while cells.get(x):
+            if lastCell < x:
+               lastCell = x
+               return true
+         lastCell.reset()
+         return false
+
+      else if cells.get(x):
+         lastCell = x
+         return true;
+
+      else:
+         lastCell.reset()
+         return false;
+
+   void onUpdate():
+      // clip predicate to last seen cell
+      if lastCell:
+         p = pred.clipRows(Interval<string>().setLowerBound(lastCell.getRow()).unsetUpperBound())
+         catchUp = true
+      else:
+         p = pred
+
+      // reopen handles
+      if tables.size() > 1:
+         cells = makeMerge()
+         for t in tables:
+           cells.pipeFrom(t.scan(p))
+      else:
+         cells = tables[0].scan(p)
+
+
+Todo:
+  - Save table config to meta table when table set changes
+  - Figure out how table set updates get triggered
+  - Make a compaction manager
+  - Make a shared logged memory table
+  - Figure out how to restore from logged table
+
+
+TabletServer/
+  log/  -- shared memory table log (should only have a small number active per server (2 max, probably))
+    0
+    1
+    2
+    ...
+  disk/  -- compacted disk tables
+    0
+    1
+    2
+    ...
+
+
+ObjectOwnership:
+
+  Tablet:
+     - Holds references to all sub-Tables
+     - Holds reference to SharedLogger
+     - Holds weak back-references to TabletScanners
+
+  TabletScanner:
+     - Holds reference to originating Tablet
+     - Holds reference to CellStream scan object (which may in turn
+       reference other scan objects or sub-Tables)
+
+  SharedLogger:
+     - Holds reference to one or more LogGroup
+
+  LogGroup:
+     - Holds references to (Tablet, MemTable) pairs
+
+  SharedCompactor:
+     - Holds references to Tablets
+
+#----------------------------------------------------------------------------
+# Tablet performance
+#----------------------------------------------------------------------------
+
+Need some kind of lock buffering between Tablet and SharedLogger.
+Maybe a bulk-insert method is more appropriate than individual
+set/erase/inserts.  This is especially true if cells are buffered by
+the network client.  No sense in splitting and buffering the cells
+multiple times.

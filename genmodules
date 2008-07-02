@@ -1,0 +1,186 @@
+#!/usr/bin/env python
+#
+# $Id: //depot/SOURCE/TASKS/josh.crawler/genmodules#1 $
+#
+# Created 2007/01/26
+#
+# Copyright 2007 Cosmix Corporation.  All rights reserved.
+# Cosmix PROPRIETARY and CONFIDENTIAL.
+
+import os
+import re
+import sys
+
+#----------------------------------------------------------------------------
+# iterUnbrokenLines
+#----------------------------------------------------------------------------
+def iterUnbrokenLines(f):
+    """iterUnbrokenLines(f) --> sequence of non-empty, non-comment lines
+
+    Extract content-bearing lines out of a module.mk file.  Lines that
+    have been broken with trailing backslashes are reconstructed.
+    """
+    for line in f:
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        while line.endswith('\\\n') or line.endswith('\\\r\n'):
+            line = line.rstrip()[:-1]
+            for nextline in f:
+                line += nextline
+                break
+        if line:
+            yield line
+
+
+#----------------------------------------------------------------------------
+# scanModuleDeps
+#----------------------------------------------------------------------------
+_var = re.compile(r'\s*([A-Za-z_][A-Za-z0-9_]*)\s*[:?]?=(.*)')
+def scanModuleDeps(fn, depKey, magicKey):
+    """scanModuleDeps(fn, depKey, magicKey) --> list of dependencies, or None
+
+    Scan given module.mk file for instances of depKey and magicKey.
+    If depKey is found it is interpreted as a list of module
+    dependencies.  The presence of magicKey in the file means that it
+    should be considered in the global dependency calculation.  If
+    magicKey is not found, the file is ignored for dependency
+    generation.
+    """
+    isMagic = False
+    deps = []
+    try:
+        f = file(fn)
+    except IOError:
+        print >>sys.stderr, 'Skipping %r' % fn
+        return None
+
+    # Look for magical depkey variable
+    for line in iterUnbrokenLines(f):
+        if magicKey in line:
+            isMagic = True
+        else:
+            m = _var.match(line)
+            if m:
+                k,v = m.groups()
+                if k == depKey:
+                    deps = [ x.strip() for x in v.split() ]
+    f.close()
+    if isMagic:
+        return deps
+    else:
+        return None
+
+
+#----------------------------------------------------------------------------
+# DepNode
+#----------------------------------------------------------------------------
+class DepNode:
+    pass
+
+
+#----------------------------------------------------------------------------
+# main
+#----------------------------------------------------------------------------
+def main():
+    import optparse
+    op = optparse.OptionParser('%prog [options] <module files>')
+    op.add_option('-o','--output')
+    op.add_option('-b','--base')
+    op.add_option('-d','--depkey')
+    op.add_option('-m','--magickey')
+    op.add_option('-g','--graph', action='store_true')
+    opt,args = op.parse_args()
+
+    if not opt.depkey:
+        op.error('need --depkey')
+    if not opt.magickey:
+        op.error('need --magickey')
+
+    # Scan modules and build node map
+    nodemap = {}
+    for fn in args:
+        # Get module deps
+        deps = scanModuleDeps(fn, opt.depkey, opt.magickey)
+        if deps is None:
+            continue
+
+        # Get node name for this module
+        name = os.path.dirname(fn)
+        if opt.base and name.startswith(opt.base):
+            name = name[len(opt.base):]
+        name = name.strip(os.sep).replace(os.sep, '_')
+
+        # Make node
+        n = DepNode()
+        n.name = name
+        n.module = fn
+        n.parents = deps
+        n.children = []
+        n.parentsLeft = len(deps)
+
+        # Add to node map
+        nodemap[name] = n
+
+    # Init topological sort
+    err = False
+    pending = []
+    for name,node in nodemap.iteritems():
+        for pname in node.parents:
+            if pname not in nodemap:
+                print >>sys.stderr, 'Undefined library %r referenced from %r' % (pname, name)
+                err = True
+                continue
+            pnode = nodemap[pname]
+            if node is pnode:
+                print >>sys.stderr, 'Library %r refers to itself' % name
+                err = True
+                continue
+            pnode.children.append(node)
+        if not node.parentsLeft:
+            pending.append(node)
+    if err:
+        sys.exit(1)
+
+    # Do topological sort
+    sorted = []
+    while pending:
+        node = pending.pop()
+        sorted.append(node)
+        for child in node.children:
+            child.parentsLeft -= 1
+            if not child.parentsLeft:
+                pending.append(child)
+
+    # Make sure there are no cycles
+    if len(sorted) < len(nodemap) and not opt.graph:
+        for node in nodemap.itervalues():
+            if node.parentsLeft:
+                print >>sys.stderr, 'Library %r has dependency cycles' % node.name
+        sys.exit(1)
+
+    # Open output file
+    if opt.output:
+        f = file(opt.output, 'w')
+    else:
+        f = sys.stdout
+
+    if opt.graph:
+        # Dependency graph
+        print >>f, 'digraph magicdeps {'
+        print >>f, '   rankdir=LR;'
+        #print >>f, '   concentrate=true;'
+        for node in nodemap:
+            for parent in nodemap[node].parents:
+                print >>f, '   "%s" -> "%s";' % (node, parent)
+        print >>f, '}'
+    else:
+        # Write module list
+        print >>f, 'MODULES := %s' % ' '.join([x.name.replace('_', os.sep) for x in sorted])
+
+    # Close output
+    f.close()
+
+
+if __name__ == '__main__':
+    main()

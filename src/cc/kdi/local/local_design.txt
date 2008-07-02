@@ -1,0 +1,119 @@
+#----------------------------------------------------------------------------
+# Local Table design
+#----------------------------------------------------------------------------
+
+Single-process, multi-thread persistent mutable table.
+
+
+There is an owner process.  It holds a lock by convention on a
+directory.  An owner must hold a lock in order to operate on a
+directory.  There is a timeout on the lock, and the current owner is
+responsible for refreshing its lock periodically to prevent other
+processes from taking over.  The locking system should be abstracted.
+The first implementation will probably just be an exclusive file in
+the directory.  Later it might make sense to move to a locking
+service.
+
+At any rate, supposing an owner has the lock...
+
+
+It holds one writable table, plus some number of read-only tables.
+The writable table is a logged MemoryTable.  The read-only tables may
+be DiskTables or a read-only MemoryTable and its corresponding log.
+
+The current set of tables is always in stable storage.  If one server
+crashes, another should be able to pick up where the last one left
+off.
+
+
+The table offers a merged view of an ordered set of tables.  For
+example, suppose we're in the state:
+
+   0: Disk: 13.table
+   1: Disk: 14.table
+   2: Disk: 15.table
+   3: R/W Mem: 16.mlog
+
+Any scan will be a uniq merge over these tables.  Note that the order
+of the tables in the list is important, but the numbers in the file
+names are not.  They're just ever-increasing integers to avoid naming
+conflicts.  Suppose at some point we decide that table 3 is taking up
+too much memory and we want to flush it to disk.  Then we lock and
+switch to the following:
+
+   0: Disk: 13.table
+   1: Disk: 14.table
+   2: Disk: 15.table
+   3: R/O Mem: 16.mlog
+   4: R/W Mem: 17.mlog
+
+We unlock and begin serializing table 3 in the background (converting
+16.mlog to 18.table).  In the meantime, writes are committed to a new
+memory table.  Scans are still served from the old memory table as
+well as the new table.  Eventually the serialization will finish.
+Then we lock and switch:
+
+   0: Disk: 13.table
+   1: Disk: 14.table
+   2: Disk: 15.table
+   3: Disk: 18.table
+   4: R/W Mem: 17.mlog
+
+At this point, 16.mlog can be deleted.  The old memory table will hang
+around until all scans on it finish.  If that's a problem, we could do
+something that can be switched over to the disk table in mid-scan
+without interrupting the clients, but it's probably not worth worrying
+about for a while.
+
+Also, at any time we may decide that we have too many tables and that
+we'd like to compact them.  We can choose any contiguous set of
+read-only tables and compact them in the background.  If the
+compaction set includes the first table, we may omit erasures from the
+output.  Otherwise, we must keep them.  Suppose we want to compact
+tables 1, 2, and 3.  We start a merge in the background (keeping
+erasures) to a new table, 19.table.  When it is done, we lock and
+switch:
+
+   0: Disk: 13.table
+   1: Disk: 19.table
+   2: R/W Mem: 17.mlog
+
+The tables involved in the compaction are removed, and the new table
+is inserted in their place.  The tables involved in the compaction
+don't all have to be disk tables, but they do have to be read-only.
+Instead of simply serializing the MemoryTable before, we could have
+scheduled it for a compaction with other disk tables.  In practice, we
+probably won't want to do this.  Instead, we'd rather reclaim the
+memory occupied the the MemoryTable as soon as possible, and a
+compaction takes longer than a simple serialization.
+
+Multiple compactions/serializations may happen simultaneously, but
+each table slot should be committed to at most one such operation at a
+time.  For performance reasons, we'll probably only want to have one
+compaction or serialization happening at a time, since it uses a lot
+of I/O bandwidth.
+
+The collection of tables should be maintained in a stable way on disk.
+It could be as simple as an ordered text file of Table URIs.  For example
+
+   disk:13.table
+   disk:14.table
+   disk:15.table
+   memtable-ro:16.mlog
+   memtable:17.mlog
+
+Or we could use something more sophisticated, like the warp::Config
+format.  That might be better, since it would also allow us to store
+extra information like the next file index.  It could also include
+schema imformation for things like column families.
+
+   table.0 = disk:13.table
+   table.1 = disk:14.table
+   table.2 = disk:15.table
+   table.3 = memtable-ro:16.mlog
+   table.4 = memtable:17.mlog
+   next    = 18
+
+#----------------------------------------------------------------------------
+# 
+#----------------------------------------------------------------------------
