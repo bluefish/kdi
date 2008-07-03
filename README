@@ -1,0 +1,118 @@
+#----------------------------------------------------------------------------
+# What is KDI?
+#----------------------------------------------------------------------------
+
+KDI started as a project at Kosmix.  It is meant to provide a common
+interface between applications with structured external data needs and
+the various implementations that may fulfill those needs.  The
+interface is meant to act like a simplified database connector.
+
+The KDI project also provides a number of implementations of the
+interface.  These range in sophistication from a single-threaded table
+stored entirely in memory to a multi-user, distributed table inspired
+by Google's BigTable.
+
+The interface was designed with ease of use as a major goal.  Clean,
+safe implementation is also emphasized.  Performance is also
+important, but definitely secondary to the other goals.  It is easier
+to optimize a clean design once the whole system is in view than it is
+to build a clean system out of independently optimized components.
+
+KDI is a placeholder name.  It's short for Kosmix Data Interface,
+which is non-so-snazzy.
+
+
+#----------------------------------------------------------------------------
+# Does it work?
+#----------------------------------------------------------------------------
+
+This is a work in progress.  This initial release is v0.0.  It
+probably won't even compile on your machine.  It has been developed
+in-house at Kosmix on a specific machine configuration.  At Kosmix,
+we've used to to store a few TB of data distributed across a cluster
+of machines, but there are no guarantees that KDI is ready to do that
+for anyone else.  In fact, it's not even ready for us.
+
+The purpose of this release is to make the project open source to
+allow collaboration with outside developers.
+
+
+#----------------------------------------------------------------------------
+# How do I build it?
+#----------------------------------------------------------------------------
+
+KDI has been built on Fedora Core 5 Linux running on x86_64 boxes.
+For build tools we've used:
+
+   gcc 4.1?
+   gnu make ?
+   python 2.4.3
+
+The project uses some external libraries:
+
+   Boost 1.34.1   http://www.boost.org/
+   ICE 3.2.1      http://www.zeroc.com/
+   expat?
+   zlib
+   (what is dl?)
+
+In addition, there are Python bindings for KDI.  It has been tested
+with Python 2.4.3.
+
+The build script is a somewhat magical collection of Makefiles.  To
+build, go to the root level of the distribution tree (the one
+containing Makefile) and type "make".  Or if you have multiple cores
+you can do a parallel build with "make -j N" where N is the number of
+parallel jobs you'd like.  And hey, it may even work.  Good luck!
+
+There are other make targets:
+
+   make all          -- build everything, but don't install (default)
+   make install      -- build and install (copy) to ./bin and ./lib
+   make syminstall   -- build and install (symlink) to ./bin and ./lib
+   make unittest     -- build and run unit tests
+
+There are also build variants:
+
+   make VARIANT=release [targets]   -- turn on optimizer (default)
+   make VARIANT=debug [targets]     -- make a debug build
+
+Built files go into ./build.  Everything in this directory can be
+generated from source and may be safely deleted.
+
+
+#----------------------------------------------------------------------------
+# How do I run it?
+#----------------------------------------------------------------------------
+
+You got it to build?  Wow!
+
+After you "make install" or "make syminstall", you'll have some
+binaries in your ./bin directory and shared libraries in your ./lib
+directory.  Put the lib directory is in your LD_LIBRARY_PATH (though
+the binaries do have embedded paths back to their ./build directory
+locations if you still have that around).
+
+There are 4 programs:
+
+   kdiLoad   	   -- Load cells into a KDI table
+   kdiScan   	   -- Read cells from a KDI table
+   kdiErase  	   -- Erase cells from a KDI table
+   kdiNetServer    -- Host a networked KDI table
+
+KDI tables are referred to by URI.  The URI scheme is used to select
+the KDI implementation.  There are a few provided KDI schemes:
+
+   mem:            -- in-memory read/write table
+   local:          -- read/write table on local disk
+   kdi:            -- read/write table hosted on a networked server
+
+In addition, there are a couple of prefix schemes:
+
+   sync            -- allow multiple threads to use the same table
+                      in a synchronized way
+   meta            -- use a meta table to present a larger logical table
+
+At some point I'll need to put together some usage examples and
+documentation.  In the mean time, RTFS!  :)
+
