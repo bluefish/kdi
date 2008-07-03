@@ -6,11 +6,12 @@
 // Copyright 2005 Cosmix Corporation.  All rights reserved.
 // Cosmix PROPRIETARY and CONFIDENTIAL.
 //
+//----------------------------------------------------------------------------
+
 // Adapted from MD5 code at
 //   http://userpages.umbc.edu/~mabzug1/cs/md5/md5.html
 //
 // Serious clean-up by Josh Taylor 2005-12-06
-//----------------------------------------------------------------------------
 
 #include "md5.h"
 
