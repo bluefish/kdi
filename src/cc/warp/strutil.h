@@ -414,13 +414,14 @@ namespace warp
 
         switch(*begin)
         {
-            case 'a':  dst += '\a'; return ++begin;
-            case 't':  dst += '\t'; return ++begin;
-            case 'n':  dst += '\n'; return ++begin;
-            case 'f':  dst += '\f'; return ++begin;
-            case 'r':  dst += '\r'; return ++begin;
-            case 'v':  dst += '\v'; return ++begin;
             case '\\': dst += '\\'; return ++begin;
+            case 'a':  dst += '\a'; return ++begin;
+            case 'b':  dst += '\b'; return ++begin;
+            case 'f':  dst += '\f'; return ++begin;
+            case 'n':  dst += '\n'; return ++begin;
+            case 'r':  dst += '\r'; return ++begin;
+            case 't':  dst += '\t'; return ++begin;
+            case 'v':  dst += '\v'; return ++begin;
 
             case 'x':
             {

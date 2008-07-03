@@ -91,3 +91,16 @@ BOOST_AUTO_UNIT_TEST(double_quote)
     BOOST_CHECK_EQUAL(p("\"\\x01\""), "\x01");
     BOOST_CHECK_EQUAL(p("\"\\u0020\""), " ");
 }
+
+BOOST_AUTO_UNIT_TEST(invert_test)
+{
+    // Make sure we can parse every character
+    for(int i = 0; i < 256; ++i)
+    {
+        char buf[32];
+        size_t sz = snprintf(buf, sizeof(buf), "0x%02x: X", i);
+        buf[sz-1] = i;
+        str_data_t s = binary_data(buf, sz);
+        BOOST_CHECK_EQUAL(p(reprString(s)), s);
+    }
+}

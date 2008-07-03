@@ -163,15 +163,15 @@ std::string warp::reprString(char const * begin, char const * end, bool quote)
     {
         switch(*p)
         {
+            case '"':  r += '\\'; r += '"';  break;
+            case '\\': r += '\\'; r += '\\'; break;
+            case '\a': r += '\\'; r += 'a';  break;
+            case '\b': r += '\\'; r += 'b';  break;
+            case '\f': r += '\\'; r += 'f';  break;
             case '\n': r += '\\'; r += 'n';  break;
+            case '\r': r += '\\'; r += 'r';  break;
             case '\t': r += '\\'; r += 't';  break;
             case '\v': r += '\\'; r += 'v';  break;
-            case '\b': r += '\\'; r += 'b';  break;
-            case '\r': r += '\\'; r += 'r';  break;
-            case '\f': r += '\\'; r += 'f';  break;
-            case '\a': r += '\\'; r += 'a';  break;
-            case '\\': r += '\\'; r += '\\'; break;
-            case '"':  r += '\\'; r += '"';  break;
 
             default:
                 if(isprint(*p))
