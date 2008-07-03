@@ -1,11 +1,24 @@
 #!/usr/bin/env python
 #
-# $Id: replace_headers.py $
+# Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
+# Created 2008-07-02
 #
-# Created 2008/07/02
-#
-# Copyright 2008 Kosmix Corporation.  All rights reserved.
-# Kosmix PROPRIETARY and CONFIDENTIAL.
+# This file is part of KDI.
+# 
+# KDI is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or any later
+# version.
+# 
+# KDI is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
+# License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
 
 import os
 import cStringIO
@@ -68,11 +81,11 @@ _headerExtractors = {
     'py' : extractPyHeader,
 }
 
-_created = re.compile('Created (\d+)/\d+/\d+', re.I)
+_created = re.compile('Created (\d+)[/-]\d+[/-]\d+', re.I)
 def extractCreated(header):
     m = _created.search(header)
     if m:
-        return m.group(1),m.group(0)
+        return m.group(1),m.group(0).replace('/','-')
     else:
         return '2008',''
 
@@ -86,15 +99,15 @@ def getCppHeader(oldHeader):
     h += '''//
 // This file is part of KDI.
 // 
-// KDI is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or any later version.
+// KDI is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// any later version.
 // 
-// KDI is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+// KDI is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+// or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
+// License for more details.
 // 
 // You should have received a copy of the GNU General Public License
 // along with this program; if not, write to the Free Software
@@ -115,15 +128,15 @@ def getPyHeader(oldHeader):
     h += '''#
 # This file is part of KDI.
 # 
-# KDI is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or any later version.
+# KDI is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or any later
+# version.
 # 
-# KDI is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# KDI is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
+# License for more details.
 # 
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
