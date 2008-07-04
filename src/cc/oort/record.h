@@ -23,9 +23,9 @@
 #ifndef OORT_RECORD_H
 #define OORT_RECORD_H
 
-#include "exception.h"
-#include "warp/atomic.h"
-#include "warp/pack.h"
+#include <oort/exception.h>
+#include <warp/atomic.h>
+#include <warp/pack.h>
 #include <stdint.h>
 #include <string>
 // For swap and iter_swap specializations

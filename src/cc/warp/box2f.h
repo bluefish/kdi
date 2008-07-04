@@ -23,7 +23,7 @@
 #ifndef WARP_BOX2F_H
 #define WARP_BOX2F_H
 
-#include "vec2f.h"
+#include <warp/vec2f.h>
 
 namespace warp
 {

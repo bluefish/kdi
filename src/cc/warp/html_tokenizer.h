@@ -23,7 +23,7 @@
 #ifndef WARP_HTML_TOKENIZER_H
 #define WARP_HTML_TOKENIZER_H
 
-#include "strutil.h"
+#include <warp/strutil.h>
 
 namespace warp
 {

@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "hashtable.h"
-#include "unittest/main.h"
+#include <warp/hashtable.h>
+#include <unittest/main.h>
 #include <iostream>
 
 using namespace warp;

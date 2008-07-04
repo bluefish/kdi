@@ -20,13 +20,13 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "config.h"
-#include "util.h"
-#include "strutil.h"
-#include "file.h"
-#include "filestream.h"
-#include "uri.h"
-#include "ex/exception.h"
+#include <warp/config.h>
+#include <warp/util.h>
+#include <warp/strutil.h>
+#include <warp/file.h>
+#include <warp/filestream.h>
+#include <warp/uri.h>
+#include <ex/exception.h>
 
 using namespace warp;
 using namespace ex;

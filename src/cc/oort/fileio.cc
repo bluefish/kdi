@@ -20,11 +20,11 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "fileio.h"
-#include "recordbuffer.h"
-#include "headers.h"
-#include "warp/file.h"
-#include "ex/exception.h"
+#include <oort/fileio.h>
+#include <oort/recordbuffer.h>
+#include <oort/headers.h>
+#include <warp/file.h>
+#include <ex/exception.h>
 #include <assert.h>
 #include <boost/format.hpp>
 

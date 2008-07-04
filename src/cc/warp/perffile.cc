@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "perffile.h"
-#include "perflog.h"
-#include "ex/exception.h"
+#include <warp/perffile.h>
+#include <warp/perflog.h>
+#include <ex/exception.h>
 
 using namespace warp;
 using namespace ex;

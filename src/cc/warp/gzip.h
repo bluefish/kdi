@@ -23,8 +23,8 @@
 #ifndef WARP_GZIP_H
 #define WARP_GZIP_H
 
-#include "ex/exception.h"
-#include "buffer.h"
+#include <ex/exception.h>
+#include <warp/buffer.h>
 #include <algorithm>
 #include <stdint.h>
 #include <boost/crc.hpp>

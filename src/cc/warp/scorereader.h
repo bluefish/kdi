@@ -23,10 +23,10 @@
 #ifndef WARP_SCOREREADER_H
 #define WARP_SCOREREADER_H
 
-#include "file.h"
-#include "util.h"
-#include "buffer.h"
-#include "ex/exception.h"
+#include <warp/file.h>
+#include <warp/util.h>
+#include <warp/buffer.h>
+#include <ex/exception.h>
 #include <boost/utility.hpp>
 
 namespace warp

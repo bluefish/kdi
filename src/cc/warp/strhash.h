@@ -23,9 +23,9 @@
 #ifndef WARP_STRHASH_H
 #define WARP_STRHASH_H
 
-#include "hash.h"
-#include "hsieh_hash.h"
-#include "strutil.h"
+#include <warp/hash.h>
+#include <warp/hsieh_hash.h>
+#include <warp/strutil.h>
 #include <string>
 
 namespace warp

@@ -23,7 +23,7 @@
 #ifndef FLUX_OBSERVER_H
 #define FLUX_OBSERVER_H
 
-#include "stream.h"
+#include <flux/stream.h>
 #include <assert.h>
 
 namespace flux

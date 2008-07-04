@@ -23,10 +23,10 @@
 #ifndef WARP_STRING_DATA_H
 #define WARP_STRING_DATA_H
 
-#include "strutil.h"
-#include "offset.h"
-#include "pack.h"
-#include "builder.h"
+#include <warp/strutil.h>
+#include <warp/offset.h>
+#include <warp/pack.h>
+#include <warp/builder.h>
 #include <boost/utility.hpp>
 #include <stdint.h>
 #include <stddef.h>

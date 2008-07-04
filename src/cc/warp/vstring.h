@@ -23,8 +23,8 @@
 #ifndef WARP_VSTRING_H
 #define WARP_VSTRING_H
 
-#include "ex/exception.h"
-#include "strutil.h"
+#include <ex/exception.h>
+#include <warp/strutil.h>
 #include <vector>
 #include <string>
 #include <iostream>

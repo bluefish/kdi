@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "recordstream.h"
-#include "warp/uri.h"
+#include <oort/recordstream.h>
+#include <warp/uri.h>
 
 using namespace oort;
 using namespace warp;
@@ -152,7 +152,7 @@ namespace
 #endif
 }
 
-#include "warp/init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(oort_checkstream)
 {
     registerScheme("check", &openCheckStream);

@@ -23,7 +23,7 @@
 #ifndef WARP_MEMFS_H
 #define WARP_MEMFS_H
 
-#include "fs.h"
+#include <warp/fs.h>
 #include <map>
 #include <string>
 #include <boost/shared_ptr.hpp>

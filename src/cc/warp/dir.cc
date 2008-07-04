@@ -20,13 +20,13 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "dir.h"
-#include "fs.h"
-#include "uri.h"
-#include "strutil.h"
-#include "strhash.h"
-#include "hashmap.h"
-#include "ex/exception.h"
+#include <warp/dir.h>
+#include <warp/fs.h>
+#include <warp/uri.h>
+#include <warp/strutil.h>
+#include <warp/strhash.h>
+#include <warp/hashmap.h>
+#include <ex/exception.h>
 #include <algorithm>
 
 using namespace warp;
@@ -137,7 +137,7 @@ bool Directory::readPath(std::string & dst)
 //----------------------------------------------------------------------------
 // Hack for static libraries
 //----------------------------------------------------------------------------
-#include "init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(warp_dir)
 {
     // Get basic functionality

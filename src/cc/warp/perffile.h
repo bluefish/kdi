@@ -23,8 +23,8 @@
 #ifndef WARP_PERFFILE_H
 #define WARP_PERFFILE_H
 
-#include "file.h"
-#include "perfvar.h"
+#include <warp/file.h>
+#include <warp/perfvar.h>
 #include <boost/utility.hpp>
 
 namespace warp

@@ -23,7 +23,7 @@
 #ifndef WARP_MEMFILE_H
 #define WARP_MEMFILE_H
 
-#include "file.h"
+#include <warp/file.h>
 
 namespace warp
 {

@@ -23,9 +23,9 @@
 #ifndef WARP_VINTREADER_H
 #define WARP_VINTREADER_H
 
-#include "file.h"
-#include "buffer.h"
-#include "vint.h"
+#include <warp/file.h>
+#include <warp/buffer.h>
+#include <warp/vint.h>
 #include <boost/utility.hpp>
 
 namespace warp

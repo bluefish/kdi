@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "filestream.h"
-#include "memfile.h"
-#include "unittest/main.h"
+#include <warp/filestream.h>
+#include <warp/memfile.h>
+#include <unittest/main.h>
 #include <iostream>
 #include <boost/iostreams/stream.hpp>
 

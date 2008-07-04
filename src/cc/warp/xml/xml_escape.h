@@ -23,7 +23,7 @@
 #ifndef WARP_XML_XML_ESCAPE_H
 #define WARP_XML_XML_ESCAPE_H
 
-#include "warp/strref.h"
+#include <warp/strref.h>
 #include <iostream>
 #include <algorithm>
 

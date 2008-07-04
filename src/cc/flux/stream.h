@@ -23,7 +23,7 @@
 #ifndef FLUX_STREAM_H
 #define FLUX_STREAM_H
 
-#include "ex/exception.h"
+#include <ex/exception.h>
 #include <boost/shared_ptr.hpp>
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/noncopyable.hpp>

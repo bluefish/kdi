@@ -23,7 +23,7 @@
 #ifndef OORT_RECORDBUFFER_H
 #define OORT_RECORDBUFFER_H
 
-#include "record.h"
+#include <oort/record.h>
 #include <boost/utility.hpp>
 
 namespace oort

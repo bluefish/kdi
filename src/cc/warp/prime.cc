@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "prime.h"
-#include "ex/exception.h"
+#include <warp/prime.h>
+#include <ex/exception.h>
 #include <boost/random.hpp>
 
 using namespace warp;

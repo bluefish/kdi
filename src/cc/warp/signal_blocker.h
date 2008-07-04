@@ -25,7 +25,7 @@
 
 #include <signal.h>
 #include <boost/noncopyable.hpp>
-#include "ex/exception.h"
+#include <ex/exception.h>
 
 namespace warp
 {

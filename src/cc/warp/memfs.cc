@@ -20,10 +20,10 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "memfs.h"
-#include "file.h"
-#include "shared.h"
-#include "ex/exception.h"
+#include <warp/memfs.h>
+#include <warp/file.h>
+#include <warp/shared.h>
+#include <ex/exception.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <string.h>
@@ -486,7 +486,7 @@ namespace
     }
 }
 
-#include "init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(warp_memfs)
 {
     Filesystem::registerScheme("memfs", &getFs);

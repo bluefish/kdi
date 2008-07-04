@@ -23,7 +23,7 @@
 #ifndef WARP_FRAMING_H
 #define WARP_FRAMING_H
 
-#include "rollinghash.h"
+#include <warp/rollinghash.h>
 
 namespace warp
 {

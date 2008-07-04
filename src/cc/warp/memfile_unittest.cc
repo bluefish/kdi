@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "unittest/main.h"
-#include "memfile.h"
-#include "ex/exception.h"
+#include <unittest/main.h>
+#include <warp/memfile.h>
+#include <ex/exception.h>
 
 extern "C" {
 #include <string.h>

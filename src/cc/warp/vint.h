@@ -23,7 +23,7 @@
 #ifndef WARP_VINT_H
 #define WARP_VINT_H
 
-#include "buffer.h"
+#include <warp/buffer.h>
 
 namespace warp
 {

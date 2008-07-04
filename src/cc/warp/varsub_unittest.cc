@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "varsub.h"
-#include "unittest/main.h"
+#include <warp/varsub.h>
+#include <unittest/main.h>
 
 using namespace warp;
 using namespace std;

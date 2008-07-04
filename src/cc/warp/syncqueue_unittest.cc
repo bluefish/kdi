@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "syncqueue.h"
-#include "unittest/main.h"
+#include <warp/syncqueue.h>
+#include <unittest/main.h>
 #include <boost/bind.hpp>
 #include <boost/thread.hpp>
 #include <iostream>

@@ -23,9 +23,9 @@
 #ifndef SDSTORE_DYNAMIC_CELL_H
 #define SDSTORE_DYNAMIC_CELL_H
 
-#include "cell.h"
-#include "warp/atomic.h"
-#include "warp/strref.h"
+#include <sdstore/cell.h>
+#include <warp/atomic.h>
+#include <warp/strref.h>
 #include <boost/scoped_array.hpp>
 
 namespace sdstore {

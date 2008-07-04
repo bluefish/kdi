@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "charmap.h"
+#include <warp/charmap.h>
 
 using namespace warp;
 

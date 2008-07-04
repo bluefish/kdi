@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "objectpool.h"
-#include "unittest/main.h"
+#include <warp/objectpool.h>
+#include <unittest/main.h>
 
 using namespace warp;
 using namespace ex;

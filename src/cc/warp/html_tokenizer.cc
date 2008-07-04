@@ -19,7 +19,7 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
-#include "html_tokenizer.h"
+#include <warp/html_tokenizer.h>
 #include <iostream>
 #include <assert.h>
 

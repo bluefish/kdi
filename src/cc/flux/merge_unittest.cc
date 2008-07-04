@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "merge.h"
-#include "sequence.h"
-#include "unittest/main.h"
+#include <flux/merge.h>
+#include <flux/sequence.h>
+#include <unittest/main.h>
 #include <deque>
 
 using namespace flux;

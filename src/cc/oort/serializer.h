@@ -23,8 +23,8 @@
 #ifndef OORT_SERIALIZER_H
 #define OORT_SERIALIZER_H
 
-#include "record.h"
-#include "recordstream.h"
+#include <oort/record.h>
+#include <oort/recordstream.h>
 #include <boost/scoped_array.hpp>
 #include <boost/utility.hpp>
 

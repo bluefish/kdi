@@ -23,8 +23,8 @@
 #ifndef FLUX_SERIES_H
 #define FLUX_SERIES_H
 
-#include "stream.h"
-#include "ex/exception.h"
+#include <flux/stream.h>
+#include <ex/exception.h>
 #include <queue>
 
 namespace flux

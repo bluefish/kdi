@@ -23,7 +23,7 @@
 #ifndef KDI_CLIENT_CONNECTION_MANAGER_H
 #define KDI_CLIENT_CONNECTION_MANAGER_H
 
-#include "client_connection.h"
+#include <kdi/attic/client/client_connection.h>
 #include <boost/asio.hpp>
 #include <boost/noncopyable.hpp>
 #include <boost/future/future.hpp>

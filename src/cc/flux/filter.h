@@ -21,7 +21,7 @@
 #ifndef FLUX_FILTER_H
 #define FLUX_FILTER_H
 
-#include "stream.h"
+#include <flux/stream.h>
 
 namespace flux {
 

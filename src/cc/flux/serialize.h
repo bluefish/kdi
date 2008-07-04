@@ -23,8 +23,8 @@
 #ifndef FLUX_SERIALIZE_H
 #define FLUX_SERIALIZE_H
 
-#include "stream.h"
-#include "warp/file.h"
+#include <flux/stream.h>
+#include <warp/file.h>
 #include <assert.h>
 
 namespace flux

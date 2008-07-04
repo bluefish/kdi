@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "vintwriter.h"
-#include "ex/exception.h"
+#include <warp/vintwriter.h>
+#include <ex/exception.h>
 
 using namespace warp;
 using namespace ex;

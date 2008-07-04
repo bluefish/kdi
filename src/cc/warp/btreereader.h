@@ -23,9 +23,9 @@
 #ifndef WARP_BTREEREADER_H
 #define WARP_BTREEREADER_H
 
-#include "btree.h"
-#include "file.h"
-#include "ex/exception.h"
+#include <warp/btree.h>
+#include <warp/file.h>
+#include <ex/exception.h>
 #include <boost/shared_ptr.hpp>
 #include <assert.h>
 

@@ -26,14 +26,14 @@
 #define HAVE_LIBCOSMIX 0
 
 
-#include "hsieh_hash.h"
-#include "md5.h"
-#include "file.h"
-#include "util.h"
-#include "strhash.h"
-#include "strutil.h"
-#include "timer.h"
-#include "options.h"
+#include <warp/hsieh_hash.h>
+#include <warp/md5.h>
+#include <warp/file.h>
+#include <warp/util.h>
+#include <warp/strhash.h>
+#include <warp/strutil.h>
+#include <warp/timer.h>
+#include <warp/options.h>
 #include <boost/format.hpp>
 #include <iostream>
 #include <algorithm>
@@ -390,7 +390,7 @@ namespace
 // Index hash
 //----------------------------------------------------------------------------
 #if HAVE_LIBCOSMIX
-#include "libcosmix/hash.h"
+#include <libcosmix/hash.h>
 namespace
  {
     struct IndexHasher32

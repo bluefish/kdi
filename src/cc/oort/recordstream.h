@@ -23,8 +23,8 @@
 #ifndef OORT_RECORDSTREAM_H
 #define OORT_RECORDSTREAM_H
 
-#include "record.h"
-#include "flux/stream.h"
+#include <oort/record.h>
+#include <flux/stream.h>
 #include <string>
 
 namespace oort

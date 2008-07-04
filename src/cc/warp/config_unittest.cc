@@ -20,10 +20,10 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "unittest/main.h"
-#include "ex/exception.h"
-#include "config.h"
-#include "file.h"
+#include <unittest/main.h>
+#include <ex/exception.h>
+#include <warp/config.h>
+#include <warp/file.h>
 
 #include <boost/test/output_test_stream.hpp>
 

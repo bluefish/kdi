@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "rowbuffer.h"
-#include "warp/strutil.h"
+#include <sdstore/rowbuffer.h>
+#include <warp/strutil.h>
 
 using namespace sdstore;
 using namespace warp;

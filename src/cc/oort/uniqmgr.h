@@ -21,9 +21,9 @@
 #ifndef OORT_UNIQMGR_H
 #define OORT_UNIQMGR_H
 
-#include "record.h"
-#include "typeregistry.h"
-#include "warp/singleton.h"
+#include <oort/record.h>
+#include <oort/typeregistry.h>
+#include <warp/singleton.h>
 
 #include <boost/utility.hpp>
 #include <string>

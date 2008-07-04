@@ -20,10 +20,10 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "mmapfile.h"
-#include "uri.h"
-#include "fs.h"
-#include "ex/exception.h"
+#include <warp/mmapfile.h>
+#include <warp/uri.h>
+#include <warp/fs.h>
+#include <ex/exception.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -207,7 +207,7 @@ namespace
     }
 }
 
-#include "init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(warp_mmapfile)
 {
     File::registerScheme("mmap", &openMMap);

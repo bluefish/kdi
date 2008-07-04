@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "rankcollector.h"
-#include "unittest/main.h"
-#include "unittest/predicates.h"
+#include <warp/rankcollector.h>
+#include <unittest/main.h>
+#include <unittest/predicates.h>
 
 using namespace warp;
 using unittest::equal_unordered_collections;

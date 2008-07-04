@@ -23,9 +23,9 @@
 #ifndef OORT_BUILDSTREAM_H
 #define OORT_BUILDSTREAM_H
 
-#include "recordstream.h"
-#include "recordbuilder.h"
-#include "recordbuffer.h"
+#include <oort/recordstream.h>
+#include <oort/recordbuilder.h>
+#include <oort/recordbuffer.h>
 #include <boost/shared_ptr.hpp>
 
 namespace oort

@@ -23,7 +23,7 @@
 #ifndef WARP_POSIXFS_H
 #define WARP_POSIXFS_H
 
-#include "fs.h"
+#include <warp/fs.h>
 
 namespace warp
 {

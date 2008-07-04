@@ -23,8 +23,8 @@
 #ifndef FLUX_SELECT_H
 #define FLUX_SELECT_H
 
-#include "stream.h"
-#include "warp/util.h"
+#include <flux/stream.h>
+#include <warp/util.h>
 #include <boost/shared_ptr.hpp>
 
 namespace flux

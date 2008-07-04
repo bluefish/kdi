@@ -23,8 +23,8 @@
 #ifndef WARP_OBJECTPOOL_H
 #define WARP_OBJECTPOOL_H
 
-#include "util.h"
-#include "ex/exception.h"
+#include <warp/util.h>
+#include <ex/exception.h>
 #include <vector>
 #include <algorithm>
 #include <iostream>

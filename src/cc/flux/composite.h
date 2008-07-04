@@ -23,7 +23,7 @@
 #ifndef FLUX_COMPOSITE_H
 #define FLUX_COMPOSITE_H
 
-#include "stream.h"
+#include <flux/stream.h>
 
 namespace flux
 {

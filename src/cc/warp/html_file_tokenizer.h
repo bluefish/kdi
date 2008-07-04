@@ -23,9 +23,9 @@
 #ifndef WARP_HTML_FILE_TOKENIZER_H
 #define WARP_HTML_FILE_TOKENIZER_H
 
-#include "html_tokenizer.h"
-#include "file.h"
-#include "buffer.h"
+#include <warp/html_tokenizer.h>
+#include <warp/file.h>
+#include <warp/buffer.h>
 #include <boost/utility.hpp>
 
 namespace warp

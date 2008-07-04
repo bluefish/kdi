@@ -23,7 +23,7 @@
 #ifndef WARP_POSIXDIR_H
 #define WARP_POSIXDIR_H
 
-#include "dir.h"
+#include <warp/dir.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <boost/utility.hpp>

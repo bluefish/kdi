@@ -23,7 +23,7 @@
 #ifndef WARP_ASSOCVEC_H
 #define WARP_ASSOCVEC_H
 
-#include "util.h"
+#include <warp/util.h>
 #include <boost/iterator/indirect_iterator.hpp>
 #include <memory>
 #include <vector>

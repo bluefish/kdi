@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "client_connection.h"
+#include <kdi/attic/client/client_connection.h>
 
 using namespace kdi;
 using namespace kdi::client;

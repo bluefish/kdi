@@ -25,7 +25,7 @@
 
 #include <algorithm>
 #include <vector>
-#include "functional.h"
+#include <warp/functional.h>
 
 namespace warp
 {

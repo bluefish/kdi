@@ -1,4 +1,4 @@
 MAGIC_MODULE_DEPS := ex
-MAGIC_EXTERNAL_DEPS := boost_program_options $(BOOST_THREAD) dl z
+MAGIC_EXTERNAL_DEPS := $(BOOST_PROGRAM_OPTIONS) $(BOOST_THREAD) z dl
 MAGIC_LINK_TYPE := shared
 include magic.mk

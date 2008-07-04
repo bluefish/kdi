@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "lockfile.h"
-#include "fs.h"
-#include "ex/exception.h"
+#include <warp/lockfile.h>
+#include <warp/fs.h>
+#include <ex/exception.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>

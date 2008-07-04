@@ -20,11 +20,11 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "unittest/main.h"
-#include "strutil.h"
-#include "strref.h"
-#include "util.h"
-#include "ex/exception.h"
+#include <unittest/main.h>
+#include <warp/strutil.h>
+#include <warp/strref.h>
+#include <warp/util.h>
+#include <ex/exception.h>
 #include <string>
 
 using namespace warp;

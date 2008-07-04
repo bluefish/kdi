@@ -26,8 +26,8 @@
 #include <stdint.h>
 #include <assert.h>
 #include <limits>
-#include "algorithm.h"
-#include "functional.h"
+#include <warp/algorithm.h>
+#include <warp/functional.h>
 
 namespace warp
 {

@@ -23,8 +23,8 @@
 #ifndef WARP_BUILDER_H
 #define WARP_BUILDER_H
 
-#include "util.h"
-#include "offset.h"
+#include <warp/util.h>
+#include <warp/offset.h>
 #include <vector>
 #include <utility>
 #include <string.h>

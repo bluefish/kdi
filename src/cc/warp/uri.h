@@ -23,8 +23,8 @@
 #ifndef WARP_URI_H
 #define WARP_URI_H
 
-#include "strutil.h"
-#include "strref.h"
+#include <warp/strutil.h>
+#include <warp/strref.h>
 
 namespace warp
 {
@@ -45,12 +45,10 @@ namespace warp
         str_data_t fragment;
 
         Uri() {}
+        Uri(strref_t s) : super(s) { parse(); }
 
-        template <class Range>
-        explicit Uri(Range r) : super(r) { parse(); }
-
-        template <class Iter>
-        Uri(Iter first, Iter last) : super(first, last) { parse(); }
+        template <class It>
+        Uri(It begin, It end) : super(begin, end) { parse(); }
 
         /// For composition schemes (e.g. foo+bar://...), pop the
         /// first scheme component and return the rest

@@ -23,10 +23,10 @@
 #ifndef OORT_ORDERMGR_H
 #define OORT_ORDERMGR_H
 
-#include "record.h"
-#include "typeregistry.h"
-#include "warp/singleton.h"
-#include "ex/exception.h"
+#include <oort/record.h>
+#include <oort/typeregistry.h>
+#include <warp/singleton.h>
+#include <ex/exception.h>
 #include <boost/shared_ptr.hpp>
 
 namespace oort

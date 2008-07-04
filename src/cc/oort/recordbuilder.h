@@ -23,8 +23,8 @@
 #ifndef OORT_RECORDBUILDER_H
 #define OORT_RECORDBUILDER_H
 
-#include "record.h"
-#include "warp/builder.h"
+#include <oort/record.h>
+#include <warp/builder.h>
 
 namespace oort
 {

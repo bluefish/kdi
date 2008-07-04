@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "assocvec.h"
-#include "unittest/main.h"
+#include <warp/assocvec.h>
+#include <unittest/main.h>
 #include <string>
 #include <iostream>
 #include <map>

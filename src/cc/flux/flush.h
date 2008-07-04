@@ -23,8 +23,8 @@
 #ifndef FLUX_FLUSH_H
 #define FLUX_FLUSH_H
 
-#include "stream.h"
-#include "warp/util.h"
+#include <flux/stream.h>
+#include <warp/util.h>
 #include <assert.h>
 
 namespace flux

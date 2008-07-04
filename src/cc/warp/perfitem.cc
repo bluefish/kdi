@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "perfitem.h"
-#include "perflog.h"
+#include <warp/perfitem.h>
+#include <warp/perflog.h>
 
 using namespace warp;
 

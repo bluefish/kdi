@@ -20,10 +20,10 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "perflog.h"
-#include "md5.h"
-#include "strutil.h"
-#include "ex/exception.h"
+#include <warp/perflog.h>
+#include <warp/md5.h>
+#include <warp/strutil.h>
+#include <ex/exception.h>
 #include <boost/bind.hpp>
 #include <algorithm>
 #include <sys/time.h>
@@ -399,7 +399,7 @@ PerformanceLog & PerformanceLog::getCommon()
 //----------------------------------------------------------------------------
 // Init
 //----------------------------------------------------------------------------
-#include "warp/init.h"
+#include <warp/init.h>
 #include <stdlib.h>
 
 WARP_DEFINE_INIT(warp_perflog)

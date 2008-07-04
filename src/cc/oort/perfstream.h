@@ -23,8 +23,8 @@
 #ifndef OORT_PERFSTREAM_H
 #define OORT_PERFSTREAM_H
 
-#include "recordstream.h"
-#include "warp/perfvar.h"
+#include <oort/recordstream.h>
+#include <warp/perfvar.h>
 #include <string>
 
 namespace oort

@@ -23,9 +23,9 @@
 #ifndef WARP_APPUTIL_H
 #define WARP_APPUTIL_H
 
-#include "util.h"
-#include "generator.h"
-#include "file.h"
+#include <warp/util.h>
+#include <warp/generator.h>
+#include <warp/file.h>
 
 #include <string>
 #include <vector>

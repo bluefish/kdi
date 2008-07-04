@@ -23,10 +23,10 @@
 #ifndef WARP_HASHTABLE_H
 #define WARP_HASHTABLE_H
 
-#include "hash.h"
-#include "util.h"
-#include "prime.h"
-#include "ex/exception.h"
+#include <warp/hash.h>
+#include <warp/util.h>
+#include <warp/prime.h>
+#include <ex/exception.h>
 #include <vector>
 #include <utility>
 #include <functional>

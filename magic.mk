@@ -225,7 +225,7 @@ endef
 # Additional unittest template
 #----------------------------------------------------------------------------
 define _UNIT_TEMPLATE
-$(1): -lboost_unit_test_framework
+$(1): -l$(BOOST_UNIT_TEST_FRAMEWORK)
 endef
 
 

@@ -23,8 +23,8 @@
 #ifndef WARP_PERFVAR_H
 #define WARP_PERFVAR_H
 
-#include "perfitem.h"
-#include "ex/exception.h"
+#include <warp/perfitem.h>
+#include <ex/exception.h>
 #include <sstream>
 
 namespace warp

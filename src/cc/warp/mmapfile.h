@@ -23,7 +23,7 @@
 #ifndef WARP_MMAPFILE_H
 #define WARP_MMAPFILE_H
 
-#include "file.h"
+#include <warp/file.h>
 #include <boost/utility.hpp>
 #include <string>
 

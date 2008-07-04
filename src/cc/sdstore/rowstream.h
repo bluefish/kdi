@@ -23,8 +23,8 @@
 #ifndef SDSTORE_ROWSTREAM_H
 #define SDSTORE_ROWSTREAM_H
 
-#include "cell.h"
-#include "flux/stream.h"
+#include <sdstore/cell.h>
+#include <flux/stream.h>
 #include <string.h>
 
 namespace sdstore

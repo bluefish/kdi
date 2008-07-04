@@ -23,7 +23,7 @@
 #ifndef WARP_ROLLINGHASH_H
 #define WARP_ROLLINGHASH_H
 
-#include "ex/exception.h"
+#include <ex/exception.h>
 
 #include <vector>
 #include <algorithm>

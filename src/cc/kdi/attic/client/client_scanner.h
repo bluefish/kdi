@@ -23,8 +23,8 @@
 #ifndef KDI_CLIENT_CLIENT_SCANNER_H
 #define KDI_CLIENT_CLIENT_SCANNER_H
 
-#include "kdi/cell.h"
-#include "client_connection.h"
+#include <kdi/cell.h>
+#include <kdi/attic/client/client_connection.h>
 
 namespace kdi {
 namespace client {

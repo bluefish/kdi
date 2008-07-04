@@ -23,8 +23,8 @@
 #ifndef SDSTORE_ROWBUFFER_H
 #define SDSTORE_ROWBUFFER_H
 
-#include "cell.h"
-#include "warp/strref.h"
+#include <sdstore/cell.h>
+#include <warp/strref.h>
 #include <vector>
 #include <iostream>
 

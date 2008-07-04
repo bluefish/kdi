@@ -23,8 +23,8 @@
 #ifndef WARP_BTREE_H
 #define WARP_BTREE_H
 
-#include "pack.h"
-#include "offset.h"
+#include <warp/pack.h>
+#include <warp/offset.h>
 #include <stdint.h>
 #include <algorithm>
 #include <boost/type_traits/is_same.hpp>

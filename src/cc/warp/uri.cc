@@ -23,6 +23,7 @@
 #include <warp/uri.h>
 #include <warp/util.h>
 #include <warp/strutil.h>
+#include <warp/strref.h>
 #include <warp/vstring.h>
 #include <warp/charmap.h>
 #include <algorithm>
@@ -853,7 +854,7 @@ std::string warp::uriNormalize(strref_t uri)
         if(a.port)
         {
             if(scheme == SCHEME_OTHER ||
-               a.port != DEFAULT_PORT[scheme])
+               a.port != string_wrapper(DEFAULT_PORT[scheme]))
             {
                 out += ':';
                 out += a.port;

@@ -20,8 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "xml_parser.h"
-#include "warp/charmap.h"
+#include <warp/xml/xml_parser.h>
+#include <warp/charmap.h>
+#include <warp/strref.h>
 #include <boost/noncopyable.hpp>
 
 extern "C" {
@@ -39,7 +40,7 @@ namespace
         str_data_t name(n, n + strlen(n));
         XmlParser::AttrMap attrs;
         for(size_t i = 0; a[i]; i += 2)
-            attrs.set(a[i], a[i+1]);
+            attrs.set(string_wrapper(a[i]), string_wrapper(a[i+1]));
         reinterpret_cast<XmlParser *>(me)->startElement(name, attrs);
     }
 

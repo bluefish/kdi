@@ -23,8 +23,8 @@
 #ifndef WARP_TMPFILE_H
 #define WARP_TMPFILE_H
 
-#include "file.h"
-#include "generator.h"
+#include <warp/file.h>
+#include <warp/generator.h>
 #include <string>
 
 namespace warp

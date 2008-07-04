@@ -23,8 +23,8 @@
 #ifndef FLUX_HEAPSORT_H
 #define FLUX_HEAPSORT_H
 
-#include "stream.h"
-#include "warp/util.h"
+#include <flux/stream.h>
+#include <warp/util.h>
 #include <vector>
 #include <functional>
 #include <algorithm>

@@ -23,10 +23,10 @@
 #ifndef WARP_HASHMAP_H
 #define WARP_HASHMAP_H
 
-#include "hashtable.h"
-#include "hash.h"
-#include "util.h"
-#include "ex/exception.h"
+#include <warp/hashtable.h>
+#include <warp/hash.h>
+#include <warp/util.h>
+#include <ex/exception.h>
 #include <boost/type_traits/is_same.hpp>
 #include <boost/utility/enable_if.hpp>
 #include <vector>

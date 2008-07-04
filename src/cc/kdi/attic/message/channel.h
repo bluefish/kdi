@@ -28,16 +28,16 @@
 #include <boost/scoped_ptr.hpp>
 #include <boost/system/error_code.hpp>
 
-#include "error.h"
+#include <kdi/attic/message/error.h>
 #include <tr1/unordered_map>
 #include <vector>
 
 // Channel
 #include <stdint.h>
-#include "warp/strref.h"
+#include <warp/strref.h>
 
 // MessageChecksum
-#include "warp/util.h"
+#include <warp/util.h>
 
 namespace kdi {
 namespace message {

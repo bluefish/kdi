@@ -23,11 +23,11 @@
 #ifndef WARP_XML_XML_PARSER_H
 #define WARP_XML_XML_PARSER_H
 
-#include "warp/file.h"
-#include "warp/strutil.h"
-#include "warp/hashmap.h"
-#include "warp/strhash.h"
-#include "ex/exception.h"
+#include <warp/file.h>
+#include <warp/strutil.h>
+#include <warp/hashmap.h>
+#include <warp/strhash.h>
+#include <ex/exception.h>
 
 namespace warp {
 namespace xml {

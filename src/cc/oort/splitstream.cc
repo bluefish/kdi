@@ -20,15 +20,15 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "recordstream.h"
-#include "partmgr.h"
+#include <oort/recordstream.h>
+#include <oort/partmgr.h>
 
-#include "warp/uri.h"
-#include "warp/util.h"
-#include "warp/file.h"
-#include "warp/fs.h"
+#include <warp/uri.h>
+#include <warp/util.h>
+#include <warp/file.h>
+#include <warp/fs.h>
 
-#include "ex/exception.h"
+#include <ex/exception.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
@@ -212,7 +212,7 @@ namespace
 #endif
 }
 
-#include "warp/init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(oort_splitstream)
 {
     registerScheme("split", &openSplitStream);

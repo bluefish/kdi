@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "record.h"
-#include "warp/strutil.h"
+#include <oort/record.h>
+#include <warp/strutil.h>
 #include <boost/format.hpp>
 #include <boost/scoped_array.hpp>
 

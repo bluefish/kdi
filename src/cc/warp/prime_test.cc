@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "prime.h"
-#include "options.h"
-#include "strutil.h"
+#include <warp/prime.h>
+#include <warp/options.h>
+#include <warp/strutil.h>
 #include <iostream>
 
 using namespace warp;

@@ -23,9 +23,9 @@
 #ifndef WARP_STRREF_H
 #define WARP_STRREF_H
 
-#include "strutil.h"
-#include "string_data.h"
-#include "buffer.h"
+#include <warp/strutil.h>
+#include <warp/string_data.h>
+#include <warp/buffer.h>
 #include <string>
 #include <vector>
 

@@ -20,11 +20,11 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "fs.h"
-#include "options.h"
-#include "strutil.h"
-#include "init.h"
-#include "ex/exception.h"
+#include <warp/fs.h>
+#include <warp/options.h>
+#include <warp/strutil.h>
+#include <warp/init.h>
+#include <ex/exception.h>
 #include <iostream>
 #include <boost/format.hpp>
 

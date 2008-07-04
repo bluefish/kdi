@@ -25,7 +25,7 @@
 //
 // Serious clean-up by Josh Taylor 2005-12-06
 
-#include "md5.h"
+#include <warp/md5.h>
 
 using namespace warp;
 

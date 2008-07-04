@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "ex/exception.h"
+#include <ex/exception.h>
 using namespace ex;
 
 void goBoom()

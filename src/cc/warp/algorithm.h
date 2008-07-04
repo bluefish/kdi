@@ -23,7 +23,7 @@
 #ifndef WARP_ALGORITHM_H
 #define WARP_ALGORITHM_H
 
-#include "ex/exception.h"
+#include <ex/exception.h>
 #include <utility>
 #include <algorithm>
 

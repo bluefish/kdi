@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "posixfs.h"
-#include "uri.h"
-#include "ex/exception.h"
+#include <warp/posixfs.h>
+#include <warp/uri.h>
+#include <ex/exception.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -281,7 +281,7 @@ namespace
     }
 }
 
-#include "init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(warp_posixfs)
 {
     Filesystem::registerScheme("file",  &getPosixFs);

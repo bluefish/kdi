@@ -23,7 +23,7 @@
 #ifndef FLUX_UNIQ_H
 #define FLUX_UNIQ_H
 
-#include "stream.h"
+#include <flux/stream.h>
 #include <functional>
 #include <assert.h>
 

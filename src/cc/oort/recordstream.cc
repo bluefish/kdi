@@ -20,17 +20,17 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "recordstream.h"
-#include "headers.h"
-#include "fileio.h"
-#include "recordbuffer.h"
-#include "perfstream.h"
+#include <oort/recordstream.h>
+#include <oort/headers.h>
+#include <oort/fileio.h>
+#include <oort/recordbuffer.h>
+#include <oort/perfstream.h>
 
-#include "warp/hashmap.h"
-#include "warp/strhash.h"
-#include "warp/file.h"
-#include "warp/uri.h"
-#include "warp/perflog.h"
+#include <warp/hashmap.h>
+#include <warp/strhash.h>
+#include <warp/file.h>
+#include <warp/uri.h>
+#include <warp/perflog.h>
 
 using namespace oort;
 using namespace warp;
@@ -239,7 +239,7 @@ namespace
     }
 }
 
-#include "warp/init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(oort_recordstream)
 {
     PerformanceLog::getCommon().addHooks(&startHook, &stopHook);

@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "posixdir.h"
-#include "fs.h"
-#include "ex/exception.h"
+#include <warp/posixdir.h>
+#include <warp/fs.h>
+#include <ex/exception.h>
 
 using namespace warp;
 using namespace ex;
@@ -94,7 +94,7 @@ namespace
     }
 }
 
-#include "init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(warp_posixdir)
 {
     Directory::registerScheme("file",  &openPosixDir);

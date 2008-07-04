@@ -21,7 +21,7 @@
 #ifndef FLUX_MODIFY_H
 #define FLUX_MODIFY_H
 
-#include "stream.h"
+#include <flux/stream.h>
 #include <functional>
 #include <assert.h>
 

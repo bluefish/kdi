@@ -23,7 +23,7 @@
 #ifndef FLUX_SORT_H
 #define FLUX_SORT_H
 
-#include "stream.h"
+#include <flux/stream.h>
 #include <vector>
 #include <functional>
 #include <algorithm>

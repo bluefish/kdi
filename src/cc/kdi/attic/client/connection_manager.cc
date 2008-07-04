@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "connection_manager.h"
+#include <kdi/attic/client/connection_manager.h>
 #include <boost/system/system_error.hpp>
 
 using namespace kdi;

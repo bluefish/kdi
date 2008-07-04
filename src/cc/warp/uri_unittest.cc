@@ -20,11 +20,12 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "unittest/main.h"
-#include "uri.h"
-#include "vstring.h"
+#include <unittest/main.h>
+#include <warp/uri.h>
+#include <warp/strref.h>
+#include <warp/vstring.h>
+#include <ex/exception.h>
 #include <boost/test/test_tools.hpp>
-#include "ex/exception.h"
 
 using namespace warp;
 using namespace ex;
@@ -69,31 +70,31 @@ namespace
         Uri u(uri);
 
         // Make sure components are what we expect
-        if(u.scheme != scheme)
+        if(u.scheme != string_wrapper(scheme))
         {
             r = false;
             r.message() << "\n  u.scheme != scheme ("
                         << u.scheme << " != " << scheme << ")";
         }
-        if(u.authority != authority)
+        if(u.authority != string_wrapper(authority))
         {
             r = false;
             r.message() << "\n  u.authority != authority ("
                         << u.authority << " != " << authority << ")";
         }
-        if(u.path != path)
+        if(u.path != string_wrapper(path))
         {
             r = false;
             r.message() << "\n  u.path != path ("
                         << u.path << " != " << path << ")";
         }
-        if(u.query != query)
+        if(u.query != string_wrapper(query))
         {
             r = false;
             r.message() << "\n  u.query != query ("
                         << u.query << " != " << query << ")";
         }
-        if(u.fragment != fragment)
+        if(u.fragment != string_wrapper(fragment))
         {
             r = false;
             r.message() << "\n  u.fragment != fragment ("

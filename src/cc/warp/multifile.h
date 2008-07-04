@@ -23,8 +23,8 @@
 #ifndef WARP_MULTIFILE_H
 #define WARP_MULTIFILE_H
 
-#include "file.h"
-#include "generator.h"
+#include <warp/file.h>
+#include <warp/generator.h>
 #include <boost/utility.hpp>
 
 namespace warp

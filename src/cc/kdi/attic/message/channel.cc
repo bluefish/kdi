@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "channel.h"
+#include <kdi/attic/message/channel.h>
 #include <boost/bind.hpp>
 #include <boost/array.hpp>
 

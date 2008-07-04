@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "recordbuffer.h"
-#include "warp/util.h"
+#include <oort/recordbuffer.h>
+#include <warp/util.h>
 
 using namespace oort;
 using namespace warp;

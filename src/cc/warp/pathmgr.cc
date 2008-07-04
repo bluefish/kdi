@@ -20,11 +20,11 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "pathmgr.h"
-#include "uri.h"
-#include "vstring.h"
-#include "ex/exception.h"
-#include "posixfs.h"
+#include <warp/pathmgr.h>
+#include <warp/uri.h>
+#include <warp/vstring.h>
+#include <ex/exception.h>
+#include <warp/posixfs.h>
 
 using namespace warp;
 using namespace ex;

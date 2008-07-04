@@ -20,12 +20,12 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "channel.h"
-#include "warp/options.h"
-#include "warp/uri.h"
-#include "warp/strref.h"
-#include "warp/syncqueue.h"
-#include "ex/exception.h"
+#include <kdi/attic/message/channel.h>
+#include <warp/options.h>
+#include <warp/uri.h>
+#include <warp/strref.h>
+#include <warp/syncqueue.h>
+#include <ex/exception.h>
 
 #include <boost/asio.hpp>
 #include <boost/format.hpp>

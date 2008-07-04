@@ -23,7 +23,7 @@
 #ifndef WARP_GENERATOR_H
 #define WARP_GENERATOR_H
 
-#include "ex/exception.h"
+#include <ex/exception.h>
 #include <boost/shared_ptr.hpp>
 
 namespace warp

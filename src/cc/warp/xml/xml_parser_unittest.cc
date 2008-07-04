@@ -20,10 +20,10 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "xml_parser.h"
-#include "warp/memfile.h"
-#include "unittest/main.h"
-#include "warp/filestream.h"
+#include <warp/xml/xml_parser.h>
+#include <warp/memfile.h>
+#include <unittest/main.h>
+#include <warp/filestream.h>
 #include <boost/format.hpp>
 #include <string>
 #include <algorithm>

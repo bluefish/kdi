@@ -20,14 +20,14 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "fs.h"
-#include "dir.h"
-#include "uri.h"
-#include "vstring.h"
-#include "strutil.h"
-#include "strhash.h"
-#include "hashmap.h"
-#include "ex/exception.h"
+#include <warp/fs.h>
+#include <warp/dir.h>
+#include <warp/uri.h>
+#include <warp/vstring.h>
+#include <warp/strutil.h>
+#include <warp/strhash.h>
+#include <warp/hashmap.h>
+#include <ex/exception.h>
 #include <fnmatch.h>
 
 #include <iostream>
@@ -461,7 +461,7 @@ double fs::creationTime(string const & uri)
 //----------------------------------------------------------------------------
 // Hack for static libraries
 //----------------------------------------------------------------------------
-#include "init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(warp_fs)
 {
     // Get basic functionality

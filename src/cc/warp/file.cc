@@ -20,13 +20,13 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "file.h"
-#include "uri.h"
-#include "strhash.h"
-#include "hashmap.h"
-#include "perflog.h"
-#include "perffile.h"
-#include "ex/exception.h"
+#include <warp/file.h>
+#include <warp/uri.h>
+#include <warp/strhash.h>
+#include <warp/hashmap.h>
+#include <warp/perflog.h>
+#include <warp/perffile.h>
+#include <ex/exception.h>
 #include <algorithm>
 
 using namespace warp;
@@ -226,7 +226,7 @@ namespace
     }
 }
 
-#include "init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(warp_file)
 {
     PerformanceLog::getCommon().addHooks(&startPerfLog, &stopPerfLog);

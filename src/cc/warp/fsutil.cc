@@ -20,10 +20,10 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "fsutil.h"
-#include "strutil.h"
-#include "fs.h"
-#include "dir.h"
+#include <warp/fsutil.h>
+#include <warp/strutil.h>
+#include <warp/fs.h>
+#include <warp/dir.h>
 
 #include <algorithm>
 #include <iostream>

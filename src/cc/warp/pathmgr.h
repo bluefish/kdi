@@ -23,7 +23,7 @@
 #ifndef WARP_PATHMGR_H
 #define WARP_PATHMGR_H
 
-#include "singleton.h"
+#include <warp/singleton.h>
 #include <string>
 
 namespace warp

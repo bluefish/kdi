@@ -23,7 +23,7 @@
 #ifndef WARP_BUFFER_H
 #define WARP_BUFFER_H
 
-#include "file.h"
+#include <warp/file.h>
 #include <boost/utility.hpp>
 #include <algorithm>
 #include <string.h>

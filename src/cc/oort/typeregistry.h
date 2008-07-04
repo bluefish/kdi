@@ -23,8 +23,8 @@
 #ifndef OORT_TYPEREGISTRY_H
 #define OORT_TYPEREGISTRY_H
 
-#include "warp/strutil.h"
-#include "exception.h"
+#include <warp/strutil.h>
+#include <oort/exception.h>
 
 #include <boost/utility.hpp>
 #include <vector>

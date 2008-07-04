@@ -20,10 +20,10 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "stdfile.h"
-#include "uri.h"
-#include "fs.h"
-#include "ex/exception.h"
+#include <warp/stdfile.h>
+#include <warp/uri.h>
+#include <warp/fs.h>
+#include <ex/exception.h>
 #include <string.h>
 
 using namespace warp;
@@ -220,7 +220,7 @@ namespace
     }
 }
 
-#include "init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(warp_stdfile)
 {
     File::registerScheme("file", &openStd);

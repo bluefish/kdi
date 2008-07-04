@@ -23,13 +23,13 @@
 #ifndef WARP_STRING_POOL_BUILDER_H
 #define WARP_STRING_POOL_BUILDER_H
 
-#include "ex/exception.h"
-#include "util.h"
-#include "strref.h"
-#include "string_data.h"
-#include "hashtable.h"
-#include "strhash.h"
-#include "builder.h"
+#include <ex/exception.h>
+#include <warp/util.h>
+#include <warp/strref.h>
+#include <warp/string_data.h>
+#include <warp/hashtable.h>
+#include <warp/strhash.h>
+#include <warp/builder.h>
 #include <boost/noncopyable.hpp>
 
 namespace warp {

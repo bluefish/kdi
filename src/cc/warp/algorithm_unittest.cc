@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "algorithm.h"
-#include "unittest/main.h"
+#include <warp/algorithm.h>
+#include <unittest/main.h>
 
 #include <map>
 #include <utility>

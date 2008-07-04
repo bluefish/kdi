@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "hsieh_hash.h"
+#include <warp/hsieh_hash.h>
 
 using namespace warp;
 

@@ -23,10 +23,10 @@
 #ifndef WARP_VINTWRITER_H
 #define WARP_VINTWRITER_H
 
-#include "file.h"
-#include "buffer.h"
-#include "vint.h"
-#include "ex/exception.h"
+#include <warp/file.h>
+#include <warp/buffer.h>
+#include <warp/vint.h>
+#include <ex/exception.h>
 #include <boost/utility.hpp>
 
 namespace warp

@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "interval.h"
+#include <warp/interval.h>
 #include <iostream>
 #include <sstream>
 #include <string>

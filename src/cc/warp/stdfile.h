@@ -23,7 +23,7 @@
 #ifndef WARP_STDFILE_H
 #define WARP_STDFILE_H
 
-#include "file.h"
+#include <warp/file.h>
 #include <stdio.h>
 #include <boost/utility.hpp>
 

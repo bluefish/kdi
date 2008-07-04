@@ -23,7 +23,7 @@
 #ifndef OORT_PRIM_H
 #define OORT_PRIM_H
 
-#include "warp/util.h"
+#include <warp/util.h>
 #include <algorithm>
 
 namespace oort

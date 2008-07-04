@@ -23,8 +23,8 @@
 #ifndef WARP_PERFLOG_H
 #define WARP_PERFLOG_H
 
-#include "perfitem.h"
-#include "file.h"
+#include <warp/perfitem.h>
+#include <warp/file.h>
 #include <string>
 #include <vector>
 #include <boost/utility.hpp>

@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "rowstream.h"
-#include "rowbuffer.h"
+#include <sdstore/rowstream.h>
+#include <sdstore/rowbuffer.h>
 
 using namespace sdstore;
 using namespace ex;

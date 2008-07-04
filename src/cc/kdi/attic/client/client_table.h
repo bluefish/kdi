@@ -23,8 +23,8 @@
 #ifndef KDI_CLIENT_CLIENT_TABLE_H
 #define KDI_CLIENT_CLIENT_TABLE_H
 
-#include "kdi/table.h"
-#include "kdi/marshal/cell_block_builder.h"
+#include <kdi/table.h>
+#include <kdi/marshal/cell_block_builder.h>
 
 namespace kdi {
 namespace client {

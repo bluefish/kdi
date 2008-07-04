@@ -23,7 +23,7 @@
 #ifndef WARP_RANKCOLLECTOR_H
 #define WARP_RANKCOLLECTOR_H
 
-#include "ex/exception.h"
+#include <ex/exception.h>
 #include <vector>
 #include <algorithm>
 

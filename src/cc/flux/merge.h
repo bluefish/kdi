@@ -23,8 +23,8 @@
 #ifndef FLUX_MERGE_H
 #define FLUX_MERGE_H
 
-#include "stream.h"
-#include "warp/heap.h"
+#include <flux/stream.h>
+#include <warp/heap.h>
 #include <list>
 #include <functional>
 

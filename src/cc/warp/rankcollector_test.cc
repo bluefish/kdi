@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "rankcollector.h"
-#include "options.h"
-#include "timer.h"
+#include <warp/rankcollector.h>
+#include <warp/options.h>
+#include <warp/timer.h>
 #include <iostream>
 #include <vector>
 #include <algorithm>

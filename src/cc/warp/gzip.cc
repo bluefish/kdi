@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "gzip.h"
+#include <warp/gzip.h>
 
 using namespace warp;
 using namespace ex;

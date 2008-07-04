@@ -21,7 +21,7 @@
 #ifndef FLUX_UNIQP_H
 #define FLUX_UNIQP_H
 
-#include "stream.h"
+#include <flux/stream.h>
 #include <vector>
 #include <functional>
 #include <assert.h>

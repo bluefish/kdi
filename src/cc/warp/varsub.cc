@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "varsub.h"
-#include "algorithm.h"
+#include <warp/varsub.h>
+#include <warp/algorithm.h>
 
 using namespace warp;
 using namespace std;

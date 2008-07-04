@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "init.h"
-#include "warp/init.h"
+#include <oort/init.h>
+#include <warp/init.h>
 
 void oort::initModule()
 {

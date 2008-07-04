@@ -23,7 +23,7 @@
 #ifndef WARP_STRUTIL_H
 #define WARP_STRUTIL_H
 
-#include "ex/exception.h"
+#include <ex/exception.h>
 #include <boost/range.hpp>
 #include <warp/charmap.h>
 #include <string>

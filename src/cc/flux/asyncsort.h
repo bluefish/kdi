@@ -23,12 +23,12 @@
 #ifndef FLUX_ASYNCSORT_H
 #define FLUX_ASYNCSORT_H
 
-#include "stream.h"
-#include "sequence.h"
-#include "merge.h"
+#include <flux/stream.h>
+#include <flux/sequence.h>
+#include <flux/merge.h>
 
-#include "warp/util.h"
-#include "warp/syncqueue.h"
+#include <warp/util.h>
+#include <warp/syncqueue.h>
 
 #include <boost/thread.hpp>
 #include <boost/shared_ptr.hpp>

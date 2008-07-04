@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "pyscan.h"
+#include <pykdi/pyscan.h>
 
 using namespace pykdi;
 using namespace kdi;

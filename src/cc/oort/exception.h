@@ -23,7 +23,7 @@
 #ifndef OORT_EXCEPTION_H
 #define OORT_EXCEPTION_H
 
-#include "ex/exception.h"
+#include <ex/exception.h>
 
 namespace oort
 {

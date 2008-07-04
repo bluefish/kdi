@@ -20,10 +20,10 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "strutil.h"
-#include "util.h"
-#include "html_tokenizer.h"
-#include "ex/exception.h"
+#include <warp/strutil.h>
+#include <warp/util.h>
+#include <warp/html_tokenizer.h>
+#include <ex/exception.h>
 #include <boost/format.hpp>
 
 using namespace warp;

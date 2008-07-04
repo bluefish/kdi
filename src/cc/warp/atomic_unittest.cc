@@ -19,8 +19,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "atomic.h"
-#include "unittest/main.h"
+#include <warp/atomic.h>
+#include <unittest/main.h>
 
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>

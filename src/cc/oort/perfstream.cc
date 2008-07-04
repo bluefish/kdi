@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "perfstream.h"
-#include "warp/perflog.h"
+#include <oort/perfstream.h>
+#include <warp/perflog.h>
 
 using namespace oort;
 using namespace warp;

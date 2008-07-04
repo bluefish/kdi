@@ -23,7 +23,7 @@
 #ifndef FLUX_JOIN_H
 #define FLUX_JOIN_H
 
-#include "composite.h"
+#include <flux/composite.h>
 #include <vector>
 #include <functional>
 #include <boost/shared_ptr.hpp>

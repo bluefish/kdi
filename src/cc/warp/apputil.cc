@@ -20,11 +20,11 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "apputil.h"
-#include "fs.h"
-#include "dir.h"
+#include <warp/apputil.h>
+#include <warp/fs.h>
+#include <warp/dir.h>
 
-#include "ex/exception.h"
+#include <ex/exception.h>
 
 #include <boost/format.hpp>
 

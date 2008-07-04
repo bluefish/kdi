@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "perfvar.h"
-#include "perflog.h"
-#include "strutil.h"
+#include <warp/perfvar.h>
+#include <warp/perflog.h>
+#include <warp/strutil.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <unistd.h>
@@ -139,7 +139,7 @@ namespace
 }
 
 
-#include "init.h"
+#include <warp/init.h>
 WARP_DEFINE_INIT(warp_perfrusage)
 {
     PerformanceLog & log = PerformanceLog::getCommon();

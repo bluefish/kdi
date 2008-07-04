@@ -20,9 +20,9 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "memfile.h"
-#include "shared.h"
-#include "ex/exception.h"
+#include <warp/memfile.h>
+#include <warp/shared.h>
+#include <ex/exception.h>
 #include <boost/format.hpp>
 
 extern "C" {

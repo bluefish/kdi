@@ -25,7 +25,7 @@
 
 #include <vector>
 #include <string>
-#include "ex/exception.h"
+#include <ex/exception.h>
 
 namespace kdi {
 namespace client {

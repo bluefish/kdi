@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include "exception.h"
+#include <ex/exception.h>
 #include <execinfo.h>
 #include <cstdio>
 #include <algorithm>

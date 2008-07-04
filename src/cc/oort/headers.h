@@ -23,8 +23,8 @@
 #ifndef OORT_HEADERS_H
 #define OORT_HEADERS_H
 
-#include "warp/util.h"
-#include "record.h"
+#include <warp/util.h>
+#include <oort/record.h>
 #include <boost/static_assert.hpp>
 #include <assert.h>
 
