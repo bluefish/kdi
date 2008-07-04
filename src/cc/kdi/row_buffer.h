@@ -23,7 +23,7 @@
 #ifndef KDI_ROW_BUFFER_H
 #define KDI_ROW_BUFFER_H
 
-#include <sdstore/rowbuffer.h>
+#include <kdi/sdstore_rowbuffer.h>
 #include <flux/stream.h>
 #include <boost/shared_ptr.hpp>
 

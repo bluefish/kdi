@@ -20,8 +20,8 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include <sdstore/cell.h>
-#include <sdstore/dynamic_cell.h>
+#include <kdi/sdstore_cell.h>
+#include <kdi/sdstore_dynamic_cell.h>
 #include <warp/util.h>
 #include <warp/atomic.h>
 #include <warp/timestamp.h>

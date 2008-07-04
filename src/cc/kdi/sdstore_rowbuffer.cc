@@ -20,7 +20,7 @@
 // 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include <sdstore/rowbuffer.h>
+#include <kdi/sdstore_rowbuffer.h>
 #include <warp/strutil.h>
 
 using namespace sdstore;

@@ -23,7 +23,7 @@
 #ifndef SDSTORE_DYNAMIC_CELL_H
 #define SDSTORE_DYNAMIC_CELL_H
 
-#include <sdstore/cell.h>
+#include <kdi/sdstore_cell.h>
 #include <warp/atomic.h>
 #include <warp/strref.h>
 #include <boost/scoped_array.hpp>

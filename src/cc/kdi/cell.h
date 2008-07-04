@@ -24,7 +24,7 @@
 #define KDI_CELL_H
 
 #include <kdi/strref.h>
-#include <sdstore/cell.h>
+#include <kdi/sdstore_cell.h>
 #include <flux/stream.h>
 #include <boost/shared_ptr.hpp>
 

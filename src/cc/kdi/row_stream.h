@@ -23,7 +23,7 @@
 #ifndef KDI_ROW_STREAM_H
 #define KDI_ROW_STREAM_H
 
-#include <sdstore/rowstream.h>
+#include <kdi/sdstore_rowstream.h>
 
 namespace kdi
 {
