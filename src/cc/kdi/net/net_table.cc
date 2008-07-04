@@ -49,9 +49,10 @@ namespace
     Ice::CommunicatorPtr const & getCommunicator()
     {
         int ac = 2;
-        char * av[] = { "foo", "--Ice.MessageSizeMax=32768" };
+        char const * av[] = { "foo", "--Ice.MessageSizeMax=32768" };
 
-        static Ice::CommunicatorPtr com(Ice::initialize(ac, av));
+        static Ice::CommunicatorPtr com(
+            Ice::initialize(ac, const_cast<char **>(av)));
         return com;
     }
 }

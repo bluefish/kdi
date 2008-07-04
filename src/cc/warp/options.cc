@@ -73,8 +73,8 @@ void OptionParser::addSection(OptionParser const & op)
     optionDesc.add(op.optionDesc);
 }
 
-void OptionParser::parse(int ac, char ** av, Options & opt,
-                         Arguments & args)
+void OptionParser::parse(int ac, char const * const * av,
+                         Options & opt, Arguments & args)
 {
     typedef std::vector<std::string> ArgList;
 
@@ -84,10 +84,10 @@ void OptionParser::parse(int ac, char ** av, Options & opt,
     try
     {
         set<string> munged;
-        vector<char *> avhack(ac+1);
+        vector<char const *> avhack(ac+1);
         for(int i = 0; i < ac; ++i)
         {
-            char * arg = av[i];
+            char const * arg = av[i];
             size_t len = strlen(arg);
 
             // Hack to fix Boost.Program_Options quote stripping
@@ -95,10 +95,9 @@ void OptionParser::parse(int ac, char ** av, Options & opt,
                && (arg[0] == '\'' || arg[0] == '"'))
             {
                 // Append space.  That seems to fool the parser
-                avhack[i] = const_cast<char *>(
-                    munged.insert(
-                        string(arg, arg+len) + " "
-                        ).first->c_str());
+                avhack[i] = munged.insert(
+                    string(arg, arg+len) + " "
+                    ).first->c_str();
             }
             else
             {
@@ -119,7 +118,8 @@ void OptionParser::parse(int ac, char ** av, Options & opt,
         namespace pos = po::command_line_style;
         int style = pos::unix_style & (~pos::allow_guessing);
 
-        po::command_line_parser cmd_parser(ac, &avhack[0]);
+        po::command_line_parser cmd_parser(
+            ac, const_cast<char **>(&avhack[0]));
         cmd_parser.options(desc);
         cmd_parser.positional(pdesc);
         cmd_parser.style(style);
@@ -157,8 +157,8 @@ void OptionParser::parse(int ac, char ** av, Options & opt,
     }
 }
 
-void OptionParser::parseOrBail(int ac, char ** av, Options & opt,
-                               Arguments & args)
+void OptionParser::parseOrBail(int ac, char const * const * av,
+                               Options & opt, Arguments & args)
 {
     try {
         parse(ac, av, opt, args);

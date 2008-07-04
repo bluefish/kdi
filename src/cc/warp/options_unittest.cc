@@ -37,7 +37,7 @@ BOOST_AUTO_UNIT_TEST(no_quote_stripping)
     OptionMap opt;
     ArgumentList args;
 
-    char * av[] = { "prog", "-b", "-s", "'blah'", 0 };
+    char const * av[] = { "prog", "-b", "-s", "'blah'", 0 };
     int ac = sizeof(av) / sizeof(*av) - 1;
 
     op.parse(ac, av, opt, args);

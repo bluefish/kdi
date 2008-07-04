@@ -167,7 +167,8 @@ public:
     /// the invokation name.
     /// @param[out] opt Resulting option map.
     /// @param[out] args Resulting positional arguments.
-    void parse(int ac, char ** av, Options & opt, Arguments & args);
+    void parse(int ac, char const * const * av,
+               Options & opt, Arguments & args);
 
     /// Parse command-line arguments, printing an error message and
     /// exiting if there are problems.
@@ -179,7 +180,8 @@ public:
     /// the invokation name.
     /// @param[out] opt Resulting option map.
     /// @param[out] args Resulting positional arguments.
-    void parseOrBail(int ac, char ** av, Options & opt, Arguments & args);
+    void parseOrBail(int ac, char const * const * av,
+                     Options & opt, Arguments & args);
     
     /// Get usage string.  If available, "%prog" will be replaced by
     /// the executable name in the usage string.

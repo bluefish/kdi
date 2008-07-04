@@ -151,7 +151,7 @@ public:
 
     bool operator==(str_data_t const & o) const
     {
-        return size() == o.size() &&
+        return size() == (size_t)o.size() &&
             std::equal(begin(), end(), o.begin());
     }
 
