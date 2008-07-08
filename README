@@ -42,22 +42,27 @@ allow collaboration with outside developers.
 #----------------------------------------------------------------------------
 
 KDI has been built on Fedora Core 5 Linux running on x86_64 boxes.
+We've also done a test build on Fedora Core 9 on the same hardware.
+
 For build tools we've used:
 
-   gcc 4.1?
-   gnu make ?
-   python 2.4.3
+   Tool           Versions tried
+   -------------- -------------------
+   GCC            4.1.1, 4.3.0
+   GNU make       3.80, 3.81
+   Python         2.4.3, 2.5.1
 
 The project uses some external libraries:
 
-   Boost 1.34.1   http://www.boost.org/
-   ICE 3.2.1      http://www.zeroc.com/
-   expat?
-   zlib
-   (what is dl?)
+   Library        Versions tried      Url
+   -------------- ------------------- -------------------------
+   Boost          1.34.1, 1.35.0      http://www.boost.org/
+   ICE            3.2.1               http://www.zeroc.com/
+   expat          1.95.8, 2.0.1
+   zlib           1.2.3
 
-In addition, there are Python bindings for KDI.  It has been tested
-with Python 2.4.3.
+In addition, there are Python bindings for KDI.  They have been tested
+with Python 2.4.3 and Python 2.5.1.
 
 The build script is a somewhat magical collection of Makefiles.  To
 build, go to the root level of the distribution tree (the one
