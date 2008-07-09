@@ -195,12 +195,14 @@ public:
             std::pair<TablePtr,string> p = configMgr->openTable(diskUri);
 
             // Notify Tablet of the table change
-            tablet->replaceTable(memTable, p.first, p.second);
+            vector<TablePtr> oldTables;
+            oldTables.push_back(memTable);
+            tablet->replaceTables(oldTables, p.first, p.second);
 
             // XXX maybe should release memTable.  if a later
             // serialization fails in this group and we go with the
             // wait-and-retry strategy, we'll wind up reserializing.
-            // assuming that replaceTable() does nothing if it can't
+            // assuming that replaceTables() does nothing if it can't
             // find the oldTable, that's no problem but a waste of
             // time, but it's still a bit ugly.  it creates more files
             // that need to be cleaned up later.

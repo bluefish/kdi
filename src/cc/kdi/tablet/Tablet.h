@@ -111,11 +111,6 @@ public:
     /// reload the table and is suitable for state serialization.
     void addTable(TablePtr const & table, std::string const & tableUri);
 
-    /// Replace an existing table with a new table.  The URI can be
-    /// used to reload the new table.
-    void replaceTable(TablePtr const & oldTable, TablePtr const & newTable,
-                      std::string const & newTableUri);
-
     /// Replace a sequence of tables with a new table.  The URI can be
     /// used to reload the new table.
     void replaceTables(std::vector<TablePtr> const & oldTables,

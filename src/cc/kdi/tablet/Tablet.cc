@@ -261,50 +261,6 @@ void Tablet::addTable(TablePtr const & table, std::string const & tableUri)
         compactor->requestCompaction(shared_from_this());
 }
 
-void Tablet::replaceTable(TablePtr const & oldTable, TablePtr const & newTable,
-                          std::string const & newTableUri)
-{
-    // Check args
-    EX_CHECK_NULL(oldTable);
-    EX_CHECK_NULL(newTable);
-
-    log("Tablet %s: replace table (%p) with (%p) %s", getName(),
-        oldTable.get(), newTable.get(), newTableUri);
-
-    vector<string> deadFiles;
-    {
-        // Lock tables
-        LockedPtr<tables_t> tables(syncTables);
-
-        // Find old table in table vector
-        tables_t::iterator i = std::find(
-            tables->begin(), tables->end(), oldTable);
-        if(i != tables->end())
-        {
-            // Mark old table for deletion
-            if(uriTopScheme(i->uri) == "disk")
-                deadFiles.push_back(uriPopScheme(i->uri));
-
-            // Replace it
-            *i = TableInfo(newTable, newTableUri, true);
-        }
-        else
-        {
-            // We didn't know about that table
-            raise<RuntimeError>("replaceTable with unknown table");
-        }
-    }
-
-    // Save new config
-    saveConfig();
-
-    // Update scanners
-    updateScanners();
-
-    // Remove old files
-    std::for_each(deadFiles.begin(), deadFiles.end(), fs::remove);
-}
-
 void Tablet::replaceTables(std::vector<TablePtr> const & oldTables,
                            TablePtr const & newTable,
                            std::string const & newTableUri)
