@@ -32,7 +32,7 @@
 
 // Channel
 #include <stdint.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 
 // MessageChecksum
 #include <warp/util.h>

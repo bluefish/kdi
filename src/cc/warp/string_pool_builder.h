@@ -24,7 +24,7 @@
 
 #include <ex/exception.h>
 #include <warp/util.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <warp/string_data.h>
 #include <warp/hashtable.h>
 #include <warp/strhash.h>
@@ -60,13 +60,13 @@ class warp::StringPoolBuilder
     // StringBlockEq
     struct StringBlockEq
     {
-        static str_data_t const & getStr(strref_t s) {
+        static strref_t getStr(strref_t s) {
             return s;
         }
-        static str_data_t getStr(StringData const * s) {
-            return str_data_t(s->begin(), s->end());
+        static StringRange getStr(StringData const * s) {
+            return StringRange(s->begin(), s->end());
         }
-        static str_data_t getStr(BuilderBlock const * b) {
+        static StringRange getStr(BuilderBlock const * b) {
             return getStr(reinterpret_cast<StringData const *>(b->begin()));
         }
 

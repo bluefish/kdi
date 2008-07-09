@@ -21,7 +21,7 @@
 #include <ex/exception.h>
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <iostream>
 #include <boost/format.hpp>
 #include <boost/system/system_error.hpp>

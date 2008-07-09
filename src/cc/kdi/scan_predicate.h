@@ -22,7 +22,7 @@
 #define KDI_SCAN_PREDICATE_H
 
 #include <warp/interval.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <string>
 #include <iostream>
 #include <boost/shared_ptr.hpp>

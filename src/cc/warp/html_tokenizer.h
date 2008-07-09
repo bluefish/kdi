@@ -48,39 +48,39 @@ namespace warp
 //----------------------------------------------------------------------------
 class warp::TagAttribute
 {
-    str_data_t key;
-    str_data_t value;
+    StringRange key;
+    StringRange value;
 
 public:
-    explicit TagAttribute(str_data_t const & k = str_data_t(),
-                          str_data_t const & v = str_data_t()) :
+    explicit TagAttribute(strref_t k = StringRange(),
+                          strref_t v = StringRange()) :
         key(k), value(v)
     {
     }
 
-    void setKey(str_data_t const & k) { key = k; }
-    void setValue(str_data_t const & v) { value = v; }
+    void setKey(strref_t k) { key = k; }
+    void setValue(strref_t v) { value = v; }
     bool clip(char const * end)
     {
         if(!key || end <= key.begin())
             return true;
         else if(end < key.end())
         {
-            key = str_data_t(key.begin(), end);
-            value = str_data_t();
+            key = StringRange(key.begin(), end);
+            value = StringRange();
         }
         else if(value)
         {
             if(end <= value.begin())
-                value = str_data_t();
+                value = StringRange();
             else if(end < value.end())
-                value = str_data_t(value.begin(), end);
+                value = StringRange(value.begin(), end);
         }
         return false;
     }
 
-    str_data_t const & getKey() const { return key; }
-    str_data_t const & getValue() const { return value; }
+    strref_t getKey() const { return key; }
+    strref_t getValue() const { return value; }
 };
 
 
@@ -89,8 +89,8 @@ public:
 //----------------------------------------------------------------------------
 class warp::HtmlToken
 {
-    str_data_t text;
-    str_data_t name;
+    StringRange text;
+    StringRange name;
     std::vector<TagAttribute> attrs;
     int type;
     bool isBegin;
@@ -98,8 +98,8 @@ class warp::HtmlToken
 
 public:
     size_t size() const { return text.size(); }
-    str_data_t const & getText() const { return text; }
-    str_data_t const & nodeName() const { return name; }
+    strref_t getText() const { return text; }
+    strref_t nodeName() const { return name; }
     int nodeType() const { return type; }
 
     bool isBeginTag() const { return isBegin; }
@@ -109,7 +109,7 @@ public:
     attr_iter beginAttrs() const { return attrs.begin(); }
     attr_iter endAttrs() const { return attrs.end(); }
 
-    attr_iter findAttr(str_data_t const & key) const
+    attr_iter findAttr(strref_t key) const
     {
         for(attr_iter ai = beginAttrs(); ai != endAttrs(); ++ai)
         {
@@ -121,26 +121,26 @@ public:
 
     attr_iter findAttr(char const * key) const
     {
-        return findAttr(str_data_t(key, key+strlen(key)));
+        return findAttr(StringRange(key, key+strlen(key)));
     };
 
     void clear()
     {
-        text = str_data_t();
-        name = str_data_t();
+        text = StringRange();
+        name = StringRange();
         attrs.clear();
         isBegin = isEnd = false;
     }
 
     void setNodeType(int type, char const * begin, char const * end)
     {
-        text = str_data_t(begin, end);
+        text = StringRange(begin, end);
         this->type = type;
     }
         
     void setNodeName(char const * begin, char const * end)
     {
-        name = str_data_t(begin, end);
+        name = StringRange(begin, end);
     }
 
     void setTagType(bool isBegin, bool isEnd)
@@ -151,12 +151,12 @@ public:
 
     void addKey(char const * begin, char const * end)
     {
-        attrs.push_back(TagAttribute(str_data_t(begin, end)));
+        attrs.push_back(TagAttribute(StringRange(begin, end)));
     }
 
     void addValue(char const * begin, char const * end)
     {
-        attrs.back().setValue(str_data_t(begin, end));
+        attrs.back().setValue(StringRange(begin, end));
     }
 
     void clipAttributes(char const * end)

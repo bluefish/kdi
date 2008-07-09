@@ -22,7 +22,7 @@
 #ifndef WARP_LOG_H
 #define WARP_LOG_H
 
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <boost/format.hpp>
 
 namespace warp {

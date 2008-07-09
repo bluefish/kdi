@@ -23,7 +23,7 @@
 #define WARP_URI_H
 
 #include <warp/strutil.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 
 namespace warp
 {
@@ -33,15 +33,15 @@ namespace warp
     //------------------------------------------------------------------------
     // Uri
     //------------------------------------------------------------------------
-    struct Uri : public str_data_t
+    struct Uri : public StringRange
     {
-        typedef str_data_t super;
+        typedef StringRange super;
 
-        str_data_t scheme;
-        str_data_t authority;
-        str_data_t path;
-        str_data_t query;
-        str_data_t fragment;
+        StringRange scheme;
+        StringRange authority;
+        StringRange path;
+        StringRange query;
+        StringRange fragment;
 
         Uri() {}
         Uri(strref_t s) : super(s) { parse(); }
@@ -54,12 +54,12 @@ namespace warp
         /// (e.g. bar://...).  If the scheme is undefined or only a
         /// single component, pop the entire scheme section and return
         /// a URI with an undefined scheme.
-        str_data_t popScheme() const;
+        StringRange popScheme() const;
 
         /// For composition schemes (e.g. foo+bar://...), return the
         /// first scheme component (e.g. foo).  If the scheme is
         /// undefined or empty, the result is empty.
-        str_data_t topScheme() const;
+        StringRange topScheme() const;
 
         /// Resolution liberties
         enum {
@@ -175,14 +175,14 @@ namespace warp
     //------------------------------------------------------------------------
     // UriAuthority
     //------------------------------------------------------------------------
-    struct UriAuthority : public str_data_t
+    struct UriAuthority : public StringRange
     {
-        typedef str_data_t super;
+        typedef StringRange super;
 
-        str_data_t user;
-        str_data_t pass;
-        str_data_t host;
-        str_data_t port;
+        StringRange user;
+        StringRange pass;
+        StringRange host;
+        StringRange port;
 
         UriAuthority() {}
 
@@ -200,13 +200,13 @@ namespace warp
     //------------------------------------------------------------------------
     // UriQuery
     //------------------------------------------------------------------------
-    struct UriQuery : public str_data_t
+    struct UriQuery : public StringRange
     {
-        typedef str_data_t super;
+        typedef StringRange super;
 
         // Iterated attributes
-        str_data_t key;
-        str_data_t value;
+        StringRange key;
+        StringRange value;
 
         UriQuery() {}
 

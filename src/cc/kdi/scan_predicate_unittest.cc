@@ -19,7 +19,7 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/scan_predicate.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <ex/exception.h>
 #include <unittest/main.h>
 #include <sstream>

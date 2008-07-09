@@ -21,7 +21,7 @@
 #ifndef KDI_STRREF_H
 #define KDI_STRREF_H
 
-#include <warp/strref.h>
+#include <warp/string_range.h>
 
 namespace kdi {
 

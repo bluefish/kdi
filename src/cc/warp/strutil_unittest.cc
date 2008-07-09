@@ -21,7 +21,7 @@
 
 #include <unittest/main.h>
 #include <warp/strutil.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <warp/util.h>
 #include <ex/exception.h>
 #include <string>
@@ -59,9 +59,9 @@ BOOST_AUTO_UNIT_TEST(string_ordering)
     char const b[] = { a[0]+127, a[1]+127, a[2]+127, a[3]+127, 0 };
     char const c[] = "abcde";
     
-    str_data_t da(a, a+4);
-    str_data_t db(b, b+4);
-    str_data_t dc(c, c+5);
+    StringRange da(a, a+4);
+    StringRange db(b, b+4);
+    StringRange dc(c, c+5);
 
     string sa(a, a+4);
     string sb(b, b+4);
@@ -71,10 +71,10 @@ BOOST_AUTO_UNIT_TEST(string_ordering)
     BOOST_CHECK(strcmp(a, a) == 0);
     BOOST_CHECK_EQUAL(lexicographical_compare(a, a+4, a, a+4), false);
     BOOST_CHECK_EQUAL(da < da, false);
-    BOOST_CHECK_EQUAL(string_compare(da, da), false);
+    BOOST_CHECK_EQUAL(string_less(da, da), false);
     BOOST_CHECK_EQUAL(sa < sa, false);
     BOOST_CHECK_EQUAL(lexicographical_compare_3way(a, a+4, a, a+4), 0);
-    BOOST_CHECK_EQUAL(string_compare_3way(da, da), 0);
+    BOOST_CHECK_EQUAL(string_compare(da, da), 0);
 
 
 
@@ -86,12 +86,12 @@ BOOST_AUTO_UNIT_TEST(string_ordering)
     //BOOST_CHECK_EQUAL(lexicographical_compare(a, a+4, b, b+4), true);
     //BOOST_CHECK_EQUAL(lexicographical_compare(b, b+4, a, a+4), false);
 
-    // str_data_t does signed comparisons
+    // StringRange does signed comparisons
     //BOOST_CHECK_EQUAL(da < db, true);
     //BOOST_CHECK_EQUAL(db < da, false);
 
-    BOOST_CHECK_EQUAL(string_compare(da, db), true);
-    BOOST_CHECK_EQUAL(string_compare(db, da), false);
+    BOOST_CHECK_EQUAL(string_less(da, db), true);
+    BOOST_CHECK_EQUAL(string_less(db, da), false);
 
     BOOST_CHECK_EQUAL(sa < sb, true);
     BOOST_CHECK_EQUAL(sb < sa, false);
@@ -100,8 +100,8 @@ BOOST_AUTO_UNIT_TEST(string_ordering)
     //BOOST_CHECK(lexicographical_compare_3way(a, a+4, b, b+4) < 0);
     //BOOST_CHECK(lexicographical_compare_3way(b, b+4, a, a+4) > 0);
 
-    BOOST_CHECK(string_compare_3way(da, db) < 0);
-    BOOST_CHECK(string_compare_3way(db, da) > 0);
+    BOOST_CHECK(string_compare(da, db) < 0);
+    BOOST_CHECK(string_compare(db, da) > 0);
 
 
 
@@ -116,8 +116,8 @@ BOOST_AUTO_UNIT_TEST(string_ordering)
     BOOST_CHECK_EQUAL(da < dc, true);
     BOOST_CHECK_EQUAL(dc < da, false);
 
-    BOOST_CHECK_EQUAL(string_compare(da, dc), true);
-    BOOST_CHECK_EQUAL(string_compare(dc, da), false);
+    BOOST_CHECK_EQUAL(string_less(da, dc), true);
+    BOOST_CHECK_EQUAL(string_less(dc, da), false);
 
     BOOST_CHECK_EQUAL(sa < sc, true);
     BOOST_CHECK_EQUAL(sc < sa, false);
@@ -125,8 +125,8 @@ BOOST_AUTO_UNIT_TEST(string_ordering)
     BOOST_CHECK(lexicographical_compare_3way(a, a+4, c, c+5) < 0);
     BOOST_CHECK(lexicographical_compare_3way(c, c+5, a, a+4) > 0);
 
-    BOOST_CHECK(string_compare_3way(da, dc) < 0);
-    BOOST_CHECK(string_compare_3way(dc, da) > 0);
+    BOOST_CHECK(string_compare(da, dc) < 0);
+    BOOST_CHECK(string_compare(dc, da) > 0);
 }
 
 BOOST_AUTO_TEST_CASE(pseudonumeric_order)

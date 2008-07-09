@@ -22,7 +22,7 @@
 #define SDSTORE_ROWBUFFER_H
 
 #include <kdi/sdstore_cell.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <vector>
 #include <iostream>
 
@@ -84,7 +84,7 @@ public:
 
     /// Get the current row name for this buffer.  Row must not be
     /// empty.
-    warp::str_data_t getRow() const;
+    warp::StringRange getRow() const;
 
     /// Get a Cell matching the given column name.  If the no such
     /// Cell exists, return null.
@@ -93,7 +93,7 @@ public:
     /// Get the cell value associated with the given column.  A
     /// missing cell is indistinguishable from an empty cell, as both
     /// will return an empty string.
-    warp::str_data_t getValue(warp::strref_t column) const;
+    warp::StringRange getValue(warp::strref_t column) const;
 };
 
 #endif // SDSTORE_ROWBUFFER_H

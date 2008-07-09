@@ -24,7 +24,7 @@
 
 #include <warp/line_iterator.h>
 #include <warp/strutil.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <string>
 #include <vector>
 #include <utility>
@@ -70,7 +70,7 @@ public:
     {
         for(;;)
         {
-            str_data_t line;
+            StringRange line;
             if(!lines.get(line, true))
                 return END;
 

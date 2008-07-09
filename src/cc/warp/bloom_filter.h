@@ -23,7 +23,7 @@
 #define WARP_BLOOM_FILTER_H
 
 #include <warp/bit_vector.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <vector>
 #include <stddef.h>
 
@@ -68,7 +68,7 @@ private:
 
     /// Get a bit position by hashing the given data with a seed
     /// value.
-    size_t getBit(str_data_t const & x, uint32_t seed) const
+    size_t getBit(strref_t x, uint32_t seed) const
     {
         // Hash the seed first to twiddle the initial state
         size_t h = hash(&seed, sizeof(seed));

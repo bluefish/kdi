@@ -20,7 +20,7 @@
 //----------------------------------------------------------------------------
 
 #include <warp/parsing/quoted_str.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <ex/exception.h>
 #include <unittest/main.h>
 
@@ -99,7 +99,7 @@ BOOST_AUTO_UNIT_TEST(invert_test)
         char buf[32];
         size_t sz = snprintf(buf, sizeof(buf), "0x%02x: X", i);
         buf[sz-1] = i;
-        str_data_t s = binary_data(buf, sz);
+        StringRange s = binary_data(buf, sz);
         BOOST_CHECK_EQUAL(p(reprString(s)), s);
     }
 }

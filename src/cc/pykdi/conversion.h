@@ -26,10 +26,10 @@
 
 namespace pykdi {
 
-    /// Convert warp::str_data_t to Python string objects.
+    /// Convert warp::StringRange to Python string objects.
     struct strdata_converter
     {
-        static PyObject * convert(warp::str_data_t const & s)
+        static PyObject * convert(warp::strref_t s)
         {
             return PyString_FromStringAndSize(s.begin(), s.size());
         }

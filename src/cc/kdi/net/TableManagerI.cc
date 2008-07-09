@@ -46,7 +46,7 @@ using Ice::ByteSeq;
 
 namespace
 {
-    inline void assign(ByteSeq & seq, str_data_t const & str)
+    inline void assign(ByteSeq & seq, strref_t str)
     {
         seq.resize(str.size());
         if(!str.empty())
@@ -165,12 +165,12 @@ void TableI::applyMutations(Ice::ByteSeq const & cells,
     {
         if(ci->value)
         {
-            table->set(ci->key.row, ci->key.column,
-                       ci->key.timestamp, ci->value);
+            table->set(*ci->key.row, *ci->key.column,
+                       ci->key.timestamp, *ci->value);
         }
         else
         {
-            table->erase(ci->key.row, ci->key.column,
+            table->erase(*ci->key.row, *ci->key.column,
                          ci->key.timestamp);
         }
     }

@@ -104,22 +104,22 @@ class DynamicCell::Interpreter : public CellInterpreter
 
 public:
     // Interpreter interface
-    str_data_t getRow(void const * data) const
+    StringRange getRow(void const * data) const
     {
         DynamicCell const * c = cast(data);
-        return str_data_t(c->buf.get(), c->colBegin);
+        return StringRange(c->buf.get(), c->colBegin);
     }
 
-    str_data_t getColumn(void const * data) const
+    StringRange getColumn(void const * data) const
     {
         DynamicCell const * c = cast(data);
-        return str_data_t(c->colBegin, c->valBegin);
+        return StringRange(c->colBegin, c->valBegin);
     }
 
-    str_data_t getValue(void const * data) const
+    StringRange getValue(void const * data) const
     {
         DynamicCell const * c = cast(data);
-        return str_data_t(c->valBegin, c->end);
+        return StringRange(c->valBegin, c->end);
     }
 
     int64_t getTimestamp(void const * data) const
@@ -173,21 +173,21 @@ class DynamicCellErasure::Interpreter : public CellInterpreter
 
 public:
     // Interpreter interface
-    str_data_t getRow(void const * data) const
+    StringRange getRow(void const * data) const
     {
         DynamicCellErasure const * c = cast(data);
-        return str_data_t(c->buf.get(), c->colBegin);
+        return StringRange(c->buf.get(), c->colBegin);
     }
 
-    str_data_t getColumn(void const * data) const
+    StringRange getColumn(void const * data) const
     {
         DynamicCellErasure const * c = cast(data);
-        return str_data_t(c->colBegin, c->end);
+        return StringRange(c->colBegin, c->end);
     }
 
-    str_data_t getValue(void const * data) const
+    StringRange getValue(void const * data) const
     {
-        return str_data_t();
+        return StringRange();
     }
 
     int64_t getTimestamp(void const * data) const

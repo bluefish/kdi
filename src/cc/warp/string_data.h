@@ -70,42 +70,25 @@ struct warp::StringData : public boost::noncopyable
         if(this == &o)
             return 0;
         else
-            return string_compare_3way(
+            return string_compare(
                 begin(), end(), o.begin(), o.end());
     }
     bool operator<(StringData const & o) const {
-        return this != &o && string_compare(
+        return this != &o && string_less(
             begin(), end(), o.begin(), o.end());
     }
 
     /// Output string data ranges to BuilderBlock streams using
     /// StringData formatting.
-    struct OutputWrapper : public str_data_t
+    struct Wrapper : public StringRange
     {
-        typedef str_data_t super;
-        template <class Range>
-        OutputWrapper(Range const & r) : super(r) {}
-        template <class It>
-        OutputWrapper(It first, It last) : super(first,last) {}
+        typedef StringRange super;
+        explicit Wrapper(strref_t s) : super(s) {}
     };
     /// Wrap some string data for Builder output as a StringData type.
-    template <class Range>
-    static OutputWrapper wrap(Range const & r)
+    static Wrapper wrap(strref_t s)
     {
-        return OutputWrapper(r);
-    }
-    /// Wrap some string data for Builder output as a StringData type.
-    template <class It>
-    static OutputWrapper wrap(It first, It last)
-    {
-        return OutputWrapper(first,last);
-    }
-    /// Wrap a string for Builder output as a StringData type.  Do not
-    /// wrap temporaries or immediate data.
-    static OutputWrapper wrapStr(std::string const & s)
-    {
-        char const * p = s.c_str();
-        return OutputWrapper(p, p + s.size());
+        return Wrapper(s);
     }
 };
 
@@ -115,26 +98,26 @@ struct warp::StringData : public boost::noncopyable
 //----------------------------------------------------------------------------
 namespace warp
 {
-    inline bool operator<(StringData const & a, str_data_t const & b)
+    inline bool operator<(StringData const & a, strref_t b)
     {
-        return string_compare(a.begin(), a.end(), b.begin(), b.end());
+        return string_less(a.begin(), a.end(), b.begin(), b.end());
     }
 
-    inline bool operator<(str_data_t const & a, StringData const & b)
+    inline bool operator<(strref_t a, StringData const & b)
     {
-        return string_compare(a.begin(), a.end(), b.begin(), b.end());
+        return string_less(a.begin(), a.end(), b.begin(), b.end());
     }
 
     inline bool operator<(StringData const & a, std::string const & b)
     {
-        return string_compare(a.begin(), a.end(),
-                              b.c_str(), b.c_str() + b.size());
+        return string_less(a.begin(), a.end(),
+                           b.c_str(), b.c_str() + b.size());
     }
 
     inline bool operator<(std::string const & a, StringData const & b)
     {
-        return string_compare(a.c_str(), a.c_str() + a.size(),
-                              b.begin(), b.end());
+        return string_less(a.c_str(), a.c_str() + a.size(),
+                           b.begin(), b.end());
     }
 }
 
@@ -152,7 +135,7 @@ namespace warp
     }
 
     inline BuilderBlock & operator<<(
-        BuilderBlock & b, StringData::OutputWrapper const & s)
+        BuilderBlock & b, StringData::Wrapper const & s)
     {
         uint32_t sz = s.size();
         b.append(sz);

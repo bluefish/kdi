@@ -45,7 +45,7 @@ namespace xml {
 class warp::xml::XmlParser
 {
 public:
-    typedef HashMap<str_data_t, str_data_t, HsiehHash> AttrMap;
+    typedef HashMap<StringRange, StringRange, HsiehHash> AttrMap;
 
 public:
     XmlParser();
@@ -53,9 +53,9 @@ public:
 
     void parse(FilePtr const & f, bool clean=false);
 
-    virtual void startElement(str_data_t const & name, AttrMap const & attrs) {}
-    virtual void endElement(str_data_t const & name) {}
-    virtual void characterData(str_data_t const & data) {}
+    virtual void startElement(strref_t name, AttrMap const & attrs) {}
+    virtual void endElement(strref_t name) {}
+    virtual void characterData(strref_t data) {}
 };
 
 

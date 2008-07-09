@@ -28,7 +28,7 @@ using namespace std;
 
 BOOST_AUTO_UNIT_TEST(strseq)
 {
-    str_data_t const DATA[] = {
+    StringRange const DATA[] = {
         binary_data("", 0),
         binary_data("llama", 5),
         binary_data("\0" "cat" "\0" "\0", 6),
@@ -43,7 +43,7 @@ BOOST_AUTO_UNIT_TEST(strseq)
     {
         for(size_t j = i; j < N; ++j)
         {
-            vector<str_data_t> t(DATA+i, DATA+j);
+            vector<StringRange> t(DATA+i, DATA+j);
             string s = encodeStringSequence(t);
             vector<string> d = decodeStringSequence(s);
             

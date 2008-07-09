@@ -18,7 +18,7 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <warp/strutil.h>
 #include <warp/string_interval.h>
 
@@ -168,7 +168,7 @@ private:
                     break;
 
                 default:
-                    raise<ValueError>("unexpected operator: %s", str_data_t(begin, end));
+                    raise<ValueError>("unexpected operator: %s", StringRange(begin, end));
             }
         }
     };
@@ -194,30 +194,30 @@ private:
             {
                 case OP_GT:
                     if(op2 == OP_LT || op2 == OP_LTE)
-                        raise<ValueError>("bad interval: %s", str_data_t(begin, end));
+                        raise<ValueError>("bad interval: %s", StringRange(begin, end));
                     ival.setUpperBound(val1, BT_EXCLUSIVE);
                     break;
 
                 case OP_GTE:
                     if(op2 == OP_LT || op2 == OP_LTE)
-                        raise<ValueError>("bad interval: %s", str_data_t(begin, end));
+                        raise<ValueError>("bad interval: %s", StringRange(begin, end));
                     ival.setUpperBound(val1, BT_INCLUSIVE);
                     break;
 
                 case OP_LT:
                     if(op2 == OP_GT || op2 == OP_GTE)
-                        raise<ValueError>("bad interval: %s", str_data_t(begin, end));
+                        raise<ValueError>("bad interval: %s", StringRange(begin, end));
                     ival.setLowerBound(val1, BT_EXCLUSIVE);
                     break;
 
                 case OP_LTE:
                     if(op2 == OP_GT || op2 == OP_GTE)
-                        raise<ValueError>("bad interval: %s", str_data_t(begin, end));
+                        raise<ValueError>("bad interval: %s", StringRange(begin, end));
                     ival.setLowerBound(val1, BT_INCLUSIVE);
                     break;
 
                 default:
-                    raise<ValueError>("unexpected operator: %s", str_data_t(begin, end));
+                    raise<ValueError>("unexpected operator: %s", StringRange(begin, end));
             }
 
             switch(op2)
@@ -239,7 +239,7 @@ private:
                     break;
 
                 default:
-                    raise<ValueError>("unexpected operator: %s", str_data_t(begin, end));
+                    raise<ValueError>("unexpected operator: %s", StringRange(begin, end));
             }
         }
     };
@@ -325,7 +325,7 @@ private:
                     break;
 
                 default:
-                    raise<ValueError>("unexpected operator: %s", str_data_t(begin, end));
+                    raise<ValueError>("unexpected operator: %s", StringRange(begin, end));
             }
         }
     };
@@ -351,30 +351,30 @@ private:
             {
                 case OP_GT:
                     if(op2 == OP_LT || op2 == OP_LTE)
-                        raise<ValueError>("bad interval: %s", str_data_t(begin, end));
+                        raise<ValueError>("bad interval: %s", StringRange(begin, end));
                     ival.setUpperBound(val1, BT_EXCLUSIVE);
                     break;
 
                 case OP_GTE:
                     if(op2 == OP_LT || op2 == OP_LTE)
-                        raise<ValueError>("bad interval: %s", str_data_t(begin, end));
+                        raise<ValueError>("bad interval: %s", StringRange(begin, end));
                     ival.setUpperBound(val1, BT_INCLUSIVE);
                     break;
 
                 case OP_LT:
                     if(op2 == OP_GT || op2 == OP_GTE)
-                        raise<ValueError>("bad interval: %s", str_data_t(begin, end));
+                        raise<ValueError>("bad interval: %s", StringRange(begin, end));
                     ival.setLowerBound(val1, BT_EXCLUSIVE);
                     break;
 
                 case OP_LTE:
                     if(op2 == OP_GT || op2 == OP_GTE)
-                        raise<ValueError>("bad interval: %s", str_data_t(begin, end));
+                        raise<ValueError>("bad interval: %s", StringRange(begin, end));
                     ival.setLowerBound(val1, BT_INCLUSIVE);
                     break;
 
                 default:
-                    raise<ValueError>("unexpected operator: %s", str_data_t(begin, end));
+                    raise<ValueError>("unexpected operator: %s", StringRange(begin, end));
             }
 
             switch(op2)
@@ -396,7 +396,7 @@ private:
                     break;
 
                 default:
-                    raise<ValueError>("unexpected operator: %s", str_data_t(begin, end));
+                    raise<ValueError>("unexpected operator: %s", StringRange(begin, end));
             }
         }
     };

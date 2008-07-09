@@ -21,7 +21,7 @@
 
 #include <unittest/main.h>
 #include <warp/uri.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <warp/vstring.h>
 #include <ex/exception.h>
 #include <boost/test/test_tools.hpp>
@@ -69,31 +69,31 @@ namespace
         Uri u(uri);
 
         // Make sure components are what we expect
-        if(u.scheme != string_wrapper(scheme))
+        if(u.scheme != scheme)
         {
             r = false;
             r.message() << "\n  u.scheme != scheme ("
                         << u.scheme << " != " << scheme << ")";
         }
-        if(u.authority != string_wrapper(authority))
+        if(u.authority != authority)
         {
             r = false;
             r.message() << "\n  u.authority != authority ("
                         << u.authority << " != " << authority << ")";
         }
-        if(u.path != string_wrapper(path))
+        if(u.path != path)
         {
             r = false;
             r.message() << "\n  u.path != path ("
                         << u.path << " != " << path << ")";
         }
-        if(u.query != string_wrapper(query))
+        if(u.query != query)
         {
             r = false;
             r.message() << "\n  u.query != query ("
                         << u.query << " != " << query << ")";
         }
-        if(u.fragment != string_wrapper(fragment))
+        if(u.fragment != fragment)
         {
             r = false;
             r.message() << "\n  u.fragment != fragment ("

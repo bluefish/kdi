@@ -50,7 +50,7 @@ namespace {
             // Character has no successor, so prefix has no
             // equal-length successor.  Return a shorter successor if
             // one exists.
-            return getPrefixSuccessor(str_data_t(prefix.begin(), last),
+            return getPrefixSuccessor(StringRange(prefix.begin(), last),
                                       result);
         }
     }

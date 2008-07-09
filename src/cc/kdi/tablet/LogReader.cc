@@ -74,16 +74,16 @@ bool LogReader::get(Cell & x)
     if(nextCell->value)
     {
         // It's a regular cell
-        x = makeCell(nextCell->key.row,
-                     nextCell->key.column,
+        x = makeCell(*nextCell->key.row,
+                     *nextCell->key.column,
                      nextCell->key.timestamp,
-                     nextCell->value);
+                     *nextCell->value);
     }
     else
     {
         // It's an erasure
-        x = makeCellErasure(nextCell->key.row,
-                            nextCell->key.column,
+        x = makeCellErasure(*nextCell->key.row,
+                            *nextCell->key.column,
                             nextCell->key.timestamp);
     }
 

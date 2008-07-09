@@ -39,16 +39,24 @@ BOOST_AUTO_UNIT_TEST(basic)
     {
         // Test with stripping
         LineIterator x(TEST, strlen(TEST));
-        str_data_t line;
+        StringRange line;
     
-        BOOST_CHECK(x.get(line, true) && line == "line 1");
-        BOOST_CHECK(x.get(line, true) && line == "line 2");
-        BOOST_CHECK(x.get(line, true) && line == "line 3");
-        BOOST_CHECK(x.get(line, true) && line == "");
-        BOOST_CHECK(x.get(line, true) && line == "");
-        BOOST_CHECK(x.get(line, true) && line == " ");
-        BOOST_CHECK(x.get(line, true) && line == "");
-        BOOST_CHECK(x.get(line, true) && line == "end line");
+        BOOST_CHECK_EQUAL(x.get(line, true), true);
+        BOOST_CHECK_EQUAL(line, "line 1");
+        BOOST_CHECK_EQUAL(x.get(line, true), true);
+        BOOST_CHECK_EQUAL(line, "line 2");
+        BOOST_CHECK_EQUAL(x.get(line, true), true);
+        BOOST_CHECK_EQUAL(line, "line 3");
+        BOOST_CHECK_EQUAL(x.get(line, true), true);
+        BOOST_CHECK_EQUAL(line, "");
+        BOOST_CHECK_EQUAL(x.get(line, true), true);
+        BOOST_CHECK_EQUAL(line, "");
+        BOOST_CHECK_EQUAL(x.get(line, true), true);
+        BOOST_CHECK_EQUAL(line, " ");
+        BOOST_CHECK_EQUAL(x.get(line, true), true);
+        BOOST_CHECK_EQUAL(line, "");
+        BOOST_CHECK_EQUAL(x.get(line, true), true);
+        BOOST_CHECK_EQUAL(line, "end line");
 
         // Should be EOF
         BOOST_CHECK(!x.get(line, true));
@@ -60,16 +68,24 @@ BOOST_AUTO_UNIT_TEST(basic)
     {
         // Test without stripping
         LineIterator x(TEST, strlen(TEST));
-        str_data_t line;
+        StringRange line;
     
-        BOOST_CHECK(x.get(line, false) && line == "line 1\n");
-        BOOST_CHECK(x.get(line, false) && line == "line 2\r");
-        BOOST_CHECK(x.get(line, false) && line == "line 3\r\n");
-        BOOST_CHECK(x.get(line, false) && line == "\r\n");
-        BOOST_CHECK(x.get(line, false) && line == "\r");
-        BOOST_CHECK(x.get(line, false) && line == " \n");
-        BOOST_CHECK(x.get(line, false) && line == "\r");
-        BOOST_CHECK(x.get(line, false) && line == "end line");
+        BOOST_CHECK_EQUAL(x.get(line, false), true);
+        BOOST_CHECK_EQUAL(line, "line 1\n");
+        BOOST_CHECK_EQUAL(x.get(line, false), true);
+        BOOST_CHECK_EQUAL(line, "line 2\r");
+        BOOST_CHECK_EQUAL(x.get(line, false), true);
+        BOOST_CHECK_EQUAL(line, "line 3\r\n");
+        BOOST_CHECK_EQUAL(x.get(line, false), true);
+        BOOST_CHECK_EQUAL(line, "\r\n");
+        BOOST_CHECK_EQUAL(x.get(line, false), true);
+        BOOST_CHECK_EQUAL(line, "\r");
+        BOOST_CHECK_EQUAL(x.get(line, false), true);
+        BOOST_CHECK_EQUAL(line, " \n");
+        BOOST_CHECK_EQUAL(x.get(line, false), true);
+        BOOST_CHECK_EQUAL(line, "\r");
+        BOOST_CHECK_EQUAL(x.get(line, false), true);
+        BOOST_CHECK_EQUAL(line, "end line");
 
         // Should be EOF
         BOOST_CHECK(!x.get(line, false));

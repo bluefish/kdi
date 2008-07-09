@@ -67,7 +67,7 @@ namespace
             }
         }
 
-        void startElement(str_data_t const & name, AttrMap const & attrs)
+        void startElement(strref_t name, AttrMap const & attrs)
         {
             flush();
 
@@ -75,9 +75,9 @@ namespace
                 % reprString(name)
                 << endl;
 
-            vector<str_data_t> keys = attrs.getKeys();
+            vector<StringRange> keys = attrs.getKeys();
             std::sort(keys.begin(), keys.end());
-            for(vector<str_data_t>::const_iterator ki = keys.begin();
+            for(vector<StringRange>::const_iterator ki = keys.begin();
                 ki != keys.end(); ++ki)
             {
                 out << format("attr %s = %s")
@@ -87,7 +87,7 @@ namespace
             }
         }
 
-        void endElement(str_data_t const & name)
+        void endElement(strref_t name)
         {
             flush();
 
@@ -96,7 +96,7 @@ namespace
                 << endl;
         }
 
-        void characterData(str_data_t const & data)
+        void characterData(strref_t data)
         {
             buffer.insert(buffer.end(), data.begin(), data.end());
         }

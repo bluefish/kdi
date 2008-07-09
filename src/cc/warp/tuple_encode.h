@@ -22,10 +22,11 @@
 #ifndef WARP_TUPLE_ENCODE_H
 #define WARP_TUPLE_ENCODE_H
 
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <warp/zero_escape.h>
 #include <warp/tuple.h>
 #include <ex/exception.h>
+#include <boost/range/iterator_range.hpp>
 #include <algorithm>
 #include <vector>
 #include <string>
@@ -98,7 +99,7 @@ namespace warp {
                 raise<ValueError>("invalid tuple-encoded string");
             }
 
-            *outIt = zeroUnescape(str_data_t(p, pp));
+            *outIt = zeroUnescape(StringRange(p, pp));
             ++outIt;
             p = pp + 2;
         }
@@ -186,10 +187,10 @@ namespace warp {
             }
 
             oss.str(std::string());
-            oss << ZeroUnescape(str_data_t(encoded.begin(), p));
+            oss << ZeroUnescape(StringRange(encoded.begin(), p));
             tuple.get_head() = oss.str();
 
-            decodeTuple(str_data_t(p+2, encoded.end()),
+            decodeTuple(StringRange(p+2, encoded.end()),
                         tuple.get_tail(), oss);
         }
 

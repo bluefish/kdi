@@ -81,9 +81,9 @@ class NetTable::Scanner
 
         bool operator<(kdi::marshal::CellKey const & o) const
         {
-            if(int cmp = string_compare_3way(string_wrapper(row), string_wrapper(o.row)))
+            if(int cmp = string_compare(row, *o.row))
                 return cmp < 0;
-            else if(int cmp = string_compare_3way(string_wrapper(column), string_wrapper(o.column)))
+            else if(int cmp = string_compare(column, *o.column))
                 return cmp < 0;
             else
                 return o.timestamp < timestamp;
@@ -216,8 +216,8 @@ public:
         if(next == end && !refillBuffer())
             return false;
 
-        x = makeCell(next->key.row, next->key.column, next->key.timestamp,
-                     next->value);
+        x = makeCell(*next->key.row, *next->key.column,
+                     next->key.timestamp, *next->value);
         ++next;
         return true;
     }

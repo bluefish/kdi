@@ -116,7 +116,7 @@ BOOST_PYTHON_MODULE(pykdi)
 {
     //docstring_options doc_opts(true);
 
-    to_python_converter<warp::str_data_t, strdata_converter>();
+    to_python_converter<warp::StringRange, strdata_converter>();
 
     PyTable::defineWrapper();
     PyScan::defineWrapper();

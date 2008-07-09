@@ -21,7 +21,7 @@
 
 #include <warp/xml/xml_parser.h>
 #include <warp/charmap.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <boost/noncopyable.hpp>
 
 extern "C" {
@@ -36,22 +36,22 @@ namespace
 {
     void startElementCb(void * me, XML_Char const * n, XML_Char const ** a)
     {
-        str_data_t name(n, n + strlen(n));
+        StringRange name(n, n + strlen(n));
         XmlParser::AttrMap attrs;
         for(size_t i = 0; a[i]; i += 2)
-            attrs.set(string_wrapper(a[i]), string_wrapper(a[i+1]));
+            attrs.set(StringRange(a[i]), StringRange(a[i+1]));
         reinterpret_cast<XmlParser *>(me)->startElement(name, attrs);
     }
 
     void endElementCb(void * me, XML_Char const * n)
     {
-        str_data_t name(n, n + strlen(n));
+        StringRange name(n, n + strlen(n));
         reinterpret_cast<XmlParser *>(me)->endElement(name);
     }
 
     void characterDataCb(void * me, XML_Char const * d, int dlen)
     {
-        str_data_t data(d, d + dlen);
+        StringRange data(d, d + dlen);
         reinterpret_cast<XmlParser *>(me)->characterData(data);
     }
 }

@@ -23,7 +23,7 @@
 
 #include <warp/util.h>
 #include <warp/strutil.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <flux/stream.h>
 #include <stdint.h>
 #include <assert.h>
@@ -60,13 +60,13 @@ class sdstore::CellInterpreter
 public:
     virtual ~CellInterpreter() {}
 
-    virtual warp::str_data_t getRow(void const * data) const = 0;
-    virtual warp::str_data_t getColumn(void const * data) const = 0;
-    virtual warp::str_data_t getValue(void const * data) const = 0;
+    virtual warp::StringRange getRow(void const * data) const = 0;
+    virtual warp::StringRange getColumn(void const * data) const = 0;
+    virtual warp::StringRange getValue(void const * data) const = 0;
     virtual int64_t getTimestamp(void const * data) const = 0;
 
-    virtual warp::str_data_t getColumnFamily(void const * data) const;
-    virtual warp::str_data_t getColumnQualifier(void const * data) const;
+    virtual warp::StringRange getColumnFamily(void const * data) const;
+    virtual warp::StringRange getColumnQualifier(void const * data) const;
 
     virtual bool isErasure(void const * data) const;
 
@@ -133,35 +133,35 @@ public:
     }
 
     /// Get row name of cell
-    warp::str_data_t getRow() const
+    warp::StringRange getRow() const
     {
         assert(!isNull());
         return interp->getRow(data);
     }
 
     /// Get column name of cell
-    warp::str_data_t getColumn() const
+    warp::StringRange getColumn() const
     {
         assert(!isNull());
         return interp->getColumn(data);
     }
 
     /// Get column family of cell
-    warp::str_data_t getColumnFamily() const
+    warp::StringRange getColumnFamily() const
     {
         assert(!isNull());
         return interp->getColumnFamily(data);
     }
 
     /// Get column qualifier of cell
-    warp::str_data_t getColumnQualifier() const
+    warp::StringRange getColumnQualifier() const
     {
         assert(!isNull());
         return interp->getColumnQualifier(data);
     }
 
     /// Get value of cell
-    warp::str_data_t getValue() const
+    warp::StringRange getValue() const
     {
         assert(!isNull());
         return interp->getValue(data);
@@ -172,7 +172,7 @@ public:
     T const & getValueAs() const
     {
         assert(!isNull());
-        warp::str_data_t v(getValue());
+        warp::StringRange v(getValue());
         if(v.size() < sizeof(T))
         {
             using namespace ex;
@@ -224,10 +224,10 @@ public:
         }
         else
         {
-            using warp::string_compare_3way;
-            if(int cmp = string_compare_3way(getRow(), o.getRow()))
+            using warp::string_compare;
+            if(int cmp = string_compare(getRow(), o.getRow()))
                 return cmp < 0;
-            else if(int cmp = string_compare_3way(getColumn(), o.getColumn()))
+            else if(int cmp = string_compare(getColumn(), o.getColumn()))
                 return cmp < 0;
             else
                 return o.getTimestamp() < getTimestamp();

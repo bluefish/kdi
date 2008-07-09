@@ -269,14 +269,14 @@ namespace
                     {
                         // Normal Cell
                         x = makeCell(
-                            cellIt->key.row, cellIt->key.column,
-                            cellIt->key.timestamp, cellIt->value);
+                            *cellIt->key.row, *cellIt->key.column,
+                            cellIt->key.timestamp, *cellIt->value);
                     }
                     else
                     {
                         // Null value means erasure Cell
                         x = makeCellErasure(
-                            cellIt->key.row, cellIt->key.column,
+                            *cellIt->key.row, *cellIt->key.column,
                             cellIt->key.timestamp);
                     }
                     ++cellIt;

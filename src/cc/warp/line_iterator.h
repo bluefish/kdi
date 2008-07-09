@@ -55,7 +55,7 @@ public:
     /// include it.
     /// @return true if the sequence contained another line, false at
     /// the end of the buffer
-    bool get(str_data_t & x, bool strip)
+    bool get(StringRange & x, bool strip)
     {
         // Check to see if we're at the end of the buffer
         if(lineEnd == bufferEnd)
@@ -98,7 +98,7 @@ public:
 
         // Set the result and return.  Either include the ending
         // delimiter or not depending on the strip setting.
-        x = str_data_t(lineBegin, strip ? stripEnd : lineEnd);
+        x = StringRange(lineBegin, strip ? stripEnd : lineEnd);
         return true;
     }
 
@@ -113,7 +113,7 @@ public:
     /// the end of the buffer
     bool get(std::string & x, bool strip)
     {
-        str_data_t s;
+        StringRange s;
         if(!get(s, strip))
             return false;
 

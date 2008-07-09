@@ -22,7 +22,7 @@
 #ifndef WARP_TIMESTAMP_H
 #define WARP_TIMESTAMP_H
 
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <stdint.h>
 #include <iostream>
 

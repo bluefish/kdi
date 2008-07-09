@@ -22,7 +22,7 @@
 #ifndef WARP_ZERO_ESCAPE_H
 #define WARP_ZERO_ESCAPE_H
 
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <ex/exception.h>
 #include <ostream>
 #include <string>
@@ -62,10 +62,10 @@ namespace warp {
 //----------------------------------------------------------------------------
 // ZeroEscape
 //----------------------------------------------------------------------------
-class warp::ZeroEscape : public warp::str_data_t
+class warp::ZeroEscape : public warp::StringRange
 {
 public:
-    explicit ZeroEscape(strref_t str) : str_data_t(str) {}
+    explicit ZeroEscape(strref_t str) : StringRange(str) {}
 };
 
 namespace warp {
@@ -103,10 +103,10 @@ namespace warp {
 //----------------------------------------------------------------------------
 // ZeroUnescape
 //----------------------------------------------------------------------------
-class warp::ZeroUnescape : public warp::str_data_t
+class warp::ZeroUnescape : public warp::StringRange
 {
 public:
-    explicit ZeroUnescape(strref_t str) : str_data_t(str) {}
+    explicit ZeroUnescape(strref_t str) : StringRange(str) {}
 };
 
 namespace warp {

@@ -22,7 +22,7 @@
 #include <warp/uri.h>
 #include <warp/util.h>
 #include <warp/strutil.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <warp/vstring.h>
 #include <warp/charmap.h>
 #include <algorithm>
@@ -213,7 +213,7 @@ namespace
 //----------------------------------------------------------------------------
 // Uri
 //----------------------------------------------------------------------------
-str_data_t Uri::popScheme() const
+StringRange Uri::popScheme() const
 {
     if(!schemeDefined())
         return *this;
@@ -221,12 +221,12 @@ str_data_t Uri::popScheme() const
     // There is an explicit scheme, so *p is either '+' or ':' at this
     // point.  Either pop everything up to and including the '+', or
     // drop the whole scheme (up to and including the ':').
-    return str_data_t(++p, end());
+    return StringRange(++p, end());
 }
 
-str_data_t Uri::topScheme() const
+StringRange Uri::topScheme() const
 {
-    return str_data_t(
+    return StringRange(
         scheme.begin(),
         std::find(scheme.begin(), scheme.end(), '+')
         );
@@ -314,7 +314,7 @@ void Uri::resolve(Uri const & ref, VString & out, int allow) const
     {
         allowBaseQuery = 
             ALLOW(QUERY, PATH, (out.empty() && !this->path) || this->path ==
-                  str_data_t(&out[0]+pathBegin, &out[0]+out.size()) );
+                  StringRange(&out[0]+pathBegin, &out[0]+out.size()) );
     }
 
     // Query
@@ -349,11 +349,11 @@ void Uri::resolve(Uri const & ref, VString & out, int allow) const
 #if 0
 void Uri::resolve(Uri const & ref, VString & out, bool strict) const
 {
-    str_data_t scheme;
-    str_data_t auth;
-    str_data_t path;
-    str_data_t relPath;
-    str_data_t query;
+    StringRange scheme;
+    StringRange auth;
+    StringRange path;
+    StringRange relPath;
+    StringRange query;
 
     bool schemeDef = false;
     bool authDef = false;
@@ -512,11 +512,11 @@ void Uri::parse()
     pp = scanUriScheme(p, pEnd);
     if(pp != pEnd)
     {
-        scheme = str_data_t(p, pp);
+        scheme = StringRange(p, pp);
         p = pp + 1;
     }
     else
-        scheme = str_data_t(p, p);
+        scheme = StringRange(p, p);
     
     // Parse authority
     if(pEnd - p >= 2 && p[0] == '/' && p[1] == '/')
@@ -526,11 +526,11 @@ void Uri::parse()
             if(*pp == '/' || *pp == '?' || *pp == '#')
                 break;
         }
-        authority = str_data_t(p+2, pp);
+        authority = StringRange(p+2, pp);
         p = pp;
     }
     else
-        authority = str_data_t(p,p);
+        authority = StringRange(p,p);
 
     // Parse path
     for(pp = p; pp != pEnd; ++pp)
@@ -538,24 +538,24 @@ void Uri::parse()
         if(*pp == '?' || *pp == '#')
             break;
     }
-    path = str_data_t(p, pp);
+    path = StringRange(p, pp);
     p = pp;
 
     // Parse query
     if(p != pEnd && *p == '?')
     {
         pp = std::find(p+1, pEnd, '#');
-        query = str_data_t(p+1, pp);
+        query = StringRange(p+1, pp);
         p = pp;
     }
     else
-        query = str_data_t(p,p);
+        query = StringRange(p,p);
 
     // Parse fragment
     if(p != pEnd && *p == '#')
-        fragment = str_data_t(p+1, pEnd);
+        fragment = StringRange(p+1, pEnd);
     else
-        fragment = str_data_t(p,p);
+        fragment = StringRange(p,p);
 }
 
 
@@ -577,25 +577,25 @@ void UriAuthority::parse()
     if(pp == pEnd)
     {
         // no ':' or '@' -- it's all host
-        user = str_data_t(p,p);
-        pass = str_data_t(p,p);
-        host = str_data_t(p,pEnd);
-        port = str_data_t(pEnd,pEnd);
+        user = StringRange(p,p);
+        pass = StringRange(p,p);
+        host = StringRange(p,pEnd);
+        port = StringRange(pEnd,pEnd);
     }
     else if(*pp == '@')
     {
         // found '@' first -- user@(...)
-        user = str_data_t(p, pp);
-        pass = str_data_t(pp,pp);
+        user = StringRange(p, pp);
+        pass = StringRange(pp,pp);
         p = pp+1;
         pp = std::find(p, pEnd, ':');
-        host = str_data_t(p, pp);
+        host = StringRange(p, pp);
         if(pp == pEnd)
             // no ':' -- user@host
-            port = str_data_t(pEnd, pEnd);
+            port = StringRange(pEnd, pEnd);
         else
             // found ':' -- user@host:port
-            port = str_data_t(pp+1, pEnd);
+            port = StringRange(pp+1, pEnd);
     }
     else // *pp == ':'
     {
@@ -604,25 +604,25 @@ void UriAuthority::parse()
         if(ppp != pEnd)
         {
             // also found '@' -- user:pass@(...)
-            user = str_data_t(p, pp);
-            pass = str_data_t(pp+1, ppp);
+            user = StringRange(p, pp);
+            pass = StringRange(pp+1, ppp);
             p = ppp + 1;
             pp = std::find(p, pEnd, ':');
-            host = str_data_t(p, pp);
+            host = StringRange(p, pp);
             if(pp == pEnd)
                 // no second ':' -- user:pass@host
-                port = str_data_t(pEnd, pEnd);
+                port = StringRange(pEnd, pEnd);
             else
                 // found second ':' -- user:pass@host:port
-                port = str_data_t(pp+1, pEnd);
+                port = StringRange(pp+1, pEnd);
         }
         else
         {
             // no '@' -- host:(port)
-            user = str_data_t(p, p);
-            pass = str_data_t(p, p);
-            host = str_data_t(p, pp);
-            port = str_data_t(pp+1, pEnd);
+            user = StringRange(p, p);
+            pass = StringRange(p, p);
+            host = StringRange(p, pp);
+            port = StringRange(pp+1, pEnd);
         }
     }
 }
@@ -633,7 +633,7 @@ void UriAuthority::parse()
 //----------------------------------------------------------------------------
 void UriQuery::parseFirst()
 {
-    value = str_data_t(begin(), begin());
+    value = StringRange(begin(), begin());
     parseNext();
 }
 
@@ -653,13 +653,13 @@ void UriQuery::parseNext()
         if(*pp == '&' || *pp == '=')
             break;
     }
-    key = str_data_t(p, pp);
+    key = StringRange(p, pp);
 
     // Search for value if we terminated the key on '='
     if(pp != pEnd && *pp == '=')
-        value = str_data_t(pp+1, std::find(pp+1, pEnd, '&'));
+        value = StringRange(pp+1, std::find(pp+1, pEnd, '&'));
     else
-        value = str_data_t(pp, pp);
+        value = StringRange(pp, pp);
 }
 
 //----------------------------------------------------------------------------
@@ -765,7 +765,7 @@ namespace
     }
 
     inline void recode(VString & out, VString & tmp,
-                       str_data_t const & in,
+                       strref_t in,
                        bool convertPlus, char const * safe)
     {
         recode(out, tmp, in.begin(), in.end(),
@@ -853,7 +853,7 @@ std::string warp::uriNormalize(strref_t uri)
         if(a.port)
         {
             if(scheme == SCHEME_OTHER ||
-               a.port != string_wrapper(DEFAULT_PORT[scheme]))
+               a.port != DEFAULT_PORT[scheme])
             {
                 out += ':';
                 out += a.port;

@@ -21,6 +21,7 @@
 
 #include <warp/timestamp.h>
 #include <warp/parsing/timestamp.h>
+#include <warp/strutil.h>
 #include <ex/exception.h>
 #include <sys/time.h>
 

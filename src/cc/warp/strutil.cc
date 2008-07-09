@@ -114,7 +114,7 @@ size_t warp::parseSize(std::string const & sizeString)
 //----------------------------------------------------------------------------
 // stripHtml
 //----------------------------------------------------------------------------
-std::string warp::stripHtml(str_data_t const & src, bool insertSpaces)
+std::string warp::stripHtml(strref_t src, bool insertSpaces)
 {
     std::string output;
 

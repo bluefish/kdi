@@ -32,18 +32,18 @@ using namespace std;
 //----------------------------------------------------------------------------
 // CellInterpreter
 //----------------------------------------------------------------------------
-str_data_t CellInterpreter::getColumnFamily(void const * data) const
+StringRange CellInterpreter::getColumnFamily(void const * data) const
 {
-    str_data_t c = this->getColumn(data);
+    StringRange c = this->getColumn(data);
     char const * sep = find(c.begin(), c.end(), ':');
-    return str_data_t(c.begin(), sep);
+    return StringRange(c.begin(), sep);
 }
 
-str_data_t CellInterpreter::getColumnQualifier(void const * data) const
+StringRange CellInterpreter::getColumnQualifier(void const * data) const
 {
-    str_data_t c = this->getColumn(data);
+    StringRange c = this->getColumn(data);
     char const * sep = find_after(c.begin(), c.end(), ':');
-    return str_data_t(sep, c.end());
+    return StringRange(sep, c.end());
 }
 
 bool CellInterpreter::isErasure(void const * data) const
@@ -53,9 +53,9 @@ bool CellInterpreter::isErasure(void const * data) const
 
 bool CellInterpreter::isLess(void const * data1, void const * data2) const
 {
-    if(int cmp = string_compare_3way(getRow(data1), getRow(data2)))
+    if(int cmp = string_compare(getRow(data1), getRow(data2)))
         return cmp < 0;
-    else if(int cmp = string_compare_3way(getColumn(data1), getColumn(data2)))
+    else if(int cmp = string_compare(getColumn(data1), getColumn(data2)))
         return cmp < 0;
     else
         return getTimestamp(data2) < getTimestamp(data1);
@@ -69,9 +69,9 @@ std::ostream & sdstore::operator<<(std::ostream & o, Cell const & cell)
     if(!cell)
         return o << "(NULL)";
 
-    str_data_t row = cell.getRow();
-    str_data_t col = cell.getColumn();
-    str_data_t val = cell.getValue();
+    StringRange row = cell.getRow();
+    StringRange col = cell.getColumn();
+    StringRange val = cell.getValue();
     int64_t ts = cell.getTimestamp();
 
     o << '('

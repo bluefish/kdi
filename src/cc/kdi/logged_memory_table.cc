@@ -138,13 +138,13 @@ LoggedMemoryTable::LoggedMemoryTable(string const & logFn,
             if(cell->value)
             {
                 // Set cell
-                super::set(cell->row, cell->column,
-                           cell->timestamp, cell->value);
+                super::set(*cell->row, *cell->column,
+                           cell->timestamp, *cell->value);
             }
             else
             {
                 // Erase cell
-                super::erase(cell->row, cell->column,
+                super::erase(*cell->row, *cell->column,
                              cell->timestamp);
             }
         }

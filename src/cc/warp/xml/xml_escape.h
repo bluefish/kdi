@@ -22,7 +22,7 @@
 #ifndef WARP_XML_XML_ESCAPE_H
 #define WARP_XML_XML_ESCAPE_H
 
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <iostream>
 #include <algorithm>
 
@@ -41,10 +41,10 @@ namespace xml {
 // XmlEscape
 //----------------------------------------------------------------------------
 class warp::xml::XmlEscape :
-    public warp::str_data_t
+    public warp::StringRange
 {
 public:
-    explicit XmlEscape(strref_t str) : str_data_t(str) {}
+    explicit XmlEscape(strref_t str) : StringRange(str) {}
 
 private:
     friend std::ostream & operator<<(std::ostream &, XmlEscape const &);

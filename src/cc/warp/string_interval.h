@@ -23,7 +23,7 @@
 #define WARP_STRING_INTERVAL_H
 
 #include <warp/interval.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <string>
 
 namespace warp {

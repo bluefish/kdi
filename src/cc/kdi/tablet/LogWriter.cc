@@ -65,7 +65,7 @@ void LogWriter::logCells(string const & tabletName,
     // tabletName.
     RecordBuilder b;
     CellBlockBuilder cb(&b);
-    b << (*b.subblock(4) << StringData::wrapStr(tabletName));
+    b << (*b.subblock(4) << StringData::wrap(tabletName));
 
     // Fill the CellBlock
     for(vector<Cell>::const_iterator i = cells.begin(); i != cells.end(); ++i)

@@ -23,7 +23,7 @@
 
 #include <kdi/sdstore_cell.h>
 #include <warp/atomic.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <boost/scoped_array.hpp>
 
 namespace sdstore {

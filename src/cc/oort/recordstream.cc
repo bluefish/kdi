@@ -166,7 +166,7 @@ RecordStreamHandle oort::openStream(string const & uriFn, int flags)
 
             if(compEnd != uri.scheme.end())
             {
-                str_data_t headScheme(uri.scheme.begin(), compEnd);
+                StringRange headScheme(uri.scheme.begin(), compEnd);
                 //cerr << format("  scheme: %s\n") % headScheme;
                 func = tbl.get(headScheme, 0);
             }

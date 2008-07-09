@@ -23,7 +23,6 @@
 #define WARP_STRUTIL_H
 
 #include <ex/exception.h>
-#include <boost/range.hpp>
 #include <warp/charmap.h>
 #include <string>
 #include <algorithm>
@@ -31,77 +30,10 @@
 #include <assert.h>
 #include <string.h>
 
+#include <warp/string_range.h>
+
 namespace warp
 {
-    /// Type representing a range of constant character data.
-    typedef boost::iterator_range<char const *> str_data_t;
-
-    /// Wrap a std::string object.  NB: you're asking for a segfault
-    /// if you try to wrap a temporary/immediate string, so don't do
-    /// that.
-    inline str_data_t wrap(std::string const & s)
-    {
-        char const * p = s.c_str();
-        return str_data_t(p, p + s.size());
-    }
-
-    /// Construct a std::string object from a str_data_t.
-    inline std::string str(str_data_t const & s)
-    {
-        return std::string(s.begin(), s.end());
-    }
-
-    /// Append a str_data_t range to a string.
-    inline std::string & operator+=(std::string & a, str_data_t const & b)
-    {
-        a.append(b.begin(), b.end());
-        return a;
-    }
-
-    /// Do lexicographical comparison of strings interpreted as
-    /// unsigned bytes.
-    inline bool string_compare(char const * a0, char const * a1,
-                               char const * b0, char const * b1)
-    {
-        ptrdiff_t aLen = a1 - a0;
-        ptrdiff_t bLen = b1 - b0;
-        assert(aLen >= 0 && bLen >= 0);
-        if(aLen < bLen)
-            return memcmp(a0, b0, aLen) <= 0;
-        else
-            return memcmp(a0, b0, bLen) < 0;
-    }
-
-    /// Do lexicographical comparison of strings interpreted as
-    /// unsigned bytes.
-    inline bool string_compare(str_data_t const & a, str_data_t const & b)
-    {
-        return string_compare(a.begin(), a.end(),
-                              b.begin(), b.end());
-    }
-
-    /// Do three-way lexicographical comparison of strings interpreted
-    /// as unsigned bytes.
-    inline int string_compare_3way(char const * a0, char const * a1,
-                                   char const * b0, char const * b1)
-    {
-        ptrdiff_t aLen = a1 - a0;
-        ptrdiff_t bLen = b1 - b0;
-        assert(aLen >= 0 && bLen >= 0);
-        if(int cmp = memcmp(a0, b0, (aLen < bLen ? aLen : bLen)))
-            return cmp;
-        else
-            return aLen - bLen;
-    }
-
-    /// Do three-way lexicographical comparison of strings interpreted
-    /// as unsigned bytes.
-    inline int string_compare_3way(str_data_t const & a, str_data_t const & b)
-    {
-        return string_compare_3way(a.begin(), a.end(),
-                                   b.begin(), b.end());
-    }
-
 
     //------------------------------------------------------------------------
     // replace_inplace
@@ -151,7 +83,7 @@ namespace warp
     /// If \c insertSpaces is true, a space will be inserted where
     /// tags used to seperate text sections.  Otherwise tags are
     /// simply removed, which may cause some words to run together.
-    std::string stripHtml(str_data_t const & src, bool insertSpaces);
+    std::string stripHtml(strref_t src, bool insertSpaces);
 
     /// Get string representation of 4-byte typecode
     std::string typeString(uint32_t typecode);
@@ -181,7 +113,7 @@ namespace warp
     /// and non-printable characters are represented as C string
     /// escape codes.  It \c quote is true, the returned string will
     /// include surrounding double quotes.
-    inline std::string reprString(str_data_t const & s, bool quote=true)
+    inline std::string reprString(strref_t s, bool quote=true)
     {
         return reprString(s.begin(), s.end(), quote);
     }
@@ -505,14 +437,14 @@ namespace warp
 
     /// Convert a string to an integer
     template <class Int>
-    bool parseInt(Int & r, str_data_t const & s)
+    bool parseInt(Int & r, strref_t s)
     {
         return parseInt(r, s.begin(), s.end());
     }
 
     /// Convert a string to an integer
     template <class Int>
-    Int parseInt(str_data_t const & s)
+    Int parseInt(strref_t s)
     {
         Int x;
         if(parseInt<Int>(x, s))
@@ -545,13 +477,13 @@ namespace warp
     }
 
     /// Convert a string to a float
-    inline bool parseFloat(float & f, str_data_t const & s)
+    inline bool parseFloat(float & f, strref_t s)
     {
         return parseFloat(f, s.begin(), s.end());
     }
 
     /// Convert a string to a float
-    inline float parseFloat(str_data_t const & s)
+    inline float parseFloat(strref_t s)
     {
         float f;
         if(!parseFloat(f, s))

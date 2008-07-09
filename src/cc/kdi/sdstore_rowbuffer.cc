@@ -84,7 +84,7 @@ bool RowBuffer::insert(Cell const & c)
     }
 }
 
-str_data_t RowBuffer::getRow() const
+StringRange RowBuffer::getRow() const
 {
     if(empty())
         raise<RuntimeError>("getRow() on empty RowBuffer");
@@ -102,7 +102,7 @@ Cell const * RowBuffer::getCell(strref_t column) const
     while(lo < hi)
     {
         Cell const * mid = lo + (hi-lo) / 2;
-        str_data_t midColumn = mid->getColumn();
+        StringRange midColumn = mid->getColumn();
         if(column < midColumn)
             hi = mid;
         else if(column == midColumn)
@@ -113,21 +113,21 @@ Cell const * RowBuffer::getCell(strref_t column) const
     return 0;
 }
 
-str_data_t RowBuffer::getValue(strref_t column) const
+StringRange RowBuffer::getValue(strref_t column) const
 {
     Cell const * c = getCell(column);
-    return c ? c->getValue() : str_data_t();
+    return c ? c->getValue() : StringRange();
 }
 
 ostream & sdstore::operator<<(ostream & o, RowBuffer const & row)
 {
-    str_data_t rowName = row.getRow();
+    StringRange rowName = row.getRow();
     o << '[' << reprString(rowName.begin(), rowName.end(), true);
     for(RowBuffer::cell_iterator ci = row.begin(); ci != row.end(); ++ci)
     {
-        str_data_t col = ci->getColumn();
+        StringRange col = ci->getColumn();
         int64_t ts = ci->getTimestamp();
-        str_data_t val = ci->getValue();
+        StringRange val = ci->getValue();
 
         o << ",\n   ("
           << reprString(col.begin(), col.end(), true)

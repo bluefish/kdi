@@ -58,7 +58,7 @@ namespace warp
             return operator()(cStr, end);
         }
 
-        result_t operator()(str_data_t const & s) const {
+        result_t operator()(strref_t s) const {
             return operator()(s.begin(), s.end());
         }
 
@@ -92,7 +92,7 @@ namespace warp
             return operator()(cStr, end);
         }
 
-        result_t operator()(str_data_t const & s) const {
+        result_t operator()(strref_t s) const {
             return operator()(s.begin(), s.end());
         }
 

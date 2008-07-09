@@ -165,7 +165,7 @@ public:
     {
     }
 
-    virtual void startElement(str_data_t const & name, AttrMap const & attrs)
+    virtual void startElement(strref_t name, AttrMap const & attrs)
     {
         if(name == "cell")
         {
@@ -183,14 +183,14 @@ public:
         else if(name == "v")
             collector = &value;
     }
-    virtual void endElement(str_data_t const & name)
+    virtual void endElement(strref_t name)
     {
         collector = 0;
         if(name == "cell")
         {
             int64_t ts;
             if(!row.empty() && !column.empty() &&
-               parseInt(ts, string_wrapper(timestamp)))
+               parseInt(ts, timestamp))
             {
                 table->set(row, column, ts, value);
             }
@@ -200,7 +200,7 @@ public:
             }
         }
     }
-    virtual void characterData(str_data_t const & data)
+    virtual void characterData(strref_t data)
     {
         if(collector)
             collector->insert(collector->end(), data.begin(), data.end());
@@ -242,7 +242,7 @@ public:
     {
     }
 
-    virtual void startElement(str_data_t const & name, AttrMap const & attrs)
+    virtual void startElement(strref_t name, AttrMap const & attrs)
     {
         if(name == "element")
         {
@@ -256,7 +256,7 @@ public:
             value.clear();
         }
     }
-    virtual void endElement(str_data_t const & name)
+    virtual void endElement(strref_t name)
     {
         if(name == "document")
         {
@@ -279,7 +279,7 @@ public:
         }
         collectValue = false;
     }
-    virtual void characterData(str_data_t const & data)
+    virtual void characterData(strref_t data)
     {
         if(collectValue)
             value += data;

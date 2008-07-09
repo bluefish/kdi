@@ -42,10 +42,10 @@ class sdstore::RowStream : public CellStream
     CellStreamHandle input;
     Cell rowCell;
     Cell pending;
-    warp::str_data_t rowName;
+    warp::StringRange rowName;
     bool firstInRow;
 
-    inline bool isSameRow(warp::str_data_t const & o)
+    inline bool isSameRow(warp::strref_t o)
     {
         return (rowName.size() == o.size() &&
                 (rowName.begin() == o.begin() ||

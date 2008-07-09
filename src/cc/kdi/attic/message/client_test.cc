@@ -21,7 +21,7 @@
 #include <kdi/attic/message/channel.h>
 #include <warp/options.h>
 #include <warp/uri.h>
-#include <warp/strref.h>
+#include <warp/string_range.h>
 #include <warp/syncqueue.h>
 #include <ex/exception.h>
 

@@ -46,7 +46,7 @@ public:
 
     explicit VString(super const & o) : super(o) {}
     explicit VString(std::string const & s) : super(s.begin(), s.end()) {}
-    explicit VString(str_data_t const & s) : super(s.begin(), s.end()) {}
+    explicit VString(strref_t s) : super(s.begin(), s.end()) {}
 
     template <class It>
     VString(It first, It last) : super(first, last) {}
@@ -58,7 +58,7 @@ public:
         return *this;
     }
 
-    my_t & operator=(str_data_t const & s)
+    my_t & operator=(strref_t s)
     {
         clear();
         insert(end(), s.begin(), s.end());
@@ -92,7 +92,7 @@ public:
         return *this;
     }
 
-    my_t & operator+=(str_data_t const & s)
+    my_t & operator+=(strref_t s)
     {
         insert(end(), s.begin(), s.end());
         return *this;
@@ -124,7 +124,7 @@ public:
             begin(), end(), o.begin(), o.end());
     }
 
-    bool operator<(str_data_t const & o) const
+    bool operator<(strref_t o) const
     {
         return std::lexicographical_compare(
             begin(), end(), o.begin(), o.end());
@@ -148,7 +148,7 @@ public:
             std::equal(begin(), end(), o.begin());
     }
 
-    bool operator==(str_data_t const & o) const
+    bool operator==(strref_t o) const
     {
         return size() == (size_t)o.size() &&
             std::equal(begin(), end(), o.begin());
@@ -172,7 +172,7 @@ public:
         return !(*this == o);
     }
 
-    bool operator!=(str_data_t const & o) const
+    bool operator!=(strref_t o) const
     {
         return !(*this == o);
     }
@@ -236,18 +236,18 @@ namespace warp
     /// Wrap a VString object.  NB: you're asking for a segfault if
     /// you try to wrap a temporary/immediate string, so don't do
     /// that.
-    inline str_data_t wrap(VString const & s)
+    inline StringRange wrap(VString const & s)
     {
         char const * p = &s[0];
-        return str_data_t(p, p + s.size());
+        return StringRange(p, p + s.size());
     }
 
-    inline bool operator==(str_data_t const & a, VString const & b)
+    inline bool operator==(strref_t a, VString const & b)
     {
         return b == a;
     }
 
-    inline bool operator!=(str_data_t const & a, VString const & b)
+    inline bool operator!=(strref_t a, VString const & b)
     {
         return b != a;
     }
