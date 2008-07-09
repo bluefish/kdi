@@ -316,6 +316,13 @@ void Tablet::replaceTables(std::vector<TablePtr> const & oldTables,
 
     // Remove old files
     std::for_each(deadFiles.begin(), deadFiles.end(), fs::remove);
+
+    // XXX: Check to see if we should split
+    // if(getDiskSize() >= SPLIT_THRESHOLD)
+    // {
+    //     std::string splitRow = chooseSplitRow();
+    //     configMgr->suggestSplit(name, splitRow);
+    // }
 }
 
 namespace

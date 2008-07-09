@@ -1,0 +1,98 @@
+#----------------------------------------------------------------------------
+# Notes on a new distributed serving arch for tablet servers
+#----------------------------------------------------------------------------
+
+Following the BigTable model, we'll have three classes of servers
+exposing the following interfaces:
+
+  1) LockServer
+     a) Lock service interface
+  2) TabletMaster
+     a) Table meta interface
+  3) TabletServer
+     a) Table interface
+     b) Master admin interface
+     c) Tablet migration interface
+
+In addition, we will have two client libraries:
+
+  1) Lock service client for interface 1a.
+  2) Table API client wraps interfaces 2a and 3a.
+
+The LockServer and lock service client are an assumed external
+service.  An application programmer only needs to work with the Table
+API client.
+
+Internally, the Table API client talks to TabletServers through the
+Table interface (3a).  It will also need some minor interactions with
+the LockServer through the lock service client and the TabletMaster
+through the Table meta interface (2a).
+
+The TabletServer uses the Lock service client to talk to the
+LockServer.  It only needs to check and hold a lock on a single file.
+It may contact another TabletServer through the Tablet migration
+interface (3c) if prompted to do so by the TabletMaster.
+
+The TabletMaster makes more extensive use of the Lock service client.
+It holds a master lock and checks for server files to find
+TabletServers.  It will also contact the TabletServers through the
+Master admin interface (3b) in response to Table meta requests from
+clients, to perform maintenance tasks, or for periodic status checks.
+
+
+#----------------------------------------------------------------------------
+# Some half-considered brain detritus
+#----------------------------------------------------------------------------
+
+client:
+
+   createTable:
+   deleteTable:
+      master->doX
+
+TabletServer:
+
+   LOCAL_THREAD masterSession():
+
+       while not shutdown:
+           try:
+               master = findMaster()
+           except NoMasterError:
+               log('no master... waiting a bit')
+               sleep(5)
+               continue
+
+           while not shutdown:
+               statusInfo = getStatusInfo()
+               try:
+                   master->keepAlive(statusInfo)
+               except MasterDiedError:
+                   break
+
+
+   LOCAL main():
+       
+       LockServer lockServer(serviceName);
+       LockHandle serverLock = lockServer->open(
+          "/kdi/servers/"+myaddr,
+          NO_EVENTS,
+          MODE_LOCK | MODE_WRITE | MODE_EPHEMERAL );
+       serverLock->lock(EXCLUSIVE)
+       serverLock->setContents(myaddr)
+
+       fireItUp()
+
+       serverLock->close();
+
+
+   RPC serveTablet(tabletName):      # tabletName == metaTableRow == (tableName, lastRow)
+ 
+       LockHandle tabletLock = lockServer->open(
+          "
+      
+
+TabletMaster:
+
+   LOCAL main():
+   
+       LockHandle masterLock = lockServer->open("/kdi/master")
