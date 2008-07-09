@@ -150,7 +150,7 @@ public:
 
     bool operator==(strref_t o) const
     {
-        return size() == (size_t)o.size() &&
+        return size() == o.size() &&
             std::equal(begin(), end(), o.begin());
     }
 

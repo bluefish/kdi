@@ -111,7 +111,7 @@ void BloomFilter::load(strref_t buf)
     size_t nSeeds = deserialize<uint32_t>(p);
     p += 4;
 
-    if((size_t)buf.size() != (4 + 4 + (4 * nSeeds) + ((nBits + 7) / 8)))
+    if(buf.size() != (4 + 4 + (4 * nSeeds) + ((nBits + 7) / 8)))
         raise<ValueError>("Bloom filter data is wrong size");
 
     seeds.clear();
