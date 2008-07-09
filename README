@@ -121,3 +121,13 @@ In addition, there are a couple of prefix schemes:
 At some point I'll need to put together some usage examples and
 documentation.  In the mean time, RTFS!  :)
 
+
+#----------------------------------------------------------------------------
+# Known issues
+#----------------------------------------------------------------------------
+
+2008-07-09: The warp/plugin unit test fails when using Boost 1.35.
+This is a bug in Boost:
+  http://svn.boost.org/trac/boost/ticket/1723
+Also see:
+  http://groups.google.com/group/boost-list/browse_thread/thread/4bb3cc616d41ce01/c6ed8bdc48e081cc?lnk=raot
