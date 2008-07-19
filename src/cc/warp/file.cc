@@ -25,8 +25,11 @@
 #include <warp/hashmap.h>
 #include <warp/perflog.h>
 #include <warp/perffile.h>
+#include <warp/varsub.h>
+#include <warp/md5.h>
 #include <ex/exception.h>
 #include <algorithm>
+#include <time.h>
 
 using namespace warp;
 using namespace ex;
@@ -183,6 +186,67 @@ FilePtr File::open(string const & uriFn, int flags)
     }
 
     return fp;
+}
+
+std::pair<FilePtr, std::string>
+File::openUnique(std::string const & uriPattern, int maxTries)
+{
+    std::map<std::string, std::string> vars;
+    std::string & val = vars["UNIQUE"];
+
+    for(int i = 0; i < maxTries; ++i)
+    {
+        // Generate a random substring
+        {
+            // "Random" == md5("$loop" + "$time")
+            Md5 md5;
+            {
+                clock_t x = clock();
+                md5.update(&i, sizeof(i));
+                md5.update(&x, sizeof(x));
+            }
+            uint8_t digest[16];
+            md5.digest(digest);
+            
+            // Use the MD5 bits to make a string of 6 alphabetic
+            // characters
+            val.clear();
+            char const * const CHR = "abcdefghijklmnopqrstuvwxyzABCDEFG";
+            for(int j = 0; j < 6; ++j)
+                val += CHR[digest[j] & 31];
+        }
+
+        // Substitute the random string to get a URI to test for
+        // uniqueness
+        std::string uri = varsub(uriPattern, vars);
+
+        // XXX: This is a bit cheesy.  A better solution would be to
+        // make varsub accept an arbitrary value functor and have that
+        // complain if the string references variables other than
+        // $UNIQUE or doesn't reference $UNIQUE at least once.
+        if(uri.find(val) == std::string::npos)
+            raise<ValueError>("missing $UNIQUE variable");
+
+        // Try to open the file.  This will only work if the file
+        // doesn't already exist.
+        try {
+            FilePtr fp = File::open(uri, O_RDWR | O_CREAT | O_EXCL);
+            
+            // Got one!  Return the result.
+            return std::make_pair(fp, uri);
+        }
+        catch(IOError const &) {
+            // Assuming the open failed because the file already
+            // exists.
+            // XXX: Should have a specific FileExistsError.  The
+            // exception hierarchy is too vague.
+            
+            // Try again...
+        }
+    }
+
+    raise<IOError>("failed to find a unique filename after %d attempt(s): %s",
+                   maxTries, uriPattern);
 }
 
 void File::registerScheme(char const * scheme, FileOpenFunc * func)

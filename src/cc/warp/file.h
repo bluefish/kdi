@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string>
+#include <utility>
 #include <fcntl.h>
 #include <boost/shared_ptr.hpp>
 
@@ -151,6 +152,17 @@ public:
     /// all possible flag combinations.  They will throw
     /// NotImplementedError if the given flag set is unsupported.
     static FilePtr open(std::string const & uri, int flags);
+
+    /// Open a new, unique file for reading and writing.  It will be
+    /// created using O_CREAT | O_EXCL with a unique filename derived
+    /// from the given pattern.  The pattern should contain "$UNIQUE",
+    /// "$(UNIQUE)", or "${UNIQUE}".  It will be replaced with random
+    /// strings of alphanumeric characters until a unique filename is
+    /// found.  If a unique filename cannot be found after maxTries
+    /// attempts, the function will throw an error.
+    /// @returns The opened file and the unique name.
+    static std::pair<FilePtr, std::string>
+    openUnique(std::string const & uriPattern, int maxTries=5);
 
     /// Open an input file handle for the given URI.
     static FilePtr input(std::string const & uri)
