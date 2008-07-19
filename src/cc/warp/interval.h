@@ -177,6 +177,11 @@ public:
     inline bool operator>(my_t const & o)  const { return o < *this; }
     inline bool operator<=(my_t const & o) const { return !(o < *this); }
     inline bool operator>=(my_t const & o) const { return !(*this < o); }
+    inline bool operator==(my_t const & o) const
+    {
+        return !((*this < o) || (o < *this));
+    }
+    inline bool operator!=(my_t const & o) const { return !(*this == o); }
 };
 
 namespace warp
