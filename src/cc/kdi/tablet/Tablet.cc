@@ -88,8 +88,6 @@ Tablet::Tablet(std::string const & name,
     EX_CHECK_NULL(syncLogger);
     EX_CHECK_NULL(compactor);
 
-    rows = configMgr->getTabletRange(name);
-
     bool configChanged = loadConfig();
     if(configChanged)
         saveConfig();
@@ -209,8 +207,7 @@ void Tablet::saveConfig() const
         }
     }
 
-    TabletConfig cfg;
-    cfg.setTableUris(uris);
+    TabletConfig cfg(rows, uris);
     configMgr->setTabletConfig(name, cfg);
 }
 
@@ -220,6 +217,7 @@ bool Tablet::loadConfig()
 
     LockedPtr<tables_t> tables(syncTables);
     TabletConfig cfg = configMgr->getTabletConfig(name);
+    rows = cfg.getTabletRows();
     TabletConfig::uri_vec_t const & uris = cfg.getTableUris();
     for(TabletConfig::uri_vec_t::const_iterator i = uris.begin();
         i != uris.end(); ++i)

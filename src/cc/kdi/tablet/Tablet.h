@@ -117,8 +117,20 @@ public:
                        TablePtr const & newTable,
                        std::string const & newTableUri);
 
+    /// Get the priority for compacting this Tablet.  Higher
+    /// priorities are more important.  Priorities under 2 are
+    /// ignored.
     size_t getCompactionPriority() const;
+
+    /// Perform a Tablet compaction.  This method should only be
+    /// called by the Compact thread.
     void doCompaction();
+
+    /// Get the row range served by this Tablet.
+    warp::Interval<std::string> const & getRows() const
+    {
+        return rows;
+    }
 
 private:
     void saveConfig() const;

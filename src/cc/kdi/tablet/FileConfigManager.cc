@@ -49,7 +49,7 @@ class FileConfigManager::DirInfo
 {
     std::string dir;
     size_t nextIndex;
-        
+
 public:
     DirInfo(std::string const & dir) :
         dir(dir), nextIndex(0)
@@ -161,9 +161,7 @@ TabletConfig FileConfigManager::getTabletConfig(std::string const & tabletName)
     }
 
     // Put URI list in a TabletConfig
-    TabletConfig cfg;
-    cfg.setTableUris(uris);
-    return cfg;
+    return TabletConfig(Interval<string>().setInfinite(), uris);
 }
 
 void FileConfigManager::setTabletConfig(std::string const & tabletName, TabletConfig const & cfg)

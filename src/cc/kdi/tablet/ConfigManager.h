@@ -52,9 +52,6 @@ public:
     /// Save the config for the named Tablet.
     virtual void setTabletConfig(std::string const & tabletName, TabletConfig const & cfg) = 0;
 
-    /// Get the row range the named Tablet should serve.
-    virtual warp::Interval<std::string> getTabletRange(std::string const & tabletName) = 0;
-
     /// Get a unique path for a new tablet file.  The directory
     /// containing the returned file should already exist.  If the
     /// returned file exists, it will be overwritten.

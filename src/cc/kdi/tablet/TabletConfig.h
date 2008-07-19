@@ -21,6 +21,7 @@
 #ifndef KDI_TABLET_TABLETCONFIG_H
 #define KDI_TABLET_TABLETCONFIG_H
 
+#include <warp/interval.h>
 #include <string>
 #include <vector>
 
@@ -41,9 +42,22 @@ public:
     typedef std::vector<std::string> uri_vec_t;
 
 private:
+    warp::Interval<std::string> rows;
     uri_vec_t tableUris;
 
 public:
+    /// Create a TabletConfig object.  The rows parameter indicates
+    /// the row span covered by the Tablet.  The uris parameter should
+    /// contain the ordered list of table URIs that make up the
+    /// Tablet.  Each table URI should be suitable for passing to
+    /// ConfigManager::openTable().
+    explicit TabletConfig(warp::Interval<std::string> const & rows,
+                          uri_vec_t const & uris) :
+        rows(rows),
+        tableUris(uris)
+    {
+    }
+
     /// Get the ordered list of table URIs that make up the Tablet.
     /// Each table URI is suitable for passing to
     /// ConfigManager::openTable().
@@ -52,12 +66,10 @@ public:
         return tableUris;
     }
 
-    /// Set the ordered list of table URIs that make up the Tablet.
-    /// Each table URI should be suitable for passing to
-    /// ConfigManager::openTable().
-    void setTableUris(uri_vec_t const & uris)
+    /// Get the row range the Tablet should serve.
+    warp::Interval<std::string> const & getTabletRows() const
     {
-        tableUris = uris;
+        return rows;
     }
 };
 

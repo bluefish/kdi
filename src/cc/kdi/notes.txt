@@ -1,0 +1,158 @@
+How to store config in a meta table?
+
+
+Use case:
+
+   Start 16x table servers.  Tell one of them to load the root META
+   table.  Tell all of them to load further tables using the META
+   table.
+
+   Let $META be the location of the META table.
+
+   For all but the meta table server, start up with:
+      kdiNetServer --root data --meta $META --mode super
+
+   For the one serving the META table, use:
+      kdiNetServer --root data --meta $META --mode super
+         --load local/path/to/META.cfg
+
+   In the future, it would be nice not to have to restart the servers
+   in order to move the root META table.  We could make the following
+   RPC calls:
+
+      void setMetaLocation(string metaUri);
+
+      /// Load a fixed table from a file config.  These tables cannot
+      /// be moved or split.  Their configuration is saved to a
+      /// file-like object.
+      void loadFixedTable(string tableName, string fileConfigUri);
+
+      /// Unload any table.  This unloads all tablets that are part
+      /// of the table.
+      void unloadTable(string tableName);
+
+
+   For load balancing, we'd want to move individual tablets.  We also
+   want to load up full tables quickly.  What's the best way to do
+   that?
+
+   It also begs the question of whether there is such a thing as an
+   offline table.  Maybe all tablets are assumed to be loaded all the
+   time.  If a server crashes, the rest of the servers are expected to
+   take up the lost tablets.  If a new server is added, tablets may be
+   reshuffled to utilize it.
+
+   How about this: in steady state, all tablets are assigned to a
+   server.  Servers know which tablets they're responsible for.  They
+   may load the actual tablet data lazily, and they can drop the
+   tablet data when it hasn't been used in a while.
+      
+
+Startup procedure, proposal one:
+
+  1) Servers load tables given on the command line before doing
+     anything else.
+
+  2) Servers scan the META table for assigned tablets and add the them
+     to the server's namespace.
+
+  3) 
+
+  When a tablet server starts up, it should consult the META
+table for all the
+
+
+#----------------------------------------------------------------------------
+# 
+#----------------------------------------------------------------------------
+
+When we want to split a tablet, we need to make a new row in the meta
+table.  Say we have something like this:
+
+Orig tablet cell:
+  row = (table-X, row-C)
+  column = "config:"
+  value = {
+     firstRow = row-A
+     files = [ ... ]
+  }
+
+New tablet cells:
+  row = (table-X, row-B)
+  column = "config:"
+  value = {
+     firstRow = row-A
+     files = [ ... ]
+  }
+
+  row = (table-X, row-C)
+  column = "config:"
+  value = {
+     firstRow = row-B
+     files = [ ... ]
+  }
+
+Let these be abbreviated as orig=(C,a..c) and new=(B,a..b),(C,b..c).
+
+One meta table invariant is that there are no holes in the row space.
+If a scanner sees a hole in a meta table, it's because they're looking
+at something in the middle of an update.
+
+If the error is persistent, it's probably because something broke in
+the middle of an update and the table needs to be patched up.
+
+When the split cells are created, the files=[] section will be the
+same.  The only difference should be in the rows section.  The writer
+to the meta table will sync() before allowing the file set to diverge.
+If the sync() returns successfully, it is assumed that the new cells
+have been written in a durable way.
+
+If something breaks between the beginning of the meta table update and
+the completion of the sync, the initiating server (if it still exists)
+will have to pretend the split didn't happen.
+
+Failure scenarios...  The tablet server holding the meta table may
+write 0, 1, or 2 of the new cells.  If only one cell, it may be either
+one.  It should not be possible for the new meta cells to get mapped
+to different tablets in the meta table.  The earlier cell, (B,a..b),
+will be in the same tablet since the tablet contains everything at
+least down to A.
+
+If the failure happens after 0 or 2 cells have been written, there's
+nothing to worry about.  If only one of the new cells gets written we
+need to correct it the next time we try to load the tablet.  Here are
+the two options:
+
+Orig:        (A,?..a) (C,a..c)
+#1 written:  (A,?..a) (B,a..b) (C,a..c)
+#2 written:  (A,?..a) (C,b..c)
+
+A full-scan verification/repair procedure:
+  verifyMeta(table):
+    firstRow = -INF
+    scanner = metaScan(metaTable, table)
+    while (cfg = loadNextConfig(scanner)):
+       if cfg.firstRow < firstRow:
+          reportOverlap()  # case 1 -- delete prev cell to repair
+       else if cfg.firstRow > firstRow:
+          reportGap()      # case 2 -- fix current cell to repair
+       firstRow = cfg.lastRow
+
+A safe tablet load procedure:
+  loadTabletSafe(table,lastRow):
+    cfg = loadConfig(metaTable, table, lastRow)
+    scanner = metaScanFrom(metaTable, table, cfg.firstRow)
+    prev = loadNextConfig(scanner)
+    if prev == cfg:
+       reportGap()     # case 2
+    else:
+       prev2 = loadNextConfig(scanner)
+       if prev != cfg:
+          reportOverlap()   # case 1
+    ...
+
+This detection seems mostly right, but it's much less clear than the
+full scan verification procedure.  Repair is harder.  We need some
+cells that come earlier in the scan than our starting point.  We have
+to guess at a good starting point and keep retrying or scan from the
+beginning.

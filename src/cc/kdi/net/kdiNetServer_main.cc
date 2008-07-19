@@ -27,6 +27,8 @@
 #include <Ice/Ice.h>
 #include <boost/bind.hpp>
 #include <iostream>
+#include <vector>
+#include <string>
 
 // For LocalTable implementation
 #include <kdi/local/local_table.h>
@@ -37,6 +39,9 @@
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/FileConfigManager.h>
 
+// For SuperTablet implementation
+#include <kdi/tablet/MetaConfigManager.h>
+
 using namespace kdi;
 using namespace kdi::net;
 using namespace warp;
@@ -44,6 +49,86 @@ using namespace std;
 using namespace ex;
 
 namespace {
+
+    class SuperTabletMaker
+    {
+        // XXX: strangeness.  The fixed tables will need to load their
+        // configs out of a file like object.  All other tablets will
+        // have configs in the meta table.  The other config manager
+        // functions are common, I think.  New files and such will be
+        // generated in the normal way.  They will still share log
+        // files.  However, tables from a file config cannot be split.
+        // So we wind up with something like this:
+        //
+        // class CommonConfigManager : public ConfigManager { ... };
+        // class FileConfigManager : public ConfigManager {
+        //    CommonConfigManagerPtr common;
+        //    ...(file config)...
+        // };
+        // class MetaConfigManager : public ConfigManager {
+        //    CommonConfigManagerPtr common;
+        //    ...(meta config)...
+        // };
+        //
+        // The CommonConfigManager need not actually be a
+        // ConfigManager.  It can just hold the common state.
+      
+
+        tablet::MetaConfigManagerPtr metaConfigMgr;
+        tablet::SharedLoggerSyncPtr logger;
+        tablet::SharedCompactorPtr compactor;
+
+    public:
+        SuperTabletMaker(std::string const & root,
+                         std::string const & metaTable,
+                         std::vector<std::string> const & fixedTables) :
+            metaConfigMgr(new tablet::MetaConfigManager(root)),
+            logger(new Synchronized<tablet::SharedLogger>(metaConfigMgr)),
+            compactor(new tablet::SharedCompactor)
+        {
+            log("SuperTabletMaker %p: created", this);
+
+            for(vector<string>::const_iterator i = fixedTables.begin();
+                i != fixedTables.end(); ++i)
+            {
+                log("Loading fixed table: %s", *i);
+                metaConfigMgr->loadFixedTable(*i);
+            }
+
+            log("Loading from META table: %s", metaTable);
+            metaConfigMgr->loadMeta(metaTable);
+        }
+        
+        ~SuperTabletMaker()
+        {
+            compactor->shutdown();
+            LockedPtr<tablet::SharedLogger>(*logger)->shutdown();
+
+            log("SuperTabletMaker %p: destroyed", this);
+        }
+
+        TablePtr makeTable(std::string const & name) const
+        {
+            // XXX : scan meta table ... or... not sure yet.  This
+            // gets called if a client has requested a table we don't
+            // know about.
+
+            // in some cases, that means the meta table has been
+            // updated.  but there's also the case of a request for an
+            // invalid table (not in the meta table).
+
+            // not sure yet how to connect tablets to clients.
+
+            return TablePtr();
+
+            //TablePtr p(
+            //    new tablet::SuperTablet(
+            //        name, configMgr, logger, compactor
+            //        )
+            //    );
+            //return p;
+        }
+    };
 
     class TabletMaker
     {
@@ -110,9 +195,32 @@ namespace {
             OptionParser op("%prog [ICE-parameters] [options]");
             {
                 using namespace boost::program_options;
+                op.addOption("mode,m", value<string>()->default_value("local"),
+                             "Server mode");
+
                 op.addOption("root,r", value<string>()->default_value("."),
-                             "Server root directory");
-                op.addOption("tablet,t", "Tablet server mode");
+                             "Root directory for tablet data");
+
+
+                // This option tells the super tablet server where to
+                // find the meta table for getting table config
+                // information.  It is fine for the server that hosts
+                // the META table to refer to itself.  It does not
+                // imply that the table should be loaded.
+
+
+                // Examples: --meta=kdi://host:port/META
+                //           --meta=dref://ls-host:port/some/node
+                op.addOption("meta,M", value<string>(),
+                             "Location of META table");
+
+                // The usual procedure for loading a table is to scan
+                // the META table for config information and load the
+                // tablets that are hosted by this server.  This won't
+                // work for loading the META table.  The server
+                // hosting the META table must load it separately.
+                op.addOption("load,l", value< vector<string> >(),
+                             "Preload a table and pin it to the server");
             }
 
             // Parse options
@@ -120,25 +228,48 @@ namespace {
             ArgumentList args;
             op.parse(ac, av, opt, args);
 
+            // Get the server mode
+            string mode;
+            if(!opt.get("mode", mode))
+                op.error("need --mode");
+
             // Get table root directory
             string tableRoot;
             if(!opt.get("root", tableRoot))
                 op.error("need --root");
 
-            // Set up table maker
+
+            // Init server based on mode
             boost::function<TablePtr (std::string const &)> tableMaker;
-            if(hasopt(opt, "tablet"))
-            {
-                log("Starting in Tablet mode");
-                boost::shared_ptr<TabletMaker> p(new TabletMaker(tableRoot));
-                tableMaker = boost::bind(&TabletMaker::makeTable, p, _1);
-            }
-            else
+            if(mode == "local")
             {
                 log("Starting in LocalTable mode");
                 boost::shared_ptr<LocalTableMaker> p(new LocalTableMaker(tableRoot));
                 tableMaker = boost::bind(&LocalTableMaker::makeTable, p, _1);
             }
+            else if(mode == "tablet")
+            {
+                log("Starting in Tablet mode");
+                boost::shared_ptr<TabletMaker> p(new TabletMaker(tableRoot));
+                tableMaker = boost::bind(&TabletMaker::makeTable, p, _1);
+            }
+            else if(mode == "super")
+            {
+                string meta;
+                if(!opt.get("meta", meta))
+                    op.error("need --meta");
+
+                vector<string> load;
+                opt.get("load", load);
+
+                log("Starting in SuperTablet mode");
+                boost::shared_ptr<SuperTabletMaker> p(
+                    new SuperTabletMaker(tableRoot, meta, load)
+                    );
+                tableMaker = boost::bind(&SuperTabletMaker::makeTable, p, _1);
+            }
+            else
+                op.error("unknown --mode: " + mode);
 
             // Create adapter
             Ice::CommunicatorPtr ic = communicator();
