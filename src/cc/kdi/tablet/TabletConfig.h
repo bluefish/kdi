@@ -38,38 +38,46 @@ namespace tablet {
 //----------------------------------------------------------------------------
 class kdi::tablet::TabletConfig
 {
-public:
-    typedef std::vector<std::string> uri_vec_t;
-
 private:
     warp::Interval<std::string> rows;
-    uri_vec_t tableUris;
+    std::vector<std::string> uris;
+    std::string server;
 
 public:
     /// Create a TabletConfig object.  The rows parameter indicates
     /// the row span covered by the Tablet.  The uris parameter should
     /// contain the ordered list of table URIs that make up the
     /// Tablet.  Each table URI should be suitable for passing to
-    /// ConfigManager::openTable().
-    explicit TabletConfig(warp::Interval<std::string> const & rows,
-                          uri_vec_t const & uris) :
+    /// ConfigManager::openTable().  The server parameter is the name
+    /// of the server responsible for the Tablet.
+    TabletConfig(warp::Interval<std::string> const & rows,
+                 std::vector<std::string> const & uris,
+                 std::string const & server) :
         rows(rows),
-        tableUris(uris)
+        uris(uris),
+        server(server)
     {
     }
 
     /// Get the ordered list of table URIs that make up the Tablet.
     /// Each table URI is suitable for passing to
     /// ConfigManager::openTable().
-    uri_vec_t const & getTableUris() const
+    std::vector<std::string> const & getTableUris() const
     {
-        return tableUris;
+        return uris;
     }
 
     /// Get the row range the Tablet should serve.
     warp::Interval<std::string> const & getTabletRows() const
     {
         return rows;
+    }
+
+    /// Get the assigned server for the Tablet.  This may be empty if
+    /// the tablet is unassigned.
+    std::string const & getServer() const
+    {
+        return server;
     }
 };
 

@@ -67,7 +67,6 @@ namespace {
         else if(!rows.isInfinite())
             raise<RowNotInTabletError>("<< >>");
     }
-
 }
 
 //----------------------------------------------------------------------------
@@ -88,9 +87,26 @@ Tablet::Tablet(std::string const & name,
     EX_CHECK_NULL(syncLogger);
     EX_CHECK_NULL(compactor);
 
-    bool configChanged = loadConfig();
-    if(configChanged)
-        saveConfig();
+    loadConfig(configMgr->getTabletConfig(name));
+}
+
+Tablet::Tablet(std::string const & name,
+               ConfigManagerPtr const & configMgr,
+               SharedLoggerSyncPtr const & syncLogger,
+               SharedCompactorPtr const & compactor,
+               TabletConfig const & cfg) :
+    name(name),
+    configMgr(configMgr),
+    syncLogger(syncLogger),
+    compactor(compactor)
+{
+    log("Tablet %p %s: created", this, getName());
+
+    EX_CHECK_NULL(configMgr);
+    EX_CHECK_NULL(syncLogger);
+    EX_CHECK_NULL(compactor);
+
+    loadConfig(cfg);
 }
 
 Tablet::~Tablet()
@@ -194,9 +210,36 @@ CellStreamPtr Tablet::getMergedScan(ScanPredicate const & pred) const
     return merge;
 }
 
+void Tablet::loadConfig(TabletConfig const & cfg)
+{
+    // Grab the server name and row interval
+    server = cfg.getServer();
+    rows = cfg.getTabletRows();
+
+    // Load our tables
+    LockedPtr<tables_t> tables(syncTables);
+    tables->clear();
+    bool uriChanged = false;
+    vector<string> const & uris = cfg.getTableUris();
+    for(vector<string>::const_iterator i = uris.begin();
+        i != uris.end(); ++i)
+    {
+        std::pair<TablePtr, string> p = configMgr->openTable(*i);
+        tables->push_back(TableInfo(p.first, p.second, true));
+        
+        if(p.second != *i)
+            uriChanged = true;
+    }
+
+    // If a table URI changed during the load, resave our config
+    if(uriChanged)
+        saveConfig();
+}
+
 void Tablet::saveConfig() const
 {
-    TabletConfig::uri_vec_t uris;
+    // Build list of tables
+    vector<string> uris;
     {
         LockedPtr<tables_t const> tables(syncTables);
         uris.reserve(tables->size());
@@ -207,29 +250,9 @@ void Tablet::saveConfig() const
         }
     }
 
-    TabletConfig cfg(rows, uris);
+    // Save our config
+    TabletConfig cfg(rows, uris, server);
     configMgr->setTabletConfig(name, cfg);
-}
-
-bool Tablet::loadConfig()
-{
-    bool uriChanged = false;
-
-    LockedPtr<tables_t> tables(syncTables);
-    TabletConfig cfg = configMgr->getTabletConfig(name);
-    rows = cfg.getTabletRows();
-    TabletConfig::uri_vec_t const & uris = cfg.getTableUris();
-    for(TabletConfig::uri_vec_t::const_iterator i = uris.begin();
-        i != uris.end(); ++i)
-    {
-        std::pair<TablePtr, string> p = configMgr->openTable(*i);
-        tables->push_back(TableInfo(p.first, p.second, true));
-        
-        if(p.second != *i)
-            uriChanged = true;
-    }
-
-    return uriChanged;
 }
 
 void Tablet::addTable(TablePtr const & table, std::string const & tableUri)

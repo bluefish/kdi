@@ -1,12 +1,21 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// $Id: kdi/tablet/TabletName.cc $
-//
-// Created 2008/07/17
-//
-// Copyright 2008 Kosmix Corporation.  All rights reserved.
-// Kosmix PROPRIETARY and CONFIDENTIAL.
-//
+// Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
+// Created 2008-07-17
 // 
+// This file is part of KDI.
+// 
+// KDI is free software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or any later version.
+// 
+// KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+// 
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
 #include <kdi/tablet/TabletName.h>
@@ -19,7 +28,7 @@ using namespace warp;
 using namespace ex;
 using namespace std;
 
-TabletName::TabletName(std::string const & encodedName)
+TabletName::TabletName(strref_t encodedName)
 {
     string sep, last;
     decodeTuple(encodedName, tie(tableName, sep, last));
@@ -33,9 +42,9 @@ TabletName::TabletName(std::string const & encodedName)
                           reprString(encodedName));
 }
 
-TabletName::TabletName(std::string const & tableName,
+TabletName::TabletName(strref_t tableName,
                        warp::IntervalPoint<std::string> lastRow) :
-    tableName(tableName),
+    tableName(tableName.begin(), tableName.end()),
     lastRow(lastRow)
 {
     if(tableName.empty())

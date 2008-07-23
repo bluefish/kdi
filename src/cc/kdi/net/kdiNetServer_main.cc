@@ -41,6 +41,11 @@
 
 // For SuperTablet implementation
 #include <kdi/tablet/MetaConfigManager.h>
+#include <kdi/tablet/SuperTablet.h>
+
+// For getHostName
+#include <unistd.h>
+#include <cstring>
 
 using namespace kdi;
 using namespace kdi::net;
@@ -78,21 +83,25 @@ namespace {
         tablet::SharedLoggerSyncPtr logger;
         tablet::SharedCompactorPtr compactor;
 
+        tablet::ConfigManagerPtr fixedConfigMgr;
+        std::vector<std::string> fixedTables;
+
     public:
         SuperTabletMaker(std::string const & root,
                          std::string const & metaTable,
-                         std::vector<std::string> const & fixedTables) :
-            metaConfigMgr(new tablet::MetaConfigManager(root)),
+                         std::string const & server,
+                         std::vector<std::string> const & fixedTables_) :
+            metaConfigMgr(new tablet::MetaConfigManager(root, server)),
             logger(new Synchronized<tablet::SharedLogger>(metaConfigMgr)),
-            compactor(new tablet::SharedCompactor)
+            compactor(new tablet::SharedCompactor),
+            fixedTables(fixedTables_)
         {
             log("SuperTabletMaker %p: created", this);
 
-            for(vector<string>::const_iterator i = fixedTables.begin();
-                i != fixedTables.end(); ++i)
+            if(!fixedTables.empty())
             {
-                log("Loading fixed table: %s", *i);
-                metaConfigMgr->loadFixedTable(*i);
+                fixedConfigMgr = metaConfigMgr->getFixedAdapter();
+                std::sort(fixedTables.begin(), fixedTables.end());
             }
 
             log("Loading from META table: %s", metaTable);
@@ -109,6 +118,28 @@ namespace {
 
         TablePtr makeTable(std::string const & name) const
         {
+            if(std::binary_search(fixedTables.begin(), fixedTables.end(), name))
+            {
+                log("Load fixed table: %s", name);
+                TablePtr p(
+                    new tablet::Tablet(
+                        name, fixedConfigMgr, logger, compactor
+                        )
+                    );
+                return p;
+            }
+            else
+            {
+                log("Load table: %s", name);
+                TablePtr p(
+                    new tablet::SuperTablet(
+                        name, metaConfigMgr, logger, compactor
+                        )
+                    );
+                return p;
+            }
+
+
             // XXX : scan meta table ... or... not sure yet.  This
             // gets called if a client has requested a table we don't
             // know about.
@@ -119,14 +150,6 @@ namespace {
 
             // not sure yet how to connect tablets to clients.
 
-            return TablePtr();
-
-            //TablePtr p(
-            //    new tablet::SuperTablet(
-            //        name, configMgr, logger, compactor
-            //        )
-            //    );
-            //return p;
         }
     };
 
@@ -185,6 +208,15 @@ namespace {
         }
     };
 
+    std::string getHostName()
+    {
+        char buf[256];
+        if(0 == gethostname(buf, sizeof(buf)) && strcmp(buf, "localhost"))
+            return std::string(buf);
+        else
+            return std::string();
+    }
+
     class ServerApp
         : public virtual Ice::Application
     {
@@ -201,7 +233,6 @@ namespace {
                 op.addOption("root,r", value<string>()->default_value("."),
                              "Root directory for tablet data");
 
-
                 // This option tells the super tablet server where to
                 // find the meta table for getting table config
                 // information.  It is fine for the server that hosts
@@ -214,6 +245,10 @@ namespace {
                 op.addOption("meta,M", value<string>(),
                              "Location of META table");
 
+                op.addOption("server,s",
+                             value<string>()->default_value(getHostName()),
+                             "Name of server");
+                
                 // The usual procedure for loading a table is to scan
                 // the META table for config information and load the
                 // tablets that are hosted by this server.  This won't
@@ -256,15 +291,19 @@ namespace {
             else if(mode == "super")
             {
                 string meta;
-                if(!opt.get("meta", meta))
+                if(!opt.get("meta", meta) || meta.empty())
                     op.error("need --meta");
+
+                string server;
+                if(!opt.get("server", server) || server.empty())
+                    op.error("need --server");
 
                 vector<string> load;
                 opt.get("load", load);
 
                 log("Starting in SuperTablet mode");
                 boost::shared_ptr<SuperTabletMaker> p(
-                    new SuperTabletMaker(tableRoot, meta, load)
+                    new SuperTabletMaker(tableRoot, meta, server, load)
                     );
                 tableMaker = boost::bind(&SuperTabletMaker::makeTable, p, _1);
             }

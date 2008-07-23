@@ -153,7 +153,7 @@ TabletConfig FileConfigManager::getTabletConfig(std::string const & tabletName)
     Config state = LockedPtr<DirMap>(syncDirMap)->getDir(tabletName).loadState();
 
     // Get URI list from state
-    TabletConfig::uri_vec_t uris;
+    vector<string> uris;
     if(Config const * n = state.findChild("tables"))
     {
         for(size_t i = 0; i < n->numChildren(); ++i)
@@ -161,7 +161,7 @@ TabletConfig FileConfigManager::getTabletConfig(std::string const & tabletName)
     }
 
     // Put URI list in a TabletConfig
-    return TabletConfig(Interval<string>().setInfinite(), uris);
+    return TabletConfig(Interval<string>().setInfinite(), uris, "");
 }
 
 void FileConfigManager::setTabletConfig(std::string const & tabletName, TabletConfig const & cfg)
@@ -169,10 +169,10 @@ void FileConfigManager::setTabletConfig(std::string const & tabletName, TabletCo
     // Save a state file.
 
     // Build warp::Config state object from the URI list
-    TabletConfig::uri_vec_t const & uris = cfg.getTableUris();
+    vector<string> const & uris = cfg.getTableUris();
     warp::Config state;
     size_t idx = 0;
-    for(TabletConfig::uri_vec_t::const_iterator i = uris.begin();
+    for(vector<string>::const_iterator i = uris.begin();
         i != uris.end(); ++i, ++idx)
     {
         state.set(str(format("tables.i%d") % idx), *i);

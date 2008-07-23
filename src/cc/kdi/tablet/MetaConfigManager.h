@@ -1,17 +1,27 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// $Id: kdi/tablet/MetaConfigManager.h $
-//
-// Created 2008/07/14
-//
-// Copyright 2008 Kosmix Corporation.  All rights reserved.
-// Kosmix PROPRIETARY and CONFIDENTIAL.
-//
+// Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
+// Created 2008-07-14
 // 
+// This file is part of KDI.
+// 
+// KDI is free software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or any later version.
+// 
+// KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+// 
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
 #ifndef KDI_TABLET_METACONFIGMANAGER_H
 #define KDI_TABLET_METACONFIGMANAGER_H
 
+#include <kdi/cell.h>
 #include <kdi/tablet/ConfigManager.h>
 #include <boost/noncopyable.hpp>
 
@@ -37,9 +47,11 @@ class kdi::tablet::MetaConfigManager
 {
     TablePtr metaTable;
     std::string rootDir;
+    std::string serverName;
 
 public:
-    explicit MetaConfigManager(std::string const & rootDir);
+    MetaConfigManager(std::string const & rootDir,
+                      std::string const & serverName);
     ~MetaConfigManager();
 
     // ConfigManager API
@@ -49,8 +61,17 @@ public:
     virtual std::string getNewLogFile();
     virtual std::pair<TablePtr, std::string> openTable(std::string const & uri);
 
-    void loadFixedTable(std::string const & tableName);
+    /// Get a ConfigManager adapter for fixed, file-based configs.
+    /// This will typically be used to load the root META table.
+    ConfigManagerPtr getFixedAdapter();
+
     void loadMeta(std::string const & metaTableUri);
+
+    TabletConfig getConfigFromCell(Cell const & configCell) const;
+    std::string getConfigCellValue(TabletConfig const & config) const;
+
+    std::string const & getServerName() const { return serverName; }
+    TablePtr const & getMetaTable() const;
 };
 
 

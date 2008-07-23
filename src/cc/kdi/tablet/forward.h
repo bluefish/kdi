@@ -38,6 +38,7 @@ namespace tablet {
     class SharedCompactor;
     class ConfigManager;
     class LogWriter;
+    class TabletConfig;
 
     typedef boost::shared_ptr<Tablet> TabletPtr;
     typedef boost::shared_ptr<Tablet const> TabletCPtr;

@@ -1,12 +1,21 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// $Id: kdi/tablet/MetaConfigManager.cc $
-//
-// Created 2008/07/14
-//
-// Copyright 2008 Kosmix Corporation.  All rights reserved.
-// Kosmix PROPRIETARY and CONFIDENTIAL.
-//
+// Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
+// Created 2008-07-14
 // 
+// This file is part of KDI.
+// 
+// KDI is free software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or any later version.
+// 
+// KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+// 
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
 #include <kdi/tablet/MetaConfigManager.h>
@@ -91,10 +100,15 @@ namespace
 //----------------------------------------------------------------------------
 // MetaConfigManager
 //----------------------------------------------------------------------------
-MetaConfigManager::MetaConfigManager(std::string const & rootDir) :
-    rootDir(rootDir)
+MetaConfigManager::MetaConfigManager(std::string const & rootDir,
+                                     std::string const & serverName) :
+    rootDir(rootDir), serverName(serverName)
 {
-    log("MetaConfigManager: root=%s", rootDir);
+    log("MetaConfigManager: root=%s, server=%s", rootDir, serverName);
+    if(!fs::isDirectory(rootDir))
+        raise<ValueError>("root directory doesn't exist: %s", rootDir);
+    if(serverName.empty())
+        raise<ValueError>("empty server name");
 
 }
 MetaConfigManager::~MetaConfigManager()
@@ -104,46 +118,17 @@ MetaConfigManager::~MetaConfigManager()
 
 TabletConfig MetaConfigManager::getTabletConfig(std::string const & encodedName)
 {
-    // Parse the tablet name
-    TabletName tabletName(encodedName);
-
     // Get the config cell for the named tablet out of the META table
     ostringstream pred;
     pred << "row=" << reprString(encodedName) << " and column='config'";
-    CellStreamPtr scanner = metaTable->scan(pred.str());
+    CellStreamPtr scanner = getMetaTable()->scan(pred.str());
     Cell configCell;
     if(!scanner->get(configCell))
         raise<RuntimeError>("Tablet has no config in META table: %s",
                             reprString(encodedName));
-
-    // Parse config from cell value
-    StringRange val = configCell.getValue();
-    FilePtr fp(new MemFile(val.begin(), val.size()));
-    Config state(fp);
-
-    // Get URI list from state
-    vector<string> uris;
-    if(Config const * n = state.findChild("tables"))
-    {
-        for(size_t i = 0; i < n->numChildren(); ++i)
-        {
-            uris.push_back(
-                resolveTableUri(rootDir, n->getChild(i).get())
-                );
-        }
-    }
-
-    // Get the row lower bound
-    IntervalPoint<string> minRow;
-    if(Config const * n = state.findChild("minRow"))
-        minRow = IntervalPoint<string>(n->get(), PT_EXCLUSIVE_LOWER_BOUND);
-    else
-        minRow = IntervalPoint<string>(string(), PT_INFINITE_LOWER_BOUND);
-
-    // Return the TabletConfig
-    return TabletConfig(
-        Interval<string>(minRow, tabletName.getLastRow()),
-        uris);
+    
+    // Load the config
+    return getConfigFromCell(configCell);
 }
 
 void MetaConfigManager::setTabletConfig(std::string const & encodedName, TabletConfig const & cfg)
@@ -155,45 +140,13 @@ void MetaConfigManager::setTabletConfig(std::string const & encodedName, TabletC
     Interval<string> const & rows = cfg.getTabletRows();
     if(rows.getUpperBound() != tabletName.getLastRow())
         raise<ValueError>("config upper bound does not match tablet name");
-
-    // Serialize tablet config using warp::Config
-    warp::Config state;
-
-    // Add URI list
-    vector<string> const & uris = cfg.getTableUris();
-    size_t idx = 0;
-    for(vector<string>::const_iterator i = uris.begin();
-        i != uris.end(); ++i, ++idx)
-    {
-        state.set(
-            str(format("tables.i%d") % idx),
-            unrootTableUri(rootDir, *i)
-            );
-    }
-    
-    // Set the min row
-    switch(rows.getLowerBound().getType())
-    {
-        case PT_INFINITE_LOWER_BOUND:
-            // Set nothing
-            break;
-
-        case PT_EXCLUSIVE_LOWER_BOUND:
-            // Set minRow
-            state.set("minRow", rows.getLowerBound().getValue());
-            break;
-
-        default:
-            raise<ValueError>("config has invalid lower bound");
-    }
-
-    // Serialize the config
-    ostringstream oss;
-    oss << state;
+    if(cfg.getServer() != serverName)
+        raise<ValueError>("config server is not this server");
     
     // Write the tablet config cell
-    metaTable->set(encodedName, "config", 0, oss.str());
-    metaTable->sync();
+    TablePtr table = getMetaTable();
+    table->set(encodedName, "config", 0, getConfigCellValue(cfg));
+    table->sync();
 }
 
 std::string MetaConfigManager::getNewTabletFile(std::string const & encodedName)
@@ -283,18 +236,99 @@ MetaConfigManager::openTable(std::string const & uri)
     raise<RuntimeError>("unknown table scheme %s: %s", scheme, uri);
 }
 
-void MetaConfigManager::loadFixedTable(std::string const & tableName)
+ConfigManagerPtr MetaConfigManager::getFixedAdapter()
 {
-
-    /// Get a ConfigManager adapter for fixed, file-based configs.
-    /// This will typically be used to load the root META table.
-    //ConfigManagerPtr getFixedAdapter();
-
-
-    raise<NotImplementedError>("loadFixedTable: %s", tableName);
+    EX_UNIMPLEMENTED_FUNCTION;
 }
 
 void MetaConfigManager::loadMeta(std::string const & metaTableUri)
 {
-    raise<NotImplementedError>("loadMeta: %s", metaTableUri);
+    EX_UNIMPLEMENTED_FUNCTION;
+}
+
+TabletConfig MetaConfigManager::getConfigFromCell(Cell const & configCell) const
+{
+    // Parse the tablet name from cell row
+    TabletName tabletName(configCell.getRow());
+
+    // Parse config from cell value
+    StringRange val = configCell.getValue();
+    FilePtr fp(new MemFile(val.begin(), val.size()));
+    Config state(fp);
+
+    // Get URI list from state
+    vector<string> uris;
+    if(Config const * n = state.findChild("tables"))
+    {
+        for(size_t i = 0; i < n->numChildren(); ++i)
+        {
+            uris.push_back(
+                resolveTableUri(rootDir, n->getChild(i).get())
+                );
+        }
+    }
+
+    // Get the row lower bound
+    IntervalPoint<string> minRow;
+    if(Config const * n = state.findChild("minRow"))
+        minRow = IntervalPoint<string>(n->get(), PT_EXCLUSIVE_LOWER_BOUND);
+    else
+        minRow = IntervalPoint<string>(string(), PT_INFINITE_LOWER_BOUND);
+
+    // Return the TabletConfig
+    return TabletConfig(
+        Interval<string>(minRow, tabletName.getLastRow()),
+        uris,
+        state.get("server", "")
+        );
+}
+
+std::string MetaConfigManager::getConfigCellValue(TabletConfig const & config) const
+{
+    // Serialize tablet config using warp::Config
+    warp::Config state;
+
+    // Add URI list
+    vector<string> const & uris = config.getTableUris();
+    size_t idx = 0;
+    for(vector<string>::const_iterator i = uris.begin();
+        i != uris.end(); ++i, ++idx)
+    {
+        state.set(
+            str(format("tables.i%d") % idx),
+            unrootTableUri(rootDir, *i)
+            );
+    }
+    
+    // Set the min row
+    Interval<string> const & rows = config.getTabletRows();
+    switch(rows.getLowerBound().getType())
+    {
+        case PT_INFINITE_LOWER_BOUND:
+            // Set nothing
+            break;
+
+        case PT_EXCLUSIVE_LOWER_BOUND:
+            // Set minRow
+            state.set("minRow", rows.getLowerBound().getValue());
+            break;
+
+        default:
+            raise<ValueError>("config has invalid lower bound");
+    }
+
+    // Set the server
+    state.set("server", config.getServer());
+
+    // Serialize the config
+    ostringstream oss;
+    oss << state;
+    return oss.str();
+}
+
+TablePtr const & MetaConfigManager::getMetaTable() const
+{
+    if(!metaTable)
+        raise<RuntimeError>("must call loadMeta() before getMetaTable()");
+    return metaTable;
 }

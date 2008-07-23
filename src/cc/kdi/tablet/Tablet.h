@@ -59,6 +59,7 @@ class kdi::tablet::Tablet
     SharedLoggerSyncPtr syncLogger;
     SharedCompactorPtr compactor;
 
+    std::string server;
     warp::Interval<std::string> rows;
 
     struct TableInfo
@@ -90,6 +91,11 @@ public:
            ConfigManagerPtr const & configMgr,
            SharedLoggerSyncPtr const & syncLogger,
            SharedCompactorPtr const & compactor);
+    Tablet(std::string const & name,
+           ConfigManagerPtr const & configMgr,
+           SharedLoggerSyncPtr const & syncLogger,
+           SharedCompactorPtr const & compactor,
+           TabletConfig const & cfg);
     ~Tablet();
 
     // Table API
@@ -133,8 +139,8 @@ public:
     }
 
 private:
+    void loadConfig(TabletConfig const & cfg);
     void saveConfig() const;
-    bool loadConfig();
 
     /// Call reopen() on all Scanners.  Expired scanners will be
     /// filtered out of list as well.
