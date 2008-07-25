@@ -23,7 +23,9 @@
 
 #include <kdi/cell.h>
 #include <kdi/tablet/ConfigManager.h>
+#include <boost/thread/mutex.hpp>
 #include <boost/noncopyable.hpp>
+#include <boost/enable_shared_from_this.hpp>
 
 namespace kdi {
 namespace tablet {
@@ -43,15 +45,20 @@ namespace tablet {
 //----------------------------------------------------------------------------
 class kdi::tablet::MetaConfigManager
     : public kdi::tablet::ConfigManager,
+      public boost::enable_shared_from_this<kdi::tablet::MetaConfigManager>,
       private boost::noncopyable
 {
-    TablePtr metaTable;
     std::string rootDir;
     std::string serverName;
+    std::string metaTableUri;
+
+    mutable TablePtr metaTable;
+    mutable boost::mutex metaTableMutex;
 
 public:
     MetaConfigManager(std::string const & rootDir,
-                      std::string const & serverName);
+                      std::string const & serverName,
+                      std::string const & metaTableUri);
     ~MetaConfigManager();
 
     // ConfigManager API
@@ -65,13 +72,16 @@ public:
     /// This will typically be used to load the root META table.
     ConfigManagerPtr getFixedAdapter();
 
-    void loadMeta(std::string const & metaTableUri);
-
     TabletConfig getConfigFromCell(Cell const & configCell) const;
     std::string getConfigCellValue(TabletConfig const & config) const;
 
     std::string const & getServerName() const { return serverName; }
     TablePtr const & getMetaTable() const;
+
+private:
+    class FixedAdapter;
+    std::string getNewFile(std::string const & tableDir) const;
+    std::string const & getRootDir() const { return rootDir; }
 };
 
 

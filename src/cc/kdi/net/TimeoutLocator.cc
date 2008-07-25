@@ -88,23 +88,43 @@ TimeoutLocator::~TimeoutLocator()
 Ice::ObjectPtr TimeoutLocator::locate(Ice::Current const & cur,
                                       Ice::LocalObjectPtr & cookie)
 {
-    lock_t lock(mutex);
+    map_t::iterator it;
+    bool found;
 
-    map_t::iterator it = objMap.find(cur.id);
-    if(it == objMap.end())
+    // Look up ID in object map
     {
+        lock_t lock(mutex);
+        it = objMap.find(cur.id);
+        found = (it != objMap.end());
+    }
+
+    if(!found)
+    {
+        // The object does not exist
+
+        // We can create the object on-demand if it is a table
         if(cur.id.category != "table")
             return 0;
 
         log("Locator: new table %s", cur.id.name);
         
-        // Open a new table
+        // Create a new table
         using namespace kdi::net::details;
         kdi::TablePtr tbl = makeTable(cur.id.name);
-        TableIPtr obj = new TableI(tbl, this);
 
-        ItemPtr item(new Item<TableI>(obj, 600));
-        it = objMap.insert(make_pair(cur.id, item)).first;
+        // Add it to the object map
+        lock_t lock(mutex);
+
+        // Make sure nobody else created it while we were looking the
+        // other way.  If someone else already added the same object,
+        // use that one and delete ours.
+        it = objMap.find(cur.id);
+        if(it == objMap.end())
+        {
+            TableIPtr obj = new TableI(tbl, this);
+            ItemPtr item(new Item<TableI>(obj, 600));
+            it = objMap.insert(make_pair(cur.id, item)).first;
+        }
     }
 
     assert(it != objMap.end());

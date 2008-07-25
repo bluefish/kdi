@@ -27,9 +27,10 @@
 #include <warp/perffile.h>
 #include <warp/varsub.h>
 #include <warp/md5.h>
+#include <warp/log.h>
 #include <ex/exception.h>
 #include <algorithm>
-#include <time.h>
+#include <sys/time.h>
 
 using namespace warp;
 using namespace ex;
@@ -201,9 +202,10 @@ File::openUnique(std::string const & uriPattern, int maxTries)
             // "Random" == md5("$loop" + "$time")
             Md5 md5;
             {
-                clock_t x = clock();
+                timeval t;
+                gettimeofday(&t, 0);
+                md5.update(&t, sizeof(t));
                 md5.update(&i, sizeof(i));
-                md5.update(&x, sizeof(x));
             }
             uint8_t digest[16];
             md5.digest(digest);
@@ -230,18 +232,20 @@ File::openUnique(std::string const & uriPattern, int maxTries)
         // Try to open the file.  This will only work if the file
         // doesn't already exist.
         try {
-            FilePtr fp = File::open(uri, O_RDWR | O_CREAT | O_EXCL);
+            log("openUnique attempt: %s", uri);
+            FilePtr fp = File::open(uri, O_RDWR | O_CREAT | O_EXCL | O_TRUNC);
             
             // Got one!  Return the result.
             return std::make_pair(fp, uri);
         }
-        catch(IOError const &) {
+        catch(IOError const & ex) {
             // Assuming the open failed because the file already
             // exists.
             // XXX: Should have a specific FileExistsError.  The
             // exception hierarchy is too vague.
             
             // Try again...
+            log("fail: %s", ex);
         }
     }
 

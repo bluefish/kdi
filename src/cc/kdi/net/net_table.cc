@@ -331,12 +331,14 @@ public:
 
     CellStreamPtr scan(ScanPredicate const & pred) const
     {
+        //log("NetTable::scan(%s)", pred);
         CellStreamPtr ptr(new Scanner(shared_from_this(), pred));
         return ptr;
     }
 
     details::ScannerPrx getScanner(ScanPredicate const & pred) const
     {
+        //log("NetTable::getScanner(%s)", pred);
         std::ostringstream oss;
         oss << pred;
         return table->scan(oss.str());

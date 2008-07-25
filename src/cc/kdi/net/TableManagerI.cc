@@ -186,6 +186,8 @@ void TableI::sync(Ice::Current const & cur)
 ScannerPrx TableI::scan(std::string const & predicate,
                         Ice::Current const & cur)
 {
+    //log("TableI::scan(%s)", predicate);
+
     lastAccess = kdi::Timestamp::now();
 
     // Open scan
@@ -237,6 +239,8 @@ TablePrx TableManagerI::openTable(std::string const & path,
 
     // Strip trailing slashes
     trim_right_if(id.name, is_any_of("/"));
+
+    //log("TableManagerI::openTable(%s)", id.name);
 
     // Return proxy
     return TablePrx::uncheckedCast(cur.adapter->createProxy(id));

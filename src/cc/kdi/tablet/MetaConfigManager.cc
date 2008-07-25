@@ -98,19 +98,130 @@ namespace
 
 
 //----------------------------------------------------------------------------
+// MetaConfigManager::FixedAdapter
+//----------------------------------------------------------------------------
+class MetaConfigManager::FixedAdapter
+    : public ConfigManager
+{
+    MetaConfigManagerPtr base;
+
+    string getStatePath(std::string const & tabletName) const
+    {
+        return fs::resolve(
+            fs::resolve(base->rootDir, tabletName),
+            "state");
+    }
+
+public:
+    explicit FixedAdapter(MetaConfigManagerPtr const & base) :
+        base(base) {}
+
+    virtual TabletConfig getTabletConfig(std::string const & tabletName)
+    {
+        // Get the file name of the state file
+        string stateFn = getStatePath(tabletName);
+
+        // Try to load the file
+        FilePtr fp;
+        try {
+            fp = File::input(stateFn);
+        }
+        catch(IOError const &) {
+            // If it doesn't exist, return an empty config
+            return TabletConfig(
+                Interval<string>().setInfinite(),
+                vector<string>(),
+                base->getServerName());
+        }
+
+        // Read the contents of the file
+        vector<char> val(256<<10);
+        size_t sz = fp->read(&val[0], val.size());
+        val.erase(val.begin() + sz, val.end());
+
+        // Fake a TabletName for the fixed table
+        TabletName name(
+            tabletName,
+            IntervalPoint<string>("", PT_INFINITE_UPPER_BOUND));
+
+        // Make a fake config cell for the fixed table, and get the
+        // TabletConfig from that.
+        // XXX: the common code should be refactored so that this
+        // hackery isn't required.
+        return base->getConfigFromCell(
+            makeCell(
+                name.getEncoded(),
+                "config",
+                0,
+                val)
+            );
+    }
+
+    virtual void setTabletConfig(std::string const & tabletName, TabletConfig const & cfg)
+    {
+        if(!cfg.getTabletRows().isInfinite())
+            raise<ValueError>("fixed tablet config shouldn't have a "
+                              "restricted row range");
+
+        // Get a string value for the config
+        string val = base->getConfigCellValue(cfg);
+
+        // Create a temp file
+        string dir = fs::resolve(base->rootDir, tabletName);
+        fs::makedirs(dir);
+        std::pair<FilePtr, string> tmp = File::openUnique(
+            fs::resolve(dir, "$UNIQUE"));
+
+        try {
+            // Write config to a temp file
+            size_t sz = tmp.first->write(val.c_str(), val.size());
+            if(sz < val.size())
+                raise<RuntimeError>("couldn't write tmp config");
+            tmp.first->close();
+
+            // Replace config with temp file
+            fs::rename(tmp.second, getStatePath(tabletName), true);
+        }
+        catch(...) {
+            // Clean up temp file if there's a problem
+            fs::remove(tmp.second);
+            throw;
+        }
+    }
+
+    virtual std::string getNewTabletFile(std::string const & tabletName)
+    {
+        return base->getNewFile(tabletName);
+    }
+
+    virtual std::string getNewLogFile()
+    {
+        return base->getNewLogFile();
+    }
+
+    virtual std::pair<TablePtr, std::string> openTable(std::string const & uri)
+    {
+        return base->openTable(uri);
+    }
+};
+
+//----------------------------------------------------------------------------
 // MetaConfigManager
 //----------------------------------------------------------------------------
 MetaConfigManager::MetaConfigManager(std::string const & rootDir,
-                                     std::string const & serverName) :
-    rootDir(rootDir), serverName(serverName)
+                                     std::string const & serverName,
+                                     std::string const & metaTableUri) :
+    rootDir(rootDir),
+    serverName(serverName),
+    metaTableUri(metaTableUri)
 {
-    log("MetaConfigManager: root=%s, server=%s", rootDir, serverName);
-    if(!fs::isDirectory(rootDir))
-        raise<ValueError>("root directory doesn't exist: %s", rootDir);
+    log("MetaConfigManager: root=%s, server=%s metaTable=%s",
+        rootDir, serverName, metaTableUri);
+
     if(serverName.empty())
         raise<ValueError>("empty server name");
-
 }
+
 MetaConfigManager::~MetaConfigManager()
 {
     log("MetaConfigManager: destroyed");
@@ -152,15 +263,22 @@ void MetaConfigManager::setTabletConfig(std::string const & encodedName, TabletC
 std::string MetaConfigManager::getNewTabletFile(std::string const & encodedName)
 {
     TabletName tabletName(encodedName);
-    string dir = fs::resolve(rootDir, tabletName.getTableName());
-
-    // Choose a unique file in the tablet's directory
-    return File::openUnique(fs::resolve(dir, "$UNIQUE")).second;
+    return getNewFile(tabletName.getTableName());
 }
 
 std::string MetaConfigManager::getNewLogFile()
 {
-    string dir = fs::resolve(rootDir, "LOGS");
+    return getNewFile("LOGS");
+}
+
+std::string MetaConfigManager::getNewFile(std::string const & tableDir) const
+{
+    string dir = fs::resolve(rootDir, tableDir);
+    
+    // XXX: this should be cached -- only need to make the directory
+    // once per table
+    fs::makedirs(dir);
+    
     return File::openUnique(fs::resolve(dir, "$UNIQUE")).second;
 }
 
@@ -215,7 +333,7 @@ MetaConfigManager::openTable(std::string const & uri)
             ).base();
 
         // Write the remaining cells to a disk table
-        string diskFn = getNewTabletFile(tabletName);
+        string diskFn = getNewTabletFile(tabletName); // XXX : fail
         {
             log("MetaConfigManager: writing new table %s", diskFn);
 
@@ -236,14 +354,11 @@ MetaConfigManager::openTable(std::string const & uri)
     raise<RuntimeError>("unknown table scheme %s: %s", scheme, uri);
 }
 
+
 ConfigManagerPtr MetaConfigManager::getFixedAdapter()
 {
-    EX_UNIMPLEMENTED_FUNCTION;
-}
-
-void MetaConfigManager::loadMeta(std::string const & metaTableUri)
-{
-    EX_UNIMPLEMENTED_FUNCTION;
+    ConfigManagerPtr p(new FixedAdapter(shared_from_this()));
+    return p;
 }
 
 TabletConfig MetaConfigManager::getConfigFromCell(Cell const & configCell) const
@@ -328,7 +443,18 @@ std::string MetaConfigManager::getConfigCellValue(TabletConfig const & config) c
 
 TablePtr const & MetaConfigManager::getMetaTable() const
 {
+    log("Getting META table");
+
     if(!metaTable)
-        raise<RuntimeError>("must call loadMeta() before getMetaTable()");
+    {
+        boost::mutex::scoped_lock lock(metaTableMutex);
+        if(!metaTable)
+        {
+            log("Connecting to META table: %s", metaTableUri);
+            metaTable = Table::open(metaTableUri);
+            log("Connected to META table: %s", metaTableUri);
+        }
+    }
+
     return metaTable;
 }

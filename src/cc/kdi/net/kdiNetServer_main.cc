@@ -91,7 +91,7 @@ namespace {
                          std::string const & metaTable,
                          std::string const & server,
                          std::vector<std::string> const & fixedTables_) :
-            metaConfigMgr(new tablet::MetaConfigManager(root, server)),
+            metaConfigMgr(new tablet::MetaConfigManager(root, server, metaTable)),
             logger(new Synchronized<tablet::SharedLogger>(metaConfigMgr)),
             compactor(new tablet::SharedCompactor),
             fixedTables(fixedTables_)
@@ -103,9 +103,6 @@ namespace {
                 fixedConfigMgr = metaConfigMgr->getFixedAdapter();
                 std::sort(fixedTables.begin(), fixedTables.end());
             }
-
-            log("Loading from META table: %s", metaTable);
-            metaConfigMgr->loadMeta(metaTable);
         }
         
         ~SuperTabletMaker()
@@ -130,7 +127,7 @@ namespace {
             }
             else
             {
-                log("Load table: %s", name);
+                log("Load super table: %s", name);
                 TablePtr p(
                     new tablet::SuperTablet(
                         name, metaConfigMgr, logger, compactor

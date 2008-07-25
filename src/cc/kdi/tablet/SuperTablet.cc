@@ -101,21 +101,27 @@ SuperTablet::SuperTablet(std::string const & name,
     // server.
     TablePtr metaTable = configMgr->getMetaTable();
     std::string const & serverName = configMgr->getServerName();
-        
+
+    log("Initiating META scan");
     CellStreamPtr metaScan = metaTable->scan(
         str(format("%s <= row <= %s and column = 'config'")
-            % minRow.getEncoded() % maxRow.getEncoded())
+            % reprString(minRow.getEncoded())
+            % reprString(maxRow.getEncoded()) )
         );
 
-    IntervalPoint<string> lowerBound("", PT_INFINITE_LOWER_BOUND);
-    IntervalPoint<string> prevLowerBound(lowerBound);
+    log("Loading tablets from META table");
 
+    Interval<string> prevRows;
     bool changedMeta = false;
     bool loadedPrev = false;
     Cell prev(0,0);
     Cell x;
     while(metaScan->get(x))
     {
+        IntervalPoint<string> lowerBound("", PT_INFINITE_LOWER_BOUND);
+        if(prev)
+            lowerBound = prevRows.getUpperBound().getAdjacentComplement();
+
         TabletConfig cfg = configMgr->getConfigFromCell(x);
         Interval<string> const & cfgRows = cfg.getTabletRows();
         if(cfgRows.getLowerBound() < lowerBound)
@@ -125,7 +131,7 @@ SuperTablet::SuperTablet(std::string const & name,
             log("Detected overlap: prev=%s cur=%s", prev, x);
 
             // First, make sure this is actually from a partial split.
-            if(cfgRows.getLowerBound() != prevLowerBound)
+            if(cfgRows.getLowerBound() != prevRows.getLowerBound())
             {
                 raise<RuntimeError>("uncorrectable overlap in META table: "
                                     "prev=%s cur=%s", prev, x);
@@ -162,6 +168,8 @@ SuperTablet::SuperTablet(std::string const & name,
 
         if(cfg.getServer() == serverName)
         {
+            log("Loading tablet: %s", reprString(x.getRow()));
+
             // We found a tablet assigned to us
             TabletPtr p(
                 new Tablet(
@@ -178,14 +186,20 @@ SuperTablet::SuperTablet(std::string const & name,
         else
             loadedPrev = false;
 
-        // Update lower bound
-        prevLowerBound = lowerBound;
-        lowerBound = cfgRows.getUpperBound().getAdjacentComplement();
+        // Update prevlower bound
+        prevRows = cfgRows;
         prev = x;
     }
 
     if(changedMeta)
+    {
+        log("Writing corrections to META");
         metaTable->sync();
+    }
+
+    if(tablets.empty())
+        raise<RuntimeError>("Table has no tablets on this server: %s",
+                            name);
 }
 
 SuperTablet::~SuperTablet()
