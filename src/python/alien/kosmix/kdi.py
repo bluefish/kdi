@@ -86,5 +86,13 @@ class LogCell(RecordBase):
         ]
     }
 
+class TabletLogEntry(CellBlock):
+    __typecode__ = 'TbLg'
+    __format__ = {
+        1 : [
+        ('tabletName', StringOffset),
+        ]
+    }
+
 # Export magic...
 __all__ = [_x for _x in dir() if _x not in __all__ and not _x.startswith('_')]
