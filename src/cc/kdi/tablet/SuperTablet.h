@@ -50,7 +50,7 @@ class kdi::tablet::SuperTablet
 public:
     SuperTablet(std::string const & name,
                 MetaConfigManagerPtr const & configMgr,
-                SharedLoggerSyncPtr const & syncLogger,
+                SharedLoggerPtr const & logger,
                 SharedCompactorPtr const & compactor);
     ~SuperTablet();
 

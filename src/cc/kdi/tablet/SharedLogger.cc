@@ -150,8 +150,8 @@ public:
 
             // Derive table URI from log URI
             string tableUri = uriSetParameter(
-                logUri, "tablet",
-                uriEncode(tablet->getName(), true));
+                logUri, "table",
+                uriEncode(tablet->getTableName(), true));
 
             // Notify the Tablet that it has a new member
             tablet->addTable(tbl, tableUri);
@@ -180,7 +180,7 @@ public:
             TablePtr memTable = i->second;
 
             // Get an output file
-            std::string fn = configMgr->getNewTabletFile(tablet->getName());
+            std::string fn = configMgr->getDataFile(tablet->getTableName());
             
             // Write a DiskTable from the MemTable
             DiskTableWriter writer(fn, 64<<10);
@@ -253,7 +253,7 @@ public:
         for(map_t::const_iterator i = tableMap.begin();
             i != tableMap.end(); ++i)
         {
-            logWriter->logCells(i->first->getName(), i->second);
+            logWriter->logCells(i->first->getTableName(), i->second);
         }
 
         // Sync the log file to disk
@@ -331,22 +331,34 @@ void SharedLogger::erase(TabletPtr const & tablet, strref_t row, strref_t column
 
 void SharedLogger::insert(TabletPtr const & tablet, Cell const & cell)
 {
+    log("grabbing public lock: insert");
+    lock_t lock(publicMutex);
+
     if(!commitBuffer)
         raise<RuntimeError>("received mutation after SharedLogger shutdown");
 
     commitBuffer->append(tablet, cell);
     if(commitBuffer->full())
-        flush();
+        flush(lock);
 }
 
 void SharedLogger::sync()
 {
-    if(!commitBuffer)
-        raise<RuntimeError>("received sync after SharedLogger shutdown");
+    log("grabbing public lock: sync");
+    lock_t lock(publicMutex);
 
-    flush();
+    if(!commitBuffer)
+        raise<RuntimeError>("received flushCommitBuffer() after SharedLogger shutdown");
+
+    flush(lock);
+
+    log("releasing public lock: sync");
+    lock.unlock();
     if(!commitQueue.waitForCompletion())
     {
+        log("grabbing public lock: sync again");
+        lock.lock();
+
         // If the wait return false, then something canceled the wait
         // before all the work could be done.  This is likely because
         // the Commit or Serialize thread hit an exception.  It's also
@@ -358,11 +370,14 @@ void SharedLogger::sync()
 
 void SharedLogger::shutdown()
 {
+    log("grabbing public lock: shutdown");
+    lock_t lock(publicMutex);
+
     if(commitBuffer)
     {
         log("SharedLogger shutdown");
 
-        flush();
+        flush(lock);
 
         commitQueue.cancelWaits();
         serializeQueue.cancelWaits();
@@ -374,13 +389,13 @@ void SharedLogger::shutdown()
     }
 }
 
-void SharedLogger::flush()
+void SharedLogger::flush(lock_t & lock)
 {
     // If there's nothing in the buffer, we have nothing to flush.
     if(commitBuffer->empty())
         return;
 
-    //log("Flushing commit buffer");
+    log("Flushing commit buffer");
 
     // Push the buffer into the Commit thread.  If this fails, it's
     // because the queue is full and waits have been canceled due to
@@ -390,6 +405,7 @@ void SharedLogger::flush()
 
     // Make a new commit buffer.
     commitBuffer.reset(new CommitBuffer);
+
 }
 
 void SharedLogger::commitLoop()
@@ -404,10 +420,12 @@ void SharedLogger::commitLoop()
             commitQueue.pop(buffer);
             buffer.reset())
         {
+            log("Commit thread got work");
+
             // Create a new log file if we need it
             if(!logWriter)
             {
-                string fn = configMgr->getNewLogFile();
+                string fn = configMgr->getDataFile("LOGS");
                 log("Starting new log: %s", fn);
                 logWriter.reset(new LogWriter(fn));
                 tableGroup->setLogUri(logWriter->getUri());

@@ -20,6 +20,7 @@
 
 #include <unittest/main.h>
 #include <kdi/tablet/Tablet.h>
+#include <kdi/tablet/TabletConfig.h>
 #include <kdi/table_unittest.h>
 
 #include <kdi/tablet/SharedLogger.h>
@@ -49,12 +50,12 @@ namespace
     struct Setup : private ModuleInit
     {
         ConfigManagerPtr configMgr;
-        SharedLoggerSyncPtr syncLogger;
+        SharedLoggerPtr logger;
         SharedCompactorPtr compactor;
 
         Setup() :
             configMgr(new FileConfigManager("memfs:/")),
-            syncLogger(new Synchronized<SharedLogger>(configMgr)),
+            logger(new SharedLogger(configMgr)),
             compactor(new SharedCompactor)
         {
         }
@@ -64,8 +65,17 @@ namespace
 
 BOOST_AUTO_UNIT_TEST(table_api_basic)
 {
-    Setup s;
-    TabletPtr t(new Tablet("foo", s.configMgr, s.syncLogger, s.compactor));
+    std::string const NAME("foo");
 
-    unittest::testTableInterface(t);
+    Setup s;
+    std::list<TabletConfig> cfgs = s.configMgr->loadTabletConfigs(NAME);
+
+    for(std::list<TabletConfig>::const_iterator i = cfgs.begin();
+        i != cfgs.end(); ++i)
+    {
+        TabletPtr t(
+            new Tablet(NAME, s.configMgr, s.logger, s.compactor, *i));
+
+        unittest::testTableInterface(t);
+    }
 }

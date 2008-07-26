@@ -89,117 +89,31 @@ TabletPtr const & SuperTablet::getTablet(strref_t row) const
 
 SuperTablet::SuperTablet(std::string const & name,
                          MetaConfigManagerPtr const & configMgr,
-                         SharedLoggerSyncPtr const & syncLogger,
+                         SharedLoggerPtr const & logger,
                          SharedCompactorPtr const & compactor)
 {
-    TabletName minRow(name, IntervalPoint<string>("", PT_INCLUSIVE_UPPER_BOUND));
-    TabletName maxRow(name, IntervalPoint<string>("", PT_INFINITE_UPPER_BOUND));
-
-    // Scan all tablet rows for this table in the META table.
-    // Correct inconsistent rows that may have been the result of
-    // a mid-split crash.  Load the ones that are assigned to this
-    // server.
-    TablePtr metaTable = configMgr->getMetaTable();
-    std::string const & serverName = configMgr->getServerName();
-
-    log("Initiating META scan");
-    CellStreamPtr metaScan = metaTable->scan(
-        str(format("%s <= row <= %s and column = 'config'")
-            % reprString(minRow.getEncoded())
-            % reprString(maxRow.getEncoded()) )
-        );
-
-    log("Loading tablets from META table");
-
-    Interval<string> prevRows;
-    bool changedMeta = false;
-    bool loadedPrev = false;
-    Cell prev(0,0);
-    Cell x;
-    while(metaScan->get(x))
+    std::list<TabletConfig> cfgs = configMgr->loadTabletConfigs(name);
+    
+    if(cfgs.empty())
     {
-        IntervalPoint<string> lowerBound("", PT_INFINITE_LOWER_BOUND);
-        if(prev)
-            lowerBound = prevRows.getUpperBound().getAdjacentComplement();
-
-        TabletConfig cfg = configMgr->getConfigFromCell(x);
-        Interval<string> const & cfgRows = cfg.getTabletRows();
-        if(cfgRows.getLowerBound() < lowerBound)
-        {
-            // We have an overlap -- this cell overlaps with the
-            // previous cell.
-            log("Detected overlap: prev=%s cur=%s", prev, x);
-
-            // First, make sure this is actually from a partial split.
-            if(cfgRows.getLowerBound() != prevRows.getLowerBound())
-            {
-                raise<RuntimeError>("uncorrectable overlap in META table: "
-                                    "prev=%s cur=%s", prev, x);
-            }
-
-            // To repair the situation, we should delete the previous
-            // cell.
-            assert(prev);
-            metaTable->erase(prev.getRow(), prev.getColumn(),
-                             prev.getTimestamp());
-            changedMeta = true;
-
-            // Also erase previous tablet if we loaded it
-            if(loadedPrev)
-                tablets.pop_back();
-        }
-        else if(lowerBound < cfgRows.getLowerBound())
-        {
-            // We have a gap -- this cell is not adjacent to the
-            // previous cell.
-            log("Detected gap: prev=%s cur=%s", prev, x);
-
-            // To repair this situation, we should expand this cell to
-            // fill the gap.
-            cfg = TabletConfig(
-                Interval<string>(lowerBound, cfgRows.getUpperBound()),
-                cfg.getTableUris(),
-                cfg.getServer()
-                );
-            metaTable->set(x.getRow(), x.getColumn(), x.getTimestamp(),
-                           configMgr->getConfigCellValue(cfg));
-            changedMeta = true;
-        }
-
-        if(cfg.getServer() == serverName)
-        {
-            log("Loading tablet: %s", reprString(x.getRow()));
-
-            // We found a tablet assigned to us
-            TabletPtr p(
-                new Tablet(
-                    x.getRow().toString(),
-                    configMgr,
-                    syncLogger,
-                    compactor,
-                    cfg
-                    )
-                );
-            tablets.push_back(p);
-            loadedPrev = true;
-        }
-        else
-            loadedPrev = false;
-
-        // Update prevlower bound
-        prevRows = cfgRows;
-        prev = x;
-    }
-
-    if(changedMeta)
-    {
-        log("Writing corrections to META");
-        metaTable->sync();
-    }
-
-    if(tablets.empty())
         raise<RuntimeError>("Table has no tablets on this server: %s",
                             name);
+    }
+
+    for(std::list<TabletConfig>::const_iterator i = cfgs.begin();
+        i != cfgs.end(); ++i)
+    {
+        TabletPtr p(
+            new Tablet(
+                name,
+                configMgr,
+                logger,
+                compactor,
+                *i
+                )
+            );
+        tablets.push_back(p);
+    }
 }
 
 SuperTablet::~SuperTablet()
@@ -251,6 +165,8 @@ void SuperTablet::sync()
     for(vector<TabletPtr>::const_iterator i = tablets.begin();
         i != tablets.end(); ++i)
     {
+        log("SuperTablet::sync(): %s", (*i)->getPrettyName());
+
         (*i)->sync();
     }
 }

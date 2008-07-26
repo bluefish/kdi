@@ -35,6 +35,7 @@
 
 // For Tablet implementation
 #include <kdi/tablet/Tablet.h>
+#include <kdi/tablet/TabletConfig.h>
 #include <kdi/tablet/SharedLogger.h>
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/FileConfigManager.h>
@@ -80,7 +81,7 @@ namespace {
       
 
         tablet::MetaConfigManagerPtr metaConfigMgr;
-        tablet::SharedLoggerSyncPtr logger;
+        tablet::SharedLoggerPtr logger;
         tablet::SharedCompactorPtr compactor;
 
         tablet::ConfigManagerPtr fixedConfigMgr;
@@ -92,7 +93,7 @@ namespace {
                          std::string const & server,
                          std::vector<std::string> const & fixedTables_) :
             metaConfigMgr(new tablet::MetaConfigManager(root, server, metaTable)),
-            logger(new Synchronized<tablet::SharedLogger>(metaConfigMgr)),
+            logger(new tablet::SharedLogger(metaConfigMgr)),
             compactor(new tablet::SharedCompactor),
             fixedTables(fixedTables_)
         {
@@ -108,7 +109,7 @@ namespace {
         ~SuperTabletMaker()
         {
             compactor->shutdown();
-            LockedPtr<tablet::SharedLogger>(*logger)->shutdown();
+            logger->shutdown();
 
             log("SuperTabletMaker %p: destroyed", this);
         }
@@ -117,10 +118,17 @@ namespace {
         {
             if(std::binary_search(fixedTables.begin(), fixedTables.end(), name))
             {
+                using kdi::tablet::TabletConfig;
+
                 log("Load fixed table: %s", name);
+                std::list<TabletConfig> cfgs = fixedConfigMgr->loadTabletConfigs(name);
+                if(cfgs.size() != 1)
+                    raise<RuntimeError>("loaded %d configs for fixed table: %s",
+                                        cfgs.size(), name);
+                
                 TablePtr p(
                     new tablet::Tablet(
-                        name, fixedConfigMgr, logger, compactor
+                        name, fixedConfigMgr, logger, compactor, cfgs.front()
                         )
                     );
                 return p;
@@ -153,13 +161,13 @@ namespace {
     class TabletMaker
     {
         tablet::ConfigManagerPtr configMgr;
-        tablet::SharedLoggerSyncPtr logger;
+        tablet::SharedLoggerPtr logger;
         tablet::SharedCompactorPtr compactor;
 
     public:
         explicit TabletMaker(std::string const & root) :
             configMgr(new tablet::FileConfigManager(root)),
-            logger(new Synchronized<tablet::SharedLogger>(configMgr)),
+            logger(new tablet::SharedLogger(configMgr)),
             compactor(new tablet::SharedCompactor)
         {
             log("TabletMaker %p: created", this);
@@ -168,16 +176,23 @@ namespace {
         ~TabletMaker()
         {
             compactor->shutdown();
-            LockedPtr<tablet::SharedLogger>(*logger)->shutdown();
+            logger->shutdown();
 
             log("TabletMaker %p: destroyed", this);
         }
 
         TablePtr makeTable(std::string const & name) const
         {
+            using kdi::tablet::TabletConfig;
+
+            std::list<TabletConfig> cfgs = configMgr->loadTabletConfigs(name);
+            if(cfgs.size() != 1)
+                raise<RuntimeError>("loaded %d configs for table: %s",
+                                    cfgs.size(), name);
+
             TablePtr p(
                 new tablet::Tablet(
-                    name, configMgr, logger, compactor
+                    name, configMgr, logger, compactor, cfgs.front()
                     )
                 );
             return p;

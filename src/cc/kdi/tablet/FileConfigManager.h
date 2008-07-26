@@ -22,6 +22,7 @@
 #define KDI_TABLET_FILECONFIGMANAGER_H
 
 #include <kdi/tablet/ConfigManager.h>
+#include <warp/synchronized.h>
 
 namespace kdi {
 namespace tablet {
@@ -62,12 +63,10 @@ public:
     ~FileConfigManager();
 
     // ConfigManager API
-    virtual TabletConfig getTabletConfig(std::string const & tabletName);
-    virtual void setTabletConfig(std::string const & tabletName, TabletConfig const & cfg);
-    virtual warp::Interval<std::string> getTabletRange(std::string const & tabletName);
-    virtual std::string getNewTabletFile(std::string const & tabletName);
-    virtual std::string getNewLogFile();
-    virtual std::pair<TablePtr, std::string> openTable(std::string const & uri);
+    std::list<TabletConfig> loadTabletConfigs(std::string const & tableName);
+    void setTabletConfig(std::string const & tableName, TabletConfig const & cfg);
+    std::string getDataFile(std::string const & tableName);
+    std::pair<TablePtr, std::string> openTable(std::string const & uri);
 };
 
 

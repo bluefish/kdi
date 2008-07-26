@@ -24,6 +24,7 @@
 #include <kdi/tablet/forward.h>
 #include <kdi/table.h>
 #include <warp/interval.h>
+#include <warp/synchronized.h>
 #include <ex/exception.h>
 
 #include <boost/enable_shared_from_this.hpp>
@@ -53,10 +54,10 @@ class kdi::tablet::Tablet
       public boost::enable_shared_from_this<kdi::tablet::Tablet>,
       private boost::noncopyable
 {
-    std::string name;
+    std::string tableName;
 
     ConfigManagerPtr configMgr;
-    SharedLoggerSyncPtr syncLogger;
+    SharedLoggerPtr logger;
     SharedCompactorPtr compactor;
 
     std::string server;
@@ -87,13 +88,9 @@ class kdi::tablet::Tablet
     mutable warp::Synchronized<scanner_vec_t> syncScanners;
     
 public:
-    Tablet(std::string const & name,
+    Tablet(std::string const & tableName,
            ConfigManagerPtr const & configMgr,
-           SharedLoggerSyncPtr const & syncLogger,
-           SharedCompactorPtr const & compactor);
-    Tablet(std::string const & name,
-           ConfigManagerPtr const & configMgr,
-           SharedLoggerSyncPtr const & syncLogger,
+           SharedLoggerPtr const & logger,
            SharedCompactorPtr const & compactor,
            TabletConfig const & cfg);
     ~Tablet();
@@ -105,8 +102,11 @@ public:
     CellStreamPtr scan() const;
     CellStreamPtr scan(ScanPredicate const & pred) const;
     
-    /// Get the name of this Tablet
-    std::string const & getName() const { return name; }
+    /// Get the name of table of which this Tablet is a part
+    std::string const & getTableName() const { return tableName; }
+
+    /// Get a name suitable for printing in debug messages
+    std::string getPrettyName() const;
 
     /// Get a merged scan of all the tables in this this Tablet, using
     /// the given predicate.  This method does not support history

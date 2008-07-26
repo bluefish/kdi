@@ -21,7 +21,6 @@
 #ifndef KDI_TABLET_FORWARD_H
 #define KDI_TABLET_FORWARD_H
 
-#include <warp/synchronized.h>
 #include <boost/shared_ptr.hpp>
 #include <boost/weak_ptr.hpp>
 
@@ -44,14 +43,13 @@ namespace tablet {
     typedef boost::shared_ptr<Tablet const> TabletCPtr;
 
     typedef boost::shared_ptr<Scanner> ScannerPtr;
+    typedef boost::shared_ptr<SharedLogger> SharedLoggerPtr;
     typedef boost::shared_ptr<SharedCompactor> SharedCompactorPtr;
     typedef boost::shared_ptr<ConfigManager> ConfigManagerPtr;
     typedef boost::shared_ptr<LogWriter> LogWriterPtr;
 
     typedef boost::weak_ptr<Tablet> TabletWeakPtr;
     typedef boost::weak_ptr<Scanner> ScannerWeakPtr;
-
-    typedef boost::shared_ptr< warp::Synchronized<SharedLogger> > SharedLoggerSyncPtr;
 
 } // namespace tablet
 } // namespace kdi

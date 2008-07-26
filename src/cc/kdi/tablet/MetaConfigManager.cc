@@ -30,6 +30,7 @@
 #include <warp/file.h>
 #include <warp/fs.h>
 #include <warp/log.h>
+#include <warp/tuple_encode.h>
 #include <ex/exception.h>
 #include <boost/format.hpp>
 #include <boost/algorithm/string.hpp>
@@ -116,10 +117,12 @@ public:
     explicit FixedAdapter(MetaConfigManagerPtr const & base) :
         base(base) {}
 
-    virtual TabletConfig getTabletConfig(std::string const & tabletName)
+    std::list<TabletConfig> loadTabletConfigs(std::string const & tableName)
     {
+        std::list<TabletConfig> cfgs;
+
         // Get the file name of the state file
-        string stateFn = getStatePath(tabletName);
+        string stateFn = getStatePath(tableName);
 
         // Try to load the file
         FilePtr fp;
@@ -128,10 +131,14 @@ public:
         }
         catch(IOError const &) {
             // If it doesn't exist, return an empty config
-            return TabletConfig(
-                Interval<string>().setInfinite(),
-                vector<string>(),
-                base->getServerName());
+            cfgs.push_back(
+                TabletConfig(
+                    Interval<string>().setInfinite(),
+                    vector<string>(),
+                    base->getServerName()
+                    )
+                );
+            return cfgs;
         }
 
         // Read the contents of the file
@@ -141,24 +148,30 @@ public:
 
         // Fake a TabletName for the fixed table
         TabletName name(
-            tabletName,
+            tableName,
             IntervalPoint<string>("", PT_INFINITE_UPPER_BOUND));
 
         // Make a fake config cell for the fixed table, and get the
         // TabletConfig from that.
         // XXX: the common code should be refactored so that this
         // hackery isn't required.
-        return base->getConfigFromCell(
-            makeCell(
-                name.getEncoded(),
-                "config",
-                0,
-                val)
+        cfgs.push_back(
+            base->getConfigFromCell(
+                makeCell(
+                    name.getEncoded(),
+                    "config",
+                    0,
+                    val)
+                )
             );
+
+        return cfgs;
     }
 
-    virtual void setTabletConfig(std::string const & tabletName, TabletConfig const & cfg)
+    void setTabletConfig(std::string const & tableName, TabletConfig const & cfg)
     {
+        log("Save fixed config: %s", tableName);
+
         if(!cfg.getTabletRows().isInfinite())
             raise<ValueError>("fixed tablet config shouldn't have a "
                               "restricted row range");
@@ -167,7 +180,7 @@ public:
         string val = base->getConfigCellValue(cfg);
 
         // Create a temp file
-        string dir = fs::resolve(base->rootDir, tabletName);
+        string dir = fs::resolve(base->rootDir, tableName);
         fs::makedirs(dir);
         std::pair<FilePtr, string> tmp = File::openUnique(
             fs::resolve(dir, "$UNIQUE"));
@@ -180,7 +193,7 @@ public:
             tmp.first->close();
 
             // Replace config with temp file
-            fs::rename(tmp.second, getStatePath(tabletName), true);
+            fs::rename(tmp.second, getStatePath(tableName), true);
         }
         catch(...) {
             // Clean up temp file if there's a problem
@@ -189,17 +202,12 @@ public:
         }
     }
 
-    virtual std::string getNewTabletFile(std::string const & tabletName)
+    std::string getDataFile(std::string const & tableName)
     {
-        return base->getNewFile(tabletName);
+        return base->getDataFile(tableName);
     }
 
-    virtual std::string getNewLogFile()
-    {
-        return base->getNewLogFile();
-    }
-
-    virtual std::pair<TablePtr, std::string> openTable(std::string const & uri)
+    std::pair<TablePtr, std::string> openTable(std::string const & uri)
     {
         return base->openTable(uri);
     }
@@ -227,53 +235,136 @@ MetaConfigManager::~MetaConfigManager()
     log("MetaConfigManager: destroyed");
 }
 
-TabletConfig MetaConfigManager::getTabletConfig(std::string const & encodedName)
+std::list<TabletConfig>
+MetaConfigManager::loadTabletConfigs(std::string const & tableName)
 {
-    // Get the config cell for the named tablet out of the META table
+    std::list<TabletConfig> cfgs;
+
+    // Scan all tablet rows for this table in the META table.  Correct
+    // inconsistent rows that may have been the result of a mid-split
+    // crash.  Load the configs that are assigned to this server.
+
+    // Scan all config cells in the META table that start with the our
+    // table name
     ostringstream pred;
-    pred << "row=" << reprString(encodedName) << " and column='config'";
-    CellStreamPtr scanner = getMetaTable()->scan(pred.str());
-    Cell configCell;
-    if(!scanner->get(configCell))
-        raise<RuntimeError>("Tablet has no config in META table: %s",
-                            reprString(encodedName));
-    
-    // Load the config
-    return getConfigFromCell(configCell);
+    pred << "column = 'config' and row ~= "
+         << reprString(encodeTuple(make_tuple(tableName)));
+    TablePtr metaTable = getMetaTable();
+
+    log("Scanning META for table: %s", tableName);
+    CellStreamPtr metaScan = metaTable->scan(pred.str());
+
+    log(" scan started");
+
+    Interval<string> prevRows;
+    bool changedMeta = false;
+    bool loadedPrev = false;
+    Cell prev(0,0);
+    Cell x;
+    while(metaScan->get(x))
+    {
+        log(" got cell: %s", x);
+
+        IntervalPoint<string> lowerBound("", PT_INFINITE_LOWER_BOUND);
+        if(prev)
+            lowerBound = prevRows.getUpperBound().getAdjacentComplement();
+
+        TabletConfig cfg = getConfigFromCell(x);
+        Interval<string> const & cfgRows = cfg.getTabletRows();
+        if(cfgRows.getLowerBound() < lowerBound)
+        {
+            // We have an overlap -- this cell overlaps with the
+            // previous cell.
+            log("Detected META overlap: prev=%s cur=%s", prev, x);
+
+            // First, make sure this is actually from a partial split.
+            if(cfgRows.getLowerBound() != prevRows.getLowerBound())
+            {
+                raise<RuntimeError>("uncorrectable overlap in META table: "
+                                    "prev=%s cur=%s", prev, x);
+            }
+
+            // To repair the situation, we should delete the previous
+            // cell.
+            assert(prev);
+            metaTable->erase(prev.getRow(), prev.getColumn(),
+                             prev.getTimestamp());
+            changedMeta = true;
+
+            // Also erase previous tablet if we loaded it
+            if(loadedPrev)
+                cfgs.pop_back();
+        }
+        else if(lowerBound < cfgRows.getLowerBound())
+        {
+            // We have a gap -- this cell is not adjacent to the
+            // previous cell.
+            log("Detected META gap: prev=%s cur=%s", prev, x);
+
+            // To repair this situation, we should expand this cell to
+            // fill the gap.
+            cfg = TabletConfig(
+                Interval<string>(lowerBound, cfgRows.getUpperBound()),
+                cfg.getTableUris(),
+                cfg.getServer()
+                );
+            metaTable->set(x.getRow(), x.getColumn(), x.getTimestamp(),
+                           getConfigCellValue(cfg));
+            changedMeta = true;
+        }
+
+        if(cfg.getServer() == serverName)
+        {
+            log("Found config: %s", reprString(x.getRow()));
+
+            // We found a tablet assigned to us
+            cfgs.push_back(cfg);
+            loadedPrev = true;
+        }
+        else
+            loadedPrev = false;
+
+        // Update prev
+        prevRows = cfgRows;
+        prev = x;
+    }
+
+    if(changedMeta)
+    {
+        log("Syncing corrections to META");
+        metaTable->sync();
+    }
+
+    return cfgs;
 }
 
-void MetaConfigManager::setTabletConfig(std::string const & encodedName, TabletConfig const & cfg)
+void MetaConfigManager::setTabletConfig(std::string const & tableName,
+                                        TabletConfig const & cfg)
 {
-    // Parse the tablet name
-    TabletName tabletName(encodedName);
+    log("Save META config: %s", tableName);
 
-    // Do some sanity checking on the config rows
-    Interval<string> const & rows = cfg.getTabletRows();
-    if(rows.getUpperBound() != tabletName.getLastRow())
-        raise<ValueError>("config upper bound does not match tablet name");
+    // Sanity checking
     if(cfg.getServer() != serverName)
-        raise<ValueError>("config server is not this server");
+    {
+        raise<ValueError>("config server is not this server: %s != %s",
+                          cfg.getServer(), serverName);
+    }
+
+    // Build tablet name
+    TabletName tabletName(tableName, cfg.getTabletRows().getUpperBound());
     
     // Write the tablet config cell
-    TablePtr table = getMetaTable();
-    table->set(encodedName, "config", 0, getConfigCellValue(cfg));
-    table->sync();
+    TablePtr metaTable = getMetaTable();
+    metaTable->set(tabletName.getEncoded(), "config", 0,
+                   getConfigCellValue(cfg));
+    metaTable->sync();
+
+    log("Saved META config: %s", tableName);
 }
 
-std::string MetaConfigManager::getNewTabletFile(std::string const & encodedName)
+std::string MetaConfigManager::getDataFile(std::string const & tableName)
 {
-    TabletName tabletName(encodedName);
-    return getNewFile(tabletName.getTableName());
-}
-
-std::string MetaConfigManager::getNewLogFile()
-{
-    return getNewFile("LOGS");
-}
-
-std::string MetaConfigManager::getNewFile(std::string const & tableDir) const
-{
-    string dir = fs::resolve(rootDir, tableDir);
+    string dir = fs::resolve(rootDir, tableName);
     
     // XXX: this should be cached -- only need to make the directory
     // once per table
@@ -303,18 +394,18 @@ MetaConfigManager::openTable(std::string const & uri)
         // Log table: serialize to a disk table and return that.
 
         // Get the tablet name from the URI.
-        string tabletName = uriDecode(
-            uriGetParameter(uri, "tablet"),
+        string tableName = uriDecode(
+            uriGetParameter(uri, "table"),
             true);
 
-        log("MetaConfigManager: loading tablet %s from log %s", tabletName, uri);
+        log("MetaConfigManager: loading table %s from log %s", tableName, uri);
 
         // Read the log cells into a vector
         vector<Cell> cells;
         {
             LogReader reader(
                 uriPushScheme(uriPopScheme(uri), "cache"),
-                tabletName);
+                tableName);
             Cell x;
             while(reader.get(x))
                 cells.push_back(x);
@@ -333,7 +424,7 @@ MetaConfigManager::openTable(std::string const & uri)
             ).base();
 
         // Write the remaining cells to a disk table
-        string diskFn = getNewTabletFile(tabletName); // XXX : fail
+        string diskFn = getDataFile(tableName);
         {
             log("MetaConfigManager: writing new table %s", diskFn);
 
@@ -445,16 +536,17 @@ TablePtr const & MetaConfigManager::getMetaTable() const
 {
     log("Getting META table");
 
-    if(!metaTable)
+    if(!_metaTable)
     {
         boost::mutex::scoped_lock lock(metaTableMutex);
-        if(!metaTable)
+        if(!_metaTable)
         {
             log("Connecting to META table: %s", metaTableUri);
-            metaTable = Table::open(metaTableUri);
+            _metaTable = Table::open(metaTableUri);
             log("Connected to META table: %s", metaTableUri);
         }
     }
 
-    return metaTable;
+    log("Got META table");
+    return _metaTable;
 }

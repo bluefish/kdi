@@ -122,7 +122,7 @@ bool SharedCompactor::getTabletForCompaction(TabletPtr & tablet)
         if(maxTablet)
         {
             log("Compact thread: selected %s (pri=%d)",
-                maxTablet->getName(), maxPriority);
+                maxTablet->getPrettyName(), maxPriority);
             tablet = maxTablet;
             return true;
         }

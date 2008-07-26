@@ -147,10 +147,13 @@ FileConfigManager::~FileConfigManager()
     log("FileConfigManager: destroyed");
 }
 
-TabletConfig FileConfigManager::getTabletConfig(std::string const & tabletName)
+std::list<TabletConfig>
+FileConfigManager::loadTabletConfigs(std::string const & tableName)
 {
+    std::list<TabletConfig> r;
+
     // Load tablet state
-    Config state = LockedPtr<DirMap>(syncDirMap)->getDir(tabletName).loadState();
+    Config state = LockedPtr<DirMap>(syncDirMap)->getDir(tableName).loadState();
 
     // Get URI list from state
     vector<string> uris;
@@ -161,10 +164,12 @@ TabletConfig FileConfigManager::getTabletConfig(std::string const & tabletName)
     }
 
     // Put URI list in a TabletConfig
-    return TabletConfig(Interval<string>().setInfinite(), uris, "");
+    r.push_back(TabletConfig(Interval<string>().setInfinite(), uris, ""));
+
+    return r;
 }
 
-void FileConfigManager::setTabletConfig(std::string const & tabletName, TabletConfig const & cfg)
+void FileConfigManager::setTabletConfig(std::string const & tableName, TabletConfig const & cfg)
 {
     // Save a state file.
 
@@ -179,29 +184,22 @@ void FileConfigManager::setTabletConfig(std::string const & tabletName, TabletCo
     }
 
     // Save state
-    LockedPtr<DirMap>(syncDirMap)->getDir(tabletName).saveState(state);
+    LockedPtr<DirMap>(syncDirMap)->getDir(tableName).saveState(state);
 }
 
-warp::Interval<std::string> FileConfigManager::getTabletRange(std::string const & tabletName)
-{
-    // Everything, all the time.
-    return Interval<string>().setInfinite();
-}
-
-std::string FileConfigManager::getNewTabletFile(std::string const & tabletName)
+std::string FileConfigManager::getDataFile(std::string const & tableName)
 {
     // Get the next index in the directory, advance the number
-    return LockedPtr<DirMap>(syncDirMap)->getDir(tabletName).newFile();
-}
-
-std::string FileConfigManager::getNewLogFile()
-{
-    // Get the next index in the directory, advance the number
-    // (rewrite config so we don't reuse the log in future instances)
     LockedPtr<DirMap> dirMap(syncDirMap);
-    DirInfo & dirInfo = dirMap->getDir("LOGS");
+    DirInfo & dirInfo = dirMap->getDir(tableName);
     std::string fn = dirInfo.newFile();
-    dirInfo.saveState(warp::Config());
+
+    if(tableName == "LOGS")
+    {
+        // Hack for LOGS: rewrite config so we don't reuse the log in
+        // future instances
+        dirInfo.saveState(warp::Config());
+    }
     return fn;
 }
 
@@ -225,19 +223,19 @@ FileConfigManager::openTable(std::string const & uri)
     {
         // Log table: serialize to a disk table and return that.
 
-        // Get the tablet name from the URI.
-        string tabletName = uriDecode(
-            uriGetParameter(uri, "tablet"),
+        // Get the table name from the URI.
+        string tableName = uriDecode(
+            uriGetParameter(uri, "table"),
             true);
 
-        log("FileConfigManager: loading tablet %s from log %s", tabletName, uri);
+        log("FileConfigManager: loading table %s from log %s", tableName, uri);
 
         // Read the log cells into a vector
         vector<Cell> cells;
         {
             LogReader reader(
                 uriPushScheme(uriPopScheme(uri), "cache"),
-                tabletName);
+                tableName);
             Cell x;
             while(reader.get(x))
                 cells.push_back(x);
@@ -256,7 +254,7 @@ FileConfigManager::openTable(std::string const & uri)
             ).base();
 
         // Write the remaining cells to a disk table
-        string diskFn = getNewTabletFile(tabletName);
+        string diskFn = getDataFile(tableName);
         {
             log("FileConfigManager: writing new table %s", diskFn);
 

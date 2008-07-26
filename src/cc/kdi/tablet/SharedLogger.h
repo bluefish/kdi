@@ -55,6 +55,9 @@ class kdi::tablet::SharedLogger
     class ErrorState;
     typedef boost::shared_ptr<ErrorState> ErrorStatePtr;
 
+    typedef boost::mutex mutex_t;
+    typedef mutex_t::scoped_lock lock_t;
+
     ConfigManagerPtr configMgr;
 
     CommitBufferPtr commitBuffer;
@@ -65,6 +68,7 @@ class kdi::tablet::SharedLogger
 
     warp::SyncQueue<CommitBufferCPtr> commitQueue;
     warp::SyncQueue<TableGroupCPtr> serializeQueue;
+    mutex_t publicMutex;
 
 public:
     explicit SharedLogger(ConfigManagerPtr const & configMgr);
@@ -89,7 +93,7 @@ public:
 
 private:
     /// Flush buffered mutations to the commit thread.
-    void flush();
+    void flush(lock_t & lock);
 
     /// Thread loop for committing mutation buffers to disk log.
     void commitLoop();

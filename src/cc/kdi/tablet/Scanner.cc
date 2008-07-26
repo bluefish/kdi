@@ -54,7 +54,7 @@ Scanner::~Scanner()
 
 void Scanner::reopen()
 {
-    log("Scanner: reopening scan on tablet %s: %s", tablet->getName(), pred);
+    log("Scanner: reopening scan on table %s: %s", tablet->getPrettyName(), pred);
 
     // Synchronize with get() thread
     lock_t sync(mutex);

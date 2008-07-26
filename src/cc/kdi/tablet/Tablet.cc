@@ -72,38 +72,20 @@ namespace {
 //----------------------------------------------------------------------------
 // Tablet
 //----------------------------------------------------------------------------
-Tablet::Tablet(std::string const & name,
+Tablet::Tablet(std::string const & tableName,
                ConfigManagerPtr const & configMgr,
-               SharedLoggerSyncPtr const & syncLogger,
-               SharedCompactorPtr const & compactor) :
-    name(name),
-    configMgr(configMgr),
-    syncLogger(syncLogger),
-    compactor(compactor)
-{
-    log("Tablet %p %s: created", this, getName());
-
-    EX_CHECK_NULL(configMgr);
-    EX_CHECK_NULL(syncLogger);
-    EX_CHECK_NULL(compactor);
-
-    loadConfig(configMgr->getTabletConfig(name));
-}
-
-Tablet::Tablet(std::string const & name,
-               ConfigManagerPtr const & configMgr,
-               SharedLoggerSyncPtr const & syncLogger,
+               SharedLoggerPtr const & logger,
                SharedCompactorPtr const & compactor,
                TabletConfig const & cfg) :
-    name(name),
+    tableName(tableName),
     configMgr(configMgr),
-    syncLogger(syncLogger),
+    logger(logger),
     compactor(compactor)
 {
-    log("Tablet %p %s: created", this, getName());
+    log("Tablet %p %s: created", this, getTableName());
 
     EX_CHECK_NULL(configMgr);
-    EX_CHECK_NULL(syncLogger);
+    EX_CHECK_NULL(logger);
     EX_CHECK_NULL(compactor);
 
     loadConfig(cfg);
@@ -111,28 +93,23 @@ Tablet::Tablet(std::string const & name,
 
 Tablet::~Tablet()
 {
-    log("Tablet %p %s: destroyed", this, getName());
+    log("Tablet %p %s: destroyed", this, getTableName());
 }
 
 void Tablet::set(strref_t row, strref_t column, int64_t timestamp, strref_t value)
 {
     validateRow(row, rows);
-
-    LockedPtr<SharedLogger> logger(*syncLogger);
     logger->set(shared_from_this(), row, column, timestamp, value);
 }
 
 void Tablet::erase(strref_t row, strref_t column, int64_t timestamp)
 {
     validateRow(row, rows);
-
-    LockedPtr<SharedLogger> logger(*syncLogger);
     logger->erase(shared_from_this(), row, column, timestamp);
 }
     
 void Tablet::sync()
 {
-    LockedPtr<SharedLogger> logger(*syncLogger);
     logger->sync();
 }
 
@@ -165,6 +142,18 @@ CellStreamPtr Tablet::scan(ScanPredicate const & pred) const
     }
     else
         return scanner;
+}
+
+std::string Tablet::getPrettyName() const
+{
+    ostringstream oss;
+    oss << "table=" << reprString(tableName)
+        << " last=";
+    if(rows.getUpperBound().isFinite())
+        oss << reprString(rows.getUpperBound().getValue());
+    else
+        oss << "END";
+    return oss.str();
 }
 
 CellStreamPtr Tablet::getMergedScan(ScanPredicate const & pred) const
@@ -217,23 +206,28 @@ void Tablet::loadConfig(TabletConfig const & cfg)
     rows = cfg.getTabletRows();
 
     // Load our tables
-    LockedPtr<tables_t> tables(syncTables);
-    tables->clear();
     bool uriChanged = false;
-    vector<string> const & uris = cfg.getTableUris();
-    for(vector<string>::const_iterator i = uris.begin();
-        i != uris.end(); ++i)
     {
-        std::pair<TablePtr, string> p = configMgr->openTable(*i);
-        tables->push_back(TableInfo(p.first, p.second, true));
+        LockedPtr<tables_t> tables(syncTables);
+        tables->clear();
+        vector<string> const & uris = cfg.getTableUris();
+        for(vector<string>::const_iterator i = uris.begin();
+            i != uris.end(); ++i)
+        {
+            std::pair<TablePtr, string> p = configMgr->openTable(*i);
+            tables->push_back(TableInfo(p.first, p.second, true));
         
-        if(p.second != *i)
-            uriChanged = true;
+            if(p.second != *i)
+                uriChanged = true;
+        }
     }
 
     // If a table URI changed during the load, resave our config
     if(uriChanged)
+    {
+        log("Tablet config changed on load, saving: %s", getPrettyName());
         saveConfig();
+    }
 }
 
 void Tablet::saveConfig() const
@@ -252,14 +246,14 @@ void Tablet::saveConfig() const
 
     // Save our config
     TabletConfig cfg(rows, uris, server);
-    configMgr->setTabletConfig(name, cfg);
+    configMgr->setTabletConfig(tableName, cfg);
 }
 
 void Tablet::addTable(TablePtr const & table, std::string const & tableUri)
 {
     EX_CHECK_NULL(table);
 
-    log("Tablet %s: add table (%p) %s", getName(), table.get(), tableUri);
+    log("Tablet %s: add table (%p) %s", getTableName(), table.get(), tableUri);
 
     bool wantCompaction = false;
     {
@@ -291,7 +285,7 @@ void Tablet::replaceTables(std::vector<TablePtr> const & oldTables,
         raise<ValueError>("replaceTables with empty table sequence");
     EX_CHECK_NULL(newTable);
 
-    log("Tablet %s: replace %d tables with (%p) %s", getName(),
+    log("Tablet %s: replace %d tables with (%p) %s", getTableName(),
         oldTables.size(), newTable.get(), newTableUri);
 
     vector<string> deadFiles;
@@ -342,7 +336,7 @@ void Tablet::replaceTables(std::vector<TablePtr> const & oldTables,
     // if(getDiskSize() >= SPLIT_THRESHOLD)
     // {
     //     std::string splitRow = chooseSplitRow();
-    //     configMgr->suggestSplit(name, splitRow);
+    //     configMgr->suggestSplit(tableName, splitRow);
     // }
 }
 
@@ -385,7 +379,7 @@ void Tablet::doCompaction()
     vector<TablePtr> compactionTables;
     bool filterErasures = false;
 
-    log("Tablet %s: start compaction", getName());
+    log("Tablet %s: start compaction", getTableName());
     
     // Choose the sequence of tables to compact
     {
@@ -421,7 +415,7 @@ void Tablet::doCompaction()
     }
 
     // Get an output file
-    std::string fn = configMgr->getNewTabletFile(name);
+    std::string fn = configMgr->getDataFile(tableName);
             
     // Open a DiskTable for writing
     DiskTableWriter writer(fn, 64<<10);
@@ -440,7 +434,7 @@ void Tablet::doCompaction()
         writer.put(x);
     writer.close();     // XXX should sync file
 
-    log("Tablet %s: end compaction", getName());
+    log("Tablet %s: end compaction", getTableName());
 
     // Reopen the table for reading
     std::string diskUri = uriPushScheme(fn, "disk");

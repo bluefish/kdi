@@ -52,7 +52,7 @@ class kdi::tablet::MetaConfigManager
     std::string serverName;
     std::string metaTableUri;
 
-    mutable TablePtr metaTable;
+    mutable TablePtr _metaTable;
     mutable boost::mutex metaTableMutex;
 
 public:
@@ -62,11 +62,10 @@ public:
     ~MetaConfigManager();
 
     // ConfigManager API
-    virtual TabletConfig getTabletConfig(std::string const & tabletName);
-    virtual void setTabletConfig(std::string const & tabletName, TabletConfig const & cfg);
-    virtual std::string getNewTabletFile(std::string const & tabletName);
-    virtual std::string getNewLogFile();
-    virtual std::pair<TablePtr, std::string> openTable(std::string const & uri);
+    std::list<TabletConfig> loadTabletConfigs(std::string const & tableName);
+    void setTabletConfig(std::string const & tableName, TabletConfig const & cfg);
+    std::string getDataFile(std::string const & tableName);
+    std::pair<TablePtr, std::string> openTable(std::string const & uri);
 
     /// Get a ConfigManager adapter for fixed, file-based configs.
     /// This will typically be used to load the root META table.
