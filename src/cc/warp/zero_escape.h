@@ -70,7 +70,7 @@ public:
 
 namespace warp {
 
-    std::ostream & operator<<(std::ostream & out, ZeroEscape const & x)
+    inline std::ostream & operator<<(std::ostream & out, ZeroEscape const & x)
     {
         char const * begin = x.begin();
         char const * end = x.end();
@@ -111,7 +111,7 @@ public:
 
 namespace warp {
 
-    std::ostream & operator<<(std::ostream & out, ZeroUnescape const & x)
+    inline std::ostream & operator<<(std::ostream & out, ZeroUnescape const & x)
     {
         char const * begin = x.begin();
         char const * end = x.end();

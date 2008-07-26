@@ -141,13 +141,13 @@ namespace warp {
                  << TupleEncoder<typename T::tail_type>(x.tuple.get_tail());
     }
 
-    template <>
+    template <> inline
     std::ostream & operator<<(std::ostream & o, TupleEncoder< tuple<> > const &)
     {
         return o;
     }
 
-    template <>
+    template <> inline
     std::ostream & operator<<(std::ostream & o, TupleEncoder< null_type > const &)
     {
         return o;
@@ -194,7 +194,7 @@ namespace warp {
                         tuple.get_tail(), oss);
         }
 
-        template <>
+        template <> inline
         void decodeTuple(strref_t encoded, tuple<> const & tuple,
                          std::ostringstream & oss)
         {
@@ -205,7 +205,7 @@ namespace warp {
             }
         }
 
-        template <>
+        template <> inline
         void decodeTuple(strref_t encoded, null_type const & tuple,
                          std::ostringstream & oss)
         {
