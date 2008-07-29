@@ -27,7 +27,6 @@
 #include <warp/perffile.h>
 #include <warp/varsub.h>
 #include <warp/md5.h>
-#include <warp/log.h>
 #include <ex/exception.h>
 #include <algorithm>
 #include <sys/time.h>
@@ -232,7 +231,6 @@ File::openUnique(std::string const & uriPattern, int maxTries)
         // Try to open the file.  This will only work if the file
         // doesn't already exist.
         try {
-            log("openUnique attempt: %s", uri);
             FilePtr fp = File::open(uri, O_RDWR | O_CREAT | O_EXCL | O_TRUNC);
             
             // Got one!  Return the result.
@@ -245,7 +243,6 @@ File::openUnique(std::string const & uriPattern, int maxTries)
             // exception hierarchy is too vague.
             
             // Try again...
-            log("fail: %s", ex);
         }
     }
 
