@@ -358,8 +358,6 @@ void MetaConfigManager::setTabletConfig(std::string const & tableName,
     metaTable->set(tabletName.getEncoded(), "config", 0,
                    getConfigCellValue(cfg));
     metaTable->sync();
-
-    log("Saved META config: %s", tableName);
 }
 
 std::string MetaConfigManager::getDataFile(std::string const & tableName)
@@ -534,7 +532,7 @@ std::string MetaConfigManager::getConfigCellValue(TabletConfig const & config) c
 
 TablePtr const & MetaConfigManager::getMetaTable() const
 {
-    log("Getting META table");
+    //log("Getting META table");
 
     if(!_metaTable)
     {
@@ -543,10 +541,10 @@ TablePtr const & MetaConfigManager::getMetaTable() const
         {
             log("Connecting to META table: %s", metaTableUri);
             _metaTable = Table::open(metaTableUri);
-            log("Connected to META table: %s", metaTableUri);
+            //log("Connected to META table: %s", metaTableUri);
         }
     }
 
-    log("Got META table");
+    //log("Got META table");
     return _metaTable;
 }

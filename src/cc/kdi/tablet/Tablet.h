@@ -29,6 +29,7 @@
 
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/noncopyable.hpp>
+#include <boost/thread/mutex.hpp>
 
 #include <string>
 #include <vector>
@@ -54,6 +55,9 @@ class kdi::tablet::Tablet
       public boost::enable_shared_from_this<kdi::tablet::Tablet>,
       private boost::noncopyable
 {
+    typedef boost::mutex mutex_t;
+    typedef mutex_t::scoped_lock lock_t;
+
     std::string tableName;
 
     ConfigManagerPtr configMgr;
@@ -62,6 +66,10 @@ class kdi::tablet::Tablet
 
     std::string server;
     warp::Interval<std::string> rows;
+
+    bool mutationsPending;
+    bool configChanged;
+    mutex_t statusMutex;
 
     struct TableInfo
     {

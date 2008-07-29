@@ -331,7 +331,6 @@ void SharedLogger::erase(TabletPtr const & tablet, strref_t row, strref_t column
 
 void SharedLogger::insert(TabletPtr const & tablet, Cell const & cell)
 {
-    log("grabbing public lock: insert");
     lock_t lock(publicMutex);
 
     if(!commitBuffer)
@@ -344,7 +343,6 @@ void SharedLogger::insert(TabletPtr const & tablet, Cell const & cell)
 
 void SharedLogger::sync()
 {
-    log("grabbing public lock: sync");
     lock_t lock(publicMutex);
 
     if(!commitBuffer)
@@ -352,11 +350,9 @@ void SharedLogger::sync()
 
     flush(lock);
 
-    log("releasing public lock: sync");
     lock.unlock();
     if(!commitQueue.waitForCompletion())
     {
-        log("grabbing public lock: sync again");
         lock.lock();
 
         // If the wait return false, then something canceled the wait
@@ -370,7 +366,6 @@ void SharedLogger::sync()
 
 void SharedLogger::shutdown()
 {
-    log("grabbing public lock: shutdown");
     lock_t lock(publicMutex);
 
     if(commitBuffer)
@@ -395,7 +390,7 @@ void SharedLogger::flush(lock_t & lock)
     if(commitBuffer->empty())
         return;
 
-    log("Flushing commit buffer");
+    //log("Flushing commit buffer");
 
     // Push the buffer into the Commit thread.  If this fails, it's
     // because the queue is full and waits have been canceled due to
@@ -420,7 +415,7 @@ void SharedLogger::commitLoop()
             commitQueue.pop(buffer);
             buffer.reset())
         {
-            log("Commit thread got work");
+            //log("Commit thread got work");
 
             // Create a new log file if we need it
             if(!logWriter)

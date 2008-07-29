@@ -80,7 +80,9 @@ Tablet::Tablet(std::string const & tableName,
     tableName(tableName),
     configMgr(configMgr),
     logger(logger),
-    compactor(compactor)
+    compactor(compactor),
+    mutationsPending(false),
+    configChanged(false)
 {
     log("Tablet %p %s: created", this, getTableName());
 
@@ -100,17 +102,30 @@ void Tablet::set(strref_t row, strref_t column, int64_t timestamp, strref_t valu
 {
     validateRow(row, rows);
     logger->set(shared_from_this(), row, column, timestamp, value);
+    mutationsPending = true;
 }
 
 void Tablet::erase(strref_t row, strref_t column, int64_t timestamp)
 {
     validateRow(row, rows);
     logger->erase(shared_from_this(), row, column, timestamp);
+    mutationsPending = true;
 }
     
 void Tablet::sync()
 {
-    logger->sync();
+    if(mutationsPending)
+    {
+        logger->sync();
+        mutationsPending = false;
+    }
+
+    lock_t lock(statusMutex);
+    if(configChanged)
+    {
+        saveConfig();
+        configChanged = false;
+    }
 }
 
 CellStreamPtr Tablet::scan() const
@@ -268,8 +283,11 @@ void Tablet::addTable(TablePtr const & table, std::string const & tableUri)
         wantCompaction = (tables->size() > 5);
     }
 
-    // Save new config
-    saveConfig();
+    // Note that config has changed
+    {
+        lock_t lock(statusMutex);
+        configChanged = true;
+    }
 
     // Request a compaction if we need one
     if(wantCompaction)
