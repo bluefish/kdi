@@ -84,6 +84,7 @@ class kdi::net::TimeoutLocator
     map_t objMap;
     mutex_t mutex;
     warp::CallQueue workQ;
+    boost::condition objectCreated;
 
     void cleanup();
 

@@ -88,53 +88,79 @@ TimeoutLocator::~TimeoutLocator()
 Ice::ObjectPtr TimeoutLocator::locate(Ice::Current const & cur,
                                       Ice::LocalObjectPtr & cookie)
 {
-    map_t::iterator it;
-    bool found;
-
-    // Look up ID in object map
+    lock_t lock(mutex);
+    for(;;)
     {
-        lock_t lock(mutex);
-        it = objMap.find(cur.id);
-        found = (it != objMap.end());
-    }
+        // Look up ID in object map
+        map_t::iterator it = objMap.find(cur.id);
 
-    if(!found)
-    {
-        // The object does not exist
+        // Did we find the object?
+        if(it != objMap.end())
+        {
+            // Object is in the map...
+            if(it->second)
+            {
+                // ...and is non-null.  Return it.
+                ++(it->second->refCount);
+                return it->second->getObject();
+            }
+            else
+            {
+                // ...and is null.  Another thread is trying to create
+                // it.  Wait.
+                log("Locator: waiting for object: %s", cur.id.name);
+                objectCreated.wait(lock);
+                log("Locator: done waiting for object: %s", cur.id.name);
 
-        // We can create the object on-demand if it is a table
+                // Try again
+                continue;
+            }
+        }
+
+        // Object is not in the map -- maybe we can create it
+
+        // We can only create tables
         if(cur.id.category != "table")
             return 0;
 
-        log("Locator: creating new table: %s", cur.id.name);
-        
-        // Create a new table
-        using namespace kdi::net::details;
-        kdi::TablePtr tbl = makeTable(cur.id.name);
+        // Insert a null entry into the map to signal that we're going
+        // to try to create it
+        it = objMap.insert(make_pair(cur.id, ItemPtr())).first;
 
-        // Add it to the object map
-        lock_t lock(mutex);
+        // Unlock while creating the new item
+        lock.unlock();
+        ItemPtr item;
+        try {
+            // Create the table
+            log("Locator: creating new table: %s", cur.id.name);
+            kdi::TablePtr tbl = makeTable(cur.id.name);
 
-        // Make sure nobody else created it while we were looking the
-        // other way.  If someone else already added the same object,
-        // use that one and delete ours.
-        it = objMap.find(cur.id);
-        if(it == objMap.end())
-        {
-            log("Locator: adding table to object map: %s", cur.id.name);
+            // Create an item for the table
+            using namespace kdi::net::details;
             TableIPtr obj = new TableI(tbl, this);
-            ItemPtr item(new Item<TableI>(obj, 600));
-            it = objMap.insert(make_pair(cur.id, item)).first;
+            item.reset(new Item<TableI>(obj, 600));
         }
-        else
-        {
-            log("Locator: discarding duplicate table: %s", cur.id.name);
+        catch(...) {
+            // Something broke -- lock and clean up before bailing
+            log("Locator: creation failed: %s", cur.id.name);
+            lock.lock();
+            objMap.erase(it);
+            objectCreated.notify_all();
+            throw;
         }
-    }
 
-    assert(it != objMap.end());
-    ++(it->second->refCount);
-    return it->second->getObject();
+        // Lock and update object map entry
+        lock.lock();
+        log("Locator: created table: %s", cur.id.name);
+        it->second = item;
+
+        // Notify others that we're done
+        objectCreated.notify_all();
+
+        // Return new object 
+        ++(it->second->refCount);
+        return it->second->getObject();
+    }
 }
 
 void TimeoutLocator::finished(Ice::Current const & cur,
