@@ -54,7 +54,7 @@ class warp::SyncQueue : private boost::noncopyable
     condition_t itemPushed;
     condition_t itemPopped;
     condition_t zeroWaiting;
-    condition_t taskCompleted;
+    condition_t allTasksCompleted;
     size_t nWaiting;
     size_t nTasksPending;
     bool cancel;
@@ -225,7 +225,8 @@ public:
     {
         lock_t l(qMutex);
         --nTasksPending;
-        taskCompleted.notify_one();
+        if(nTasksPending == 0)
+            allTasksCompleted.notify_all();
     }
 
     /// Cancel all waits on on this queue.  Calls to push() will
@@ -243,7 +244,7 @@ public:
             cancel = true;
             itemPushed.notify_all();
             itemPopped.notify_all();
-            taskCompleted.notify_all();
+            allTasksCompleted.notify_all();
 
             if(!wait || nWaiting == 0)
                 break;
@@ -291,7 +292,7 @@ public:
                 return false;
 
             // Wait for a task to be completed.
-            waitHelper(l, taskCompleted);
+            waitHelper(l, allTasksCompleted);
         }
     }
 
