@@ -58,52 +58,49 @@ namespace {
 
     class SuperTabletMaker
     {
-        // XXX: strangeness.  The fixed tables will need to load their
-        // configs out of a file like object.  All other tablets will
-        // have configs in the meta table.  The other config manager
-        // functions are common, I think.  New files and such will be
-        // generated in the normal way.  They will still share log
-        // files.  However, tables from a file config cannot be split.
-        // So we wind up with something like this:
-        //
-        // class CommonConfigManager : public ConfigManager { ... };
-        // class FileConfigManager : public ConfigManager {
-        //    CommonConfigManagerPtr common;
-        //    ...(file config)...
-        // };
-        // class MetaConfigManager : public ConfigManager {
-        //    CommonConfigManagerPtr common;
-        //    ...(meta config)...
-        // };
-        //
-        // The CommonConfigManager need not actually be a
-        // ConfigManager.  It can just hold the common state.
-      
-
         tablet::MetaConfigManagerPtr metaConfigMgr;
         tablet::SharedLoggerPtr logger;
         tablet::SharedCompactorPtr compactor;
-
-        tablet::ConfigManagerPtr fixedConfigMgr;
-        std::vector<std::string> fixedTables;
+        TablePtr metaTable;
 
     public:
         SuperTabletMaker(std::string const & root,
-                         std::string const & metaTable,
-                         std::string const & server,
-                         std::vector<std::string> const & fixedTables_) :
-            metaConfigMgr(new tablet::MetaConfigManager(root, server, metaTable)),
+                         std::string const & metaTableUri,
+                         std::string const & server) :
+            metaConfigMgr(new tablet::MetaConfigManager(root, server)),
             logger(new tablet::SharedLogger(metaConfigMgr)),
-            compactor(new tablet::SharedCompactor),
-            fixedTables(fixedTables_)
+            compactor(new tablet::SharedCompactor)
         {
             log("SuperTabletMaker %p: created", this);
 
-            if(!fixedTables.empty())
+            if(metaTableUri.empty())
             {
-                fixedConfigMgr = metaConfigMgr->getFixedAdapter();
-                std::sort(fixedTables.begin(), fixedTables.end());
+                log("Creating META table");
+
+                tablet::ConfigManagerPtr fixedMgr =
+                    metaConfigMgr->getFixedAdapter();
+                std::list<tablet::TabletConfig> cfgs =
+                    fixedMgr->loadTabletConfigs("META");
+                if(cfgs.size() != 1)
+                    raise<RuntimeError>("loaded %d configs for META table",
+                                        cfgs.size());
+                metaTable.reset(
+                    new tablet::Tablet(
+                        "META",
+                        fixedMgr,
+                        logger,
+                        compactor,
+                        cfgs.front()
+                        )
+                    );
             }
+            else
+            {
+                log("Connecting to META table: %s", metaTableUri);
+                metaTable = Table::open(metaTableUri);
+            }
+
+            metaConfigMgr->setMetaTable(metaTable);
         }
         
         ~SuperTabletMaker()
@@ -116,26 +113,14 @@ namespace {
 
         TablePtr makeTable(std::string const & name) const
         {
-            if(std::binary_search(fixedTables.begin(), fixedTables.end(), name))
+            if(metaTable && name == "META")
             {
-                using kdi::tablet::TabletConfig;
-
-                log("Load fixed table: %s", name);
-                std::list<TabletConfig> cfgs = fixedConfigMgr->loadTabletConfigs(name);
-                if(cfgs.size() != 1)
-                    raise<RuntimeError>("loaded %d configs for fixed table: %s",
-                                        cfgs.size(), name);
-                
-                TablePtr p(
-                    new tablet::Tablet(
-                        name, fixedConfigMgr, logger, compactor, cfgs.front()
-                        )
-                    );
-                return p;
+                log("Load META table");
+                return metaTable;
             }
             else
             {
-                log("Load super table: %s", name);
+                log("Load table: %s", name);
                 TablePtr p(
                     new tablet::SuperTablet(
                         name, metaConfigMgr, logger, compactor
@@ -143,18 +128,6 @@ namespace {
                     );
                 return p;
             }
-
-
-            // XXX : scan meta table ... or... not sure yet.  This
-            // gets called if a client has requested a table we don't
-            // know about.
-
-            // in some cases, that means the meta table has been
-            // updated.  but there's also the case of a request for an
-            // invalid table (not in the meta table).
-
-            // not sure yet how to connect tablets to clients.
-
         }
     };
 
@@ -260,14 +233,6 @@ namespace {
                 op.addOption("server,s",
                              value<string>()->default_value(getHostName()),
                              "Name of server");
-                
-                // The usual procedure for loading a table is to scan
-                // the META table for config information and load the
-                // tablets that are hosted by this server.  This won't
-                // work for loading the META table.  The server
-                // hosting the META table must load it separately.
-                op.addOption("load,l", value< vector<string> >(),
-                             "Preload a table and pin it to the server");
             }
 
             // Parse options
@@ -303,19 +268,15 @@ namespace {
             else if(mode == "super")
             {
                 string meta;
-                if(!opt.get("meta", meta) || meta.empty())
-                    op.error("need --meta");
+                opt.get("meta", meta);
 
                 string server;
                 if(!opt.get("server", server) || server.empty())
                     op.error("need --server");
 
-                vector<string> load;
-                opt.get("load", load);
-
                 log("Starting in SuperTablet mode");
                 boost::shared_ptr<SuperTabletMaker> p(
-                    new SuperTabletMaker(tableRoot, meta, server, load)
+                    new SuperTabletMaker(tableRoot, meta, server)
                     );
                 tableMaker = boost::bind(&SuperTabletMaker::makeTable, p, _1);
             }

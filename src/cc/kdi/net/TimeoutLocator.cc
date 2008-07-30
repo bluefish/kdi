@@ -106,7 +106,7 @@ Ice::ObjectPtr TimeoutLocator::locate(Ice::Current const & cur,
         if(cur.id.category != "table")
             return 0;
 
-        log("Locator: new table %s", cur.id.name);
+        log("Locator: creating new table: %s", cur.id.name);
         
         // Create a new table
         using namespace kdi::net::details;
@@ -121,9 +121,14 @@ Ice::ObjectPtr TimeoutLocator::locate(Ice::Current const & cur,
         it = objMap.find(cur.id);
         if(it == objMap.end())
         {
+            log("Locator: adding table to object map: %s", cur.id.name);
             TableIPtr obj = new TableI(tbl, this);
             ItemPtr item(new Item<TableI>(obj, 600));
             it = objMap.insert(make_pair(cur.id, item)).first;
+        }
+        else
+        {
+            log("Locator: discarding duplicate table: %s", cur.id.name);
         }
     }
 

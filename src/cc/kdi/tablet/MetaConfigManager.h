@@ -50,15 +50,11 @@ class kdi::tablet::MetaConfigManager
 {
     std::string rootDir;
     std::string serverName;
-    std::string metaTableUri;
-
-    mutable TablePtr _metaTable;
-    mutable boost::mutex metaTableMutex;
+    TablePtr _metaTable;
 
 public:
     MetaConfigManager(std::string const & rootDir,
-                      std::string const & serverName,
-                      std::string const & metaTableUri);
+                      std::string const & serverName);
     ~MetaConfigManager();
 
     // ConfigManager API
@@ -74,8 +70,8 @@ public:
     TabletConfig getConfigFromCell(Cell const & configCell) const;
     std::string getConfigCellValue(TabletConfig const & config) const;
 
-    std::string const & getServerName() const { return serverName; }
-    TablePtr const & getMetaTable() const;
+    void setMetaTable(TablePtr const & metaTable) { _metaTable = metaTable; }
+    TablePtr const & getMetaTable() const { return _metaTable; }
 
 private:
     class FixedAdapter;

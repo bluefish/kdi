@@ -135,7 +135,7 @@ public:
                 TabletConfig(
                     Interval<string>().setInfinite(),
                     vector<string>(),
-                    base->getServerName()
+                    base->serverName
                     )
                 );
             return cfgs;
@@ -217,14 +217,11 @@ public:
 // MetaConfigManager
 //----------------------------------------------------------------------------
 MetaConfigManager::MetaConfigManager(std::string const & rootDir,
-                                     std::string const & serverName,
-                                     std::string const & metaTableUri) :
+                                     std::string const & serverName) :
     rootDir(rootDir),
-    serverName(serverName),
-    metaTableUri(metaTableUri)
+    serverName(serverName)
 {
-    log("MetaConfigManager: root=%s, server=%s metaTable=%s",
-        rootDir, serverName, metaTableUri);
+    log("MetaConfigManager: root=%s, server=%s", rootDir, serverName);
 
     if(serverName.empty())
         raise<ValueError>("empty server name");
@@ -528,23 +525,4 @@ std::string MetaConfigManager::getConfigCellValue(TabletConfig const & config) c
     ostringstream oss;
     oss << state;
     return oss.str();
-}
-
-TablePtr const & MetaConfigManager::getMetaTable() const
-{
-    //log("Getting META table");
-
-    if(!_metaTable)
-    {
-        boost::mutex::scoped_lock lock(metaTableMutex);
-        if(!_metaTable)
-        {
-            log("Connecting to META table: %s", metaTableUri);
-            _metaTable = Table::open(metaTableUri);
-            //log("Connected to META table: %s", metaTableUri);
-        }
-    }
-
-    //log("Got META table");
-    return _metaTable;
 }
