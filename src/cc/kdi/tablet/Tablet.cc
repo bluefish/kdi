@@ -81,8 +81,7 @@ Tablet::Tablet(std::string const & tableName,
     configMgr(configMgr),
     logger(logger),
     compactor(compactor),
-    mutationsPending(false),
-    configChanged(false)
+    mutationsPending(false)
 {
     log("Tablet %p %s: created", this, getTableName());
 
@@ -120,11 +119,19 @@ void Tablet::sync()
         mutationsPending = false;
     }
 
-    lock_t lock(statusMutex);
-    if(configChanged)
+    LockedPtr<ConfigInfo> cfg(syncConfigInfo);
+    if(cfg->configChanged)
     {
+        // Save the new config
         saveConfig();
-        configChanged = false;
+
+        // Delete old files
+        std::for_each(cfg->deadFiles.begin(), cfg->deadFiles.end(),
+                      fs::remove);
+        cfg->deadFiles.clear();
+
+        // Reset flag
+        cfg->configChanged = false;
     }
 }
 
@@ -284,10 +291,7 @@ void Tablet::addTable(TablePtr const & table, std::string const & tableUri)
     }
 
     // Note that config has changed
-    {
-        lock_t lock(statusMutex);
-        configChanged = true;
-    }
+    LockedPtr<ConfigInfo>(syncConfigInfo)->configChanged = true;
 
     // Request a compaction if we need one
     if(wantCompaction)
@@ -341,14 +345,16 @@ void Tablet::replaceTables(std::vector<TablePtr> const & oldTables,
         }
     }
 
-    // Save new config
-    saveConfig();
+    // Note config modification
+    {
+        LockedPtr<ConfigInfo> cfg(syncConfigInfo);
+        cfg->configChanged = true;
+        cfg->deadFiles.insert(cfg->deadFiles.end(),
+                              deadFiles.begin(), deadFiles.end());
+    }
 
     // Update scanners
     updateScanners();
-
-    // Remove old files
-    std::for_each(deadFiles.begin(), deadFiles.end(), fs::remove);
 
     // XXX: Check to see if we should split
     // if(getDiskSize() >= SPLIT_THRESHOLD)

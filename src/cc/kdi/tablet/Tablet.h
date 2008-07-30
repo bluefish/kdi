@@ -68,8 +68,15 @@ class kdi::tablet::Tablet
     warp::Interval<std::string> rows;
 
     bool mutationsPending;
-    bool configChanged;
-    mutex_t statusMutex;
+    
+    struct ConfigInfo
+    {
+        bool configChanged;
+        std::vector<std::string> deadFiles;
+
+        ConfigInfo() : configChanged(false) {}
+    };
+    warp::Synchronized<ConfigInfo> syncConfigInfo;
 
     struct TableInfo
     {
