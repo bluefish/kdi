@@ -24,6 +24,10 @@
 #include <kdi/table.h>
 #include <kdi/tablet/forward.h>
 #include <kdi/tablet/MetaConfigManager.h>
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/condition.hpp>
+#include <boost/noncopyable.hpp>
+#include <boost/enable_shared_from_this.hpp>
 #include <vector>
 
 namespace kdi {
@@ -39,19 +43,33 @@ namespace tablet {
 // SuperTablet
 //----------------------------------------------------------------------------
 class kdi::tablet::SuperTablet
-    : public kdi::Table
+    : public kdi::Table,
+      public boost::enable_shared_from_this<kdi::tablet::SuperTablet>,
+      private boost::noncopyable
 {
+    typedef boost::mutex mutex_t;
+    typedef mutex_t::scoped_lock lock_t;
+
+    SharedSplitterPtr splitter;
+
     std::vector<TabletPtr> tablets;
 
+    bool mutationsBlocked;
+    size_t mutationsPending;
 
-    /// Get the Tablet containing the given row
-    TabletPtr const & getTablet(strref_t row) const;
+    mutex_t mutex;
+    boost::condition allQuiet;
+    boost::condition allowMutations;
+
+    class MutationInterlock;
+    class MutationLull;
 
 public:
     SuperTablet(std::string const & name,
                 MetaConfigManagerPtr const & configMgr,
                 SharedLoggerPtr const & logger,
-                SharedCompactorPtr const & compactor);
+                SharedCompactorPtr const & compactor,
+                SharedSplitterPtr const & splitter);
     ~SuperTablet();
 
     // Table API
@@ -62,6 +80,17 @@ public:
     virtual CellStreamPtr scan() const;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
     virtual void sync();
+
+    /// Add the tablet to the split queue.
+    void requestSplit(Tablet * tablet);
+
+    /// Split the given tablet.  This function cannot be called from
+    /// the Table API threads or we'll get deadlocked.
+    void performSplit(Tablet * tablet);
+
+private:
+    /// Get the Tablet containing the given row
+    TabletPtr const & getTablet(strref_t row) const;
 };
 
 

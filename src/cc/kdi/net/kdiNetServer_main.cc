@@ -38,6 +38,7 @@
 #include <kdi/tablet/TabletConfig.h>
 #include <kdi/tablet/SharedLogger.h>
 #include <kdi/tablet/SharedCompactor.h>
+#include <kdi/tablet/SharedSplitter.h>
 #include <kdi/tablet/FileConfigManager.h>
 
 // For SuperTablet implementation
@@ -61,6 +62,7 @@ namespace {
         tablet::MetaConfigManagerPtr metaConfigMgr;
         tablet::SharedLoggerPtr logger;
         tablet::SharedCompactorPtr compactor;
+        tablet::SharedSplitterPtr splitter;
         TablePtr metaTable;
 
     public:
@@ -69,7 +71,8 @@ namespace {
                          std::string const & server) :
             metaConfigMgr(new tablet::MetaConfigManager(root, server)),
             logger(new tablet::SharedLogger(metaConfigMgr)),
-            compactor(new tablet::SharedCompactor)
+            compactor(new tablet::SharedCompactor),
+            splitter(new tablet::SharedSplitter)
         {
             log("SuperTabletMaker %p: created", this);
 
@@ -105,6 +108,7 @@ namespace {
         
         ~SuperTabletMaker()
         {
+            splitter->shutdown();
             compactor->shutdown();
             logger->shutdown();
 
@@ -123,7 +127,8 @@ namespace {
                 log("Load table: %s", name);
                 TablePtr p(
                     new tablet::SuperTablet(
-                        name, metaConfigMgr, logger, compactor
+                        name, metaConfigMgr, logger,
+                        compactor, splitter
                         )
                     );
                 return p;

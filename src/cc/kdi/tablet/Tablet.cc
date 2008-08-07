@@ -19,6 +19,7 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/tablet/Tablet.h>
+#include <kdi/tablet/SuperTablet.h>
 #include <kdi/tablet/TabletConfig.h>
 #include <kdi/tablet/Scanner.h>
 #include <kdi/tablet/ConfigManager.h>
@@ -47,6 +48,9 @@ using namespace std;
 using boost::format;
 
 namespace {
+    
+    /// Split tablets that get larger than 400 MB
+    size_t const SPLIT_THRESHOLD = 400 << 20;
 
     /// Make sure row is in tablet range or raise a RowNotInTabletError
     inline void validateRow(strref_t row, Interval<string> const & rows)
@@ -69,6 +73,7 @@ namespace {
     }
 }
 
+
 //----------------------------------------------------------------------------
 // Tablet
 //----------------------------------------------------------------------------
@@ -76,11 +81,13 @@ Tablet::Tablet(std::string const & tableName,
                ConfigManagerPtr const & configMgr,
                SharedLoggerPtr const & logger,
                SharedCompactorPtr const & compactor,
-               TabletConfig const & cfg) :
+               TabletConfig const & cfg,
+               SuperTablet * superTablet) :
     tableName(tableName),
     configMgr(configMgr),
     logger(logger),
     compactor(compactor),
+    superTablet(superTablet),
     mutationsPending(false)
 {
     log("Tablet %p %s: created", this, getTableName());
@@ -221,6 +228,69 @@ CellStreamPtr Tablet::getMergedScan(ScanPredicate const & pred) const
     return merge;
 }
 
+TabletPtr Tablet::splitTablet()
+{
+    log("Tablet split: %s", getPrettyName());
+
+    // Make sure outstanding mutations are stable
+    sync();
+
+    // Choose a median row
+    std::string splitRow = chooseSplitRow();
+
+    // Make the new intervals
+    Interval<string> low(rows);
+    Interval<string> high(rows);
+    low.setUpperBound(splitRow, BT_INCLUSIVE);
+    high.setLowerBound(splitRow, BT_EXCLUSIVE);
+
+    // Make sure the split actually divides the tablet into two
+    // non-empty parts.  Otherwise, return null.  Split is not
+    // possible.
+    if(low.isEmpty() || high.isEmpty())
+    {
+        log("No split possible: %s", getPrettyName());
+        return TabletPtr();
+    }
+
+    // Save new tablet configs -- write the high first because it is
+    // somewhat less expensive to recover from a missing low tablet
+    // than a missing high tablet.
+    vector<string> uris = getFragmentUris();
+    TabletConfig highCfg(high, uris, server);
+    TabletConfig lowCfg(low, uris, server);
+    configMgr->setTabletConfig(tableName, highCfg);
+    configMgr->setTabletConfig(tableName, lowCfg);
+
+    // Clone this tablet and tweak both instances
+    TabletPtr lowTablet(new Tablet(*this));
+    lowTablet->rows = low;
+    this->rows = high;
+
+    log("Tablet split complete: low=%s high=%s",
+        lowTablet->getPrettyName(),
+        this->getPrettyName());
+
+    // Return new tablet
+    return lowTablet;
+}
+
+Tablet::Tablet(Tablet const & o) :
+    tableName(o.tableName),
+    configMgr(o.configMgr),
+    logger(o.logger),
+    compactor(o.compactor),
+    superTablet(o.superTablet),
+    server(o.server),
+    rows(o.rows),
+    mutationsPending(false)
+{
+    // XXX: Clone our input fragments.  If things can be shared, just
+    // copy the shared pointer.  Also need to figure out how to deal
+    // with scanners.
+    cloneFragments();
+}
+
 void Tablet::loadConfig(TabletConfig const & cfg)
 {
     // Grab the server name and row interval
@@ -254,21 +324,26 @@ void Tablet::loadConfig(TabletConfig const & cfg)
 
 void Tablet::saveConfig() const
 {
-    // Build list of tables
+    // Save our config
+    configMgr->setTabletConfig(
+        tableName,
+        TabletConfig(rows, getFragmentUris(), server));
+}
+
+std::vector<std::string> Tablet::getFragmentUris() const
+{
+    LockedPtr<tables_t const> tables(syncTables);
+
+    // Build list of fragment uris
     vector<string> uris;
+    uris.reserve(tables->size());
+    for(tables_t::const_iterator i = tables->begin();
+        i != tables->end(); ++i)
     {
-        LockedPtr<tables_t const> tables(syncTables);
-        uris.reserve(tables->size());
-        for(tables_t::const_iterator i = tables->begin();
-            i != tables->end(); ++i)
-        {
-            uris.push_back(i->uri);
-        }
+        uris.push_back(i->uri);
     }
 
-    // Save our config
-    TabletConfig cfg(rows, uris, server);
-    configMgr->setTabletConfig(tableName, cfg);
+    return uris;
 }
 
 void Tablet::addTable(TablePtr const & table, std::string const & tableUri)
@@ -356,12 +431,9 @@ void Tablet::replaceTables(std::vector<TablePtr> const & oldTables,
     // Update scanners
     updateScanners();
 
-    // XXX: Check to see if we should split
-    // if(getDiskSize() >= SPLIT_THRESHOLD)
-    // {
-    //     std::string splitRow = chooseSplitRow();
-    //     configMgr->suggestSplit(tableName, splitRow);
-    // }
+    // Check to see if we should split
+    if(superTablet && getDiskSize() >= SPLIT_THRESHOLD)
+        superTablet->requestSplit(this);
 }
 
 namespace
@@ -467,6 +539,26 @@ void Tablet::doCompaction()
 
     // Update table set
     replaceTables(compactionTables, p.first, p.second);
+}
+
+size_t Tablet::getDiskSize() const
+{
+    LockedPtr<tables_t const> tables(syncTables);
+
+    size_t sum = 0;
+    for(tables_t::const_iterator i = tables->begin();
+        i != tables->end(); ++i)
+    {
+        /// XXX: need to know disk size of each fragment
+        sum += i->diskSize;
+    }
+
+    return sum;
+}
+
+std::string Tablet::chooseSplitRow() const
+{
+    return std::string();
 }
 
 void Tablet::updateScanners() const

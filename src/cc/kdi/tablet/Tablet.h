@@ -63,6 +63,7 @@ class kdi::tablet::Tablet
     ConfigManagerPtr configMgr;
     SharedLoggerPtr logger;
     SharedCompactorPtr compactor;
+    SuperTablet * superTablet;
 
     std::string server;
     warp::Interval<std::string> rows;
@@ -101,13 +102,15 @@ class kdi::tablet::Tablet
 
     typedef std::vector<ScannerWeakPtr> scanner_vec_t;
     mutable warp::Synchronized<scanner_vec_t> syncScanners;
+
     
 public:
     Tablet(std::string const & tableName,
            ConfigManagerPtr const & configMgr,
            SharedLoggerPtr const & logger,
            SharedCompactorPtr const & compactor,
-           TabletConfig const & cfg);
+           TabletConfig const & cfg,
+           SuperTablet * superTablet = 0);
     ~Tablet();
 
     // Table API
@@ -153,9 +156,27 @@ public:
         return rows;
     }
 
+    /// Split the tablet into two.  An approximate median row is
+    /// chosen as a split point.  This tablet shrinks to the range
+    /// between the split point and the end of the tablet.  A new
+    /// tablet is created to handle the range between the beginning of
+    /// the old tablet and the split point.  The new tablet is
+    /// returned.  If the split fails because the entire tablet is one
+    /// row and there is no median row, nothing happens to this tablet
+    /// and the returned tablet pointer will be null.
+    TabletPtr splitTablet();
+
 private:
+    // Copy constructor for splitting
+    Tablet(Tablet const & other);
+
     void loadConfig(TabletConfig const & cfg);
     void saveConfig() const;
+
+    std::vector<std::string> getFragmentUris() const;
+
+    size_t getDiskSize() const;
+    std::string chooseSplitRow() const;
 
     /// Call reopen() on all Scanners.  Expired scanners will be
     /// filtered out of list as well.

@@ -22,6 +22,7 @@
 #include <kdi/tablet/Tablet.h>
 #include <kdi/tablet/TabletName.h>
 #include <kdi/tablet/TabletConfig.h>
+#include <kdi/tablet/SharedSplitter.h>
 #include <kdi/scan_predicate.h>
 #include <warp/interval.h>
 #include <warp/log.h>
@@ -70,27 +71,66 @@ namespace {
 }
 
 //----------------------------------------------------------------------------
+// SuperTablet::MutationInterlock
+//----------------------------------------------------------------------------
+class SuperTablet::MutationInterlock
+{
+    SuperTablet & x;
+    
+public:
+    explicit MutationInterlock(SuperTablet & x) : x(x)
+    {
+        lock_t lock(x.mutex);
+        while(x.mutationsBlocked)
+            x.allowMutations.wait(lock);
+        ++x.mutationsPending;
+    }
+
+    ~MutationInterlock()
+    {
+        lock_t lock(x.mutex);
+        if(--x.mutationsPending == 0)
+            x.allQuiet.notify_all();
+    }
+};
+
+
+//----------------------------------------------------------------------------
+// SuperTablet::MutationLull
+//----------------------------------------------------------------------------
+class SuperTablet::MutationLull
+{
+    SuperTablet & x;
+    
+public:
+    explicit MutationLull(SuperTablet & x) : x(x)
+    {
+        lock_t lock(x.mutex);
+        x.mutationsBlocked = true;
+        while(x.mutationsPending)
+            x.allQuiet.wait(lock);
+    }
+
+    ~MutationLull()
+    {
+        lock_t lock(x.mutex);
+        x.mutationsBlocked = false;
+        x.allowMutations.notify_all();
+    }
+};
+
+
+//----------------------------------------------------------------------------
 // SuperTablet
 //----------------------------------------------------------------------------
-TabletPtr const & SuperTablet::getTablet(strref_t row) const
-{
-    // Find tablet such that its upper bound contains the row
-    TabletLt tlt;
-    vector<TabletPtr>::const_iterator i = std::upper_bound(
-        tablets.begin(), tablets.end(), row, tlt);
-
-    // If the tablet lower bound also contains the row, we have a
-    // match
-    if(i != tablets.end() && tlt.lt((*i)->getRows().getLowerBound(), row))
-        return *i;
-    else
-        raise<ValueError>("row not on this server: %s", reprString(row));
-}
-
 SuperTablet::SuperTablet(std::string const & name,
                          MetaConfigManagerPtr const & configMgr,
                          SharedLoggerPtr const & logger,
-                         SharedCompactorPtr const & compactor)
+                         SharedCompactorPtr const & compactor,
+                         SharedSplitterPtr const & splitter) :
+    splitter(splitter),
+    mutationsBlocked(false),
+    mutationsPending(0)
 {
     std::list<TabletConfig> cfgs = configMgr->loadTabletConfigs(name);
     
@@ -109,7 +149,8 @@ SuperTablet::SuperTablet(std::string const & name,
                 configMgr,
                 logger,
                 compactor,
-                *i
+                *i,
+                this
                 )
             );
         tablets.push_back(p);
@@ -123,16 +164,19 @@ SuperTablet::~SuperTablet()
 void SuperTablet::set(strref_t row, strref_t column, int64_t timestamp,
                       strref_t value)
 {
+    MutationInterlock interlock(*this);
     getTablet(row)->set(row,column,timestamp,value);
 }
 
 void SuperTablet::erase(strref_t row, strref_t column, int64_t timestamp)
 {
+    MutationInterlock interlock(*this);
     getTablet(row)->erase(row,column,timestamp);
 }
 
 void SuperTablet::insert(Cell const & x)
 {
+    MutationInterlock interlock(*this);
     getTablet(x.getRow())->insert(x);
 }
 
@@ -162,6 +206,7 @@ CellStreamPtr SuperTablet::scan(ScanPredicate const & pred) const
 
 void SuperTablet::sync()
 {
+    MutationInterlock interlock(*this);
     for(vector<TabletPtr>::const_iterator i = tablets.begin();
         i != tablets.end(); ++i)
     {
@@ -169,4 +214,42 @@ void SuperTablet::sync()
 
         (*i)->sync();
     }
+}
+
+void SuperTablet::requestSplit(Tablet * tablet)
+{
+    splitter->enqueueSplit(shared_from_this(), tablet);
+}
+
+void SuperTablet::performSplit(Tablet * tablet)
+{
+    // Stop mutations for this duration of this call
+    MutationLull lull(*this);
+
+    // Split the tablet at the given row
+    TabletPtr lowTablet = tablet->splitTablet();
+    
+    // We may not get a new tablet if there was no place to split
+    if(!lowTablet)
+        return;
+
+    // Insert the tablet into our map
+    vector<TabletPtr>::iterator it = std::lower_bound(
+        tablets.begin(), tablets.end(), lowTablet, TabletLt());
+    tablets.insert(it, lowTablet);
+}
+
+TabletPtr const & SuperTablet::getTablet(strref_t row) const
+{
+    // Find tablet such that its upper bound contains the row
+    TabletLt tlt;
+    vector<TabletPtr>::const_iterator i = std::upper_bound(
+        tablets.begin(), tablets.end(), row, tlt);
+
+    // If the tablet lower bound also contains the row, we have a
+    // match
+    if(i != tablets.end() && tlt.lt((*i)->getRows().getLowerBound(), row))
+        return *i;
+    else
+        raise<ValueError>("row not on this server: %s", reprString(row));
 }

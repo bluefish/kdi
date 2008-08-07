@@ -32,9 +32,11 @@ namespace kdi {
 namespace tablet {
 
     class Tablet;
+    class SuperTablet;
     class Scanner;
     class SharedLogger;
     class SharedCompactor;
+    class SharedSplitter;
     class ConfigManager;
     class LogWriter;
     class TabletConfig;
@@ -42,9 +44,13 @@ namespace tablet {
     typedef boost::shared_ptr<Tablet> TabletPtr;
     typedef boost::shared_ptr<Tablet const> TabletCPtr;
 
+    typedef boost::shared_ptr<SuperTablet> SuperTabletPtr;
+    typedef boost::shared_ptr<SuperTablet const> SuperTabletCPtr;
+
     typedef boost::shared_ptr<Scanner> ScannerPtr;
     typedef boost::shared_ptr<SharedLogger> SharedLoggerPtr;
     typedef boost::shared_ptr<SharedCompactor> SharedCompactorPtr;
+    typedef boost::shared_ptr<SharedSplitter> SharedSplitterPtr;
     typedef boost::shared_ptr<ConfigManager> ConfigManagerPtr;
     typedef boost::shared_ptr<LogWriter> LogWriterPtr;
 
