@@ -59,6 +59,7 @@ class kdi::tablet::SharedLogger
     typedef mutex_t::scoped_lock lock_t;
 
     ConfigManagerPtr configMgr;
+    FileTrackerPtr tracker;
 
     CommitBufferPtr commitBuffer;
     LogWriterPtr logWriter;
@@ -71,7 +72,8 @@ class kdi::tablet::SharedLogger
     mutex_t publicMutex;
 
 public:
-    explicit SharedLogger(ConfigManagerPtr const & configMgr);
+    SharedLogger(ConfigManagerPtr const & configMgr,
+                 FileTrackerPtr const & tracker);
     ~SharedLogger();
 
     /// Set a cell in the given tablet. (main thread)

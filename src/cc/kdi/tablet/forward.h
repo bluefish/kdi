@@ -39,6 +39,7 @@ namespace tablet {
     class SharedCompactor;
     class SharedSplitter;
     class ConfigManager;
+    class FileTracker;
     class LogWriter;
     class TabletConfig;
 
@@ -54,6 +55,7 @@ namespace tablet {
     typedef boost::shared_ptr<SharedCompactor> SharedCompactorPtr;
     typedef boost::shared_ptr<SharedSplitter> SharedSplitterPtr;
     typedef boost::shared_ptr<ConfigManager> ConfigManagerPtr;
+    typedef boost::shared_ptr<FileTracker> FileTrackerPtr;
     typedef boost::shared_ptr<LogWriter> LogWriterPtr;
 
     typedef boost::weak_ptr<Tablet> TabletWeakPtr;

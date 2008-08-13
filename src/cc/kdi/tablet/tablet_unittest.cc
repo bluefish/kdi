@@ -26,6 +26,7 @@
 #include <kdi/tablet/SharedLogger.h>
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/FileConfigManager.h>
+#include <kdi/tablet/FileTracker.h>
 #include <boost/format.hpp>
 
 #include <warp/init.h>
@@ -50,12 +51,14 @@ namespace
     struct Setup : private ModuleInit
     {
         ConfigManagerPtr configMgr;
+        FileTrackerPtr tracker;
         SharedLoggerPtr logger;
         SharedCompactorPtr compactor;
 
         Setup() :
             configMgr(new FileConfigManager("memfs:/")),
-            logger(new SharedLogger(configMgr)),
+            tracker(new FileTracker),
+            logger(new SharedLogger(configMgr, tracker)),
             compactor(new SharedCompactor)
         {
         }
@@ -74,7 +77,7 @@ BOOST_AUTO_UNIT_TEST(table_api_basic)
         i != cfgs.end(); ++i)
     {
         TabletPtr t(
-            new Tablet(NAME, s.configMgr, s.logger, s.compactor, *i));
+            new Tablet(NAME, s.configMgr, s.logger, s.compactor, s.tracker, *i));
 
         unittest::testTableInterface(t);
     }

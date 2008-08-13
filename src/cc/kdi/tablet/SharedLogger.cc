@@ -22,6 +22,7 @@
 #include <kdi/tablet/LogWriter.h>
 #include <kdi/tablet/Tablet.h>
 #include <kdi/tablet/ConfigManager.h>
+#include <kdi/tablet/FileTracker.h>
 #include <kdi/tablet/LogFragment.h>
 #include <kdi/synchronized_table.h>
 #include <kdi/scan_predicate.h>
@@ -170,7 +171,7 @@ public:
         tbl->sync();
     }
 
-    void serialize(ConfigManagerPtr const & configMgr) const
+    void serialize(ConfigManagerPtr const & configMgr, FileTrackerPtr const & tracker) const
     {
         log("Serializing %d fragments", fragmentMap.size());
 
@@ -200,6 +201,9 @@ public:
             oldFragments.push_back(frag);
             tablet->replaceFragments(oldFragments, newFragment);
 
+            // Track the new disk file for automatic deletion
+            tracker->track(fn);
+
             // XXX maybe should release memTable.  if a later
             // serialization fails in this group and we go with the
             // wait-and-retry strategy, we'll wind up reserializing.
@@ -210,9 +214,8 @@ public:
         }
 
         // All tables referring to the log have been rewritten.
-        // Delete the log file.
-        // XXX move to central file tracker
-        fs::remove(uriPopScheme(logUri));
+        // Release the log file.
+        tracker->release(uriPopScheme(logUri));
     }
 };
 
@@ -300,8 +303,10 @@ public:
 //----------------------------------------------------------------------------
 // SharedLogger
 //----------------------------------------------------------------------------
-SharedLogger::SharedLogger(ConfigManagerPtr const & configMgr) :
+SharedLogger::SharedLogger(ConfigManagerPtr const & configMgr,
+                           FileTrackerPtr const & tracker) :
     configMgr(configMgr),
+    tracker(tracker),
     commitBuffer(new CommitBuffer),
     tableGroup(new TableGroup),
     errorState(new ErrorState),
@@ -426,6 +431,9 @@ void SharedLogger::commitLoop()
                 log("Starting new log: %s", fn);
                 logWriter.reset(new LogWriter(fn));
                 tableGroup->setLogUri(logWriter->getUri());
+
+                // Track file for automatic deletion
+                tracker->track(fn);
             }
 
             // Commit to log
@@ -486,7 +494,7 @@ void SharedLogger::serializeLoop()
             serializeQueue.pop(group);
             group.reset())
         {
-            group->serialize(configMgr);
+            group->serialize(configMgr, tracker);
         }
     }
     catch(std::exception const & ex) {

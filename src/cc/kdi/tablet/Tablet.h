@@ -71,6 +71,7 @@ private:
     ConfigManagerPtr configMgr;
     SharedLoggerPtr logger;
     SharedCompactorPtr compactor;
+    FileTrackerPtr tracker;
     SuperTablet * superTablet;
 
     std::vector<std::string> deadFiles;
@@ -86,6 +87,7 @@ public:
            ConfigManagerPtr const & configMgr,
            SharedLoggerPtr const & logger,
            SharedCompactorPtr const & compactor,
+           FileTrackerPtr const & tracker,
            TabletConfig const & cfg,
            SuperTablet * superTablet = 0);
     ~Tablet();

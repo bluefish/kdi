@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
-// Created 2008-08-11
+// Created 2008-08-12
 // 
 // This file is part of KDI.
 // 
@@ -18,49 +18,51 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_TABLET_SUPERSCANNER_H
-#define KDI_TABLET_SUPERSCANNER_H
+#ifndef KDI_TABLET_FILETRACKER_H
+#define KDI_TABLET_FILETRACKER_H
 
-#include <kdi/tablet/forward.h>
-#include <kdi/cell.h>
-#include <kdi/scan_predicate.h>
-#include <warp/interval.h>
+#include <boost/noncopyable.hpp>
+#include <boost/thread/mutex.hpp>
 #include <string>
+#include <map>
 
 namespace kdi {
 namespace tablet {
 
-    class SuperScanner;
+    class FileTracker;
 
 } // namespace tablet
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// SuperScanner
+// FileTracker
 //----------------------------------------------------------------------------
-class kdi::tablet::SuperScanner
-    : public kdi::CellStream
+class kdi::tablet::FileTracker
+    : private boost::noncopyable
 {
-    SuperTabletPtr superTablet;
-    ScanPredicate pred;
+    typedef std::map<std::string, size_t> map_t;
+    typedef boost::mutex::scoped_lock lock_t;
 
-    warp::IntervalSet<std::string> remainingRows;
-    warp::Interval<std::string> currentRows;
-
-    CellStreamPtr scanner;
-    Cell lastCell;
+    map_t files;
+    boost::mutex mutex;
 
 public:
-    SuperScanner(SuperTabletPtr const & superTablet,
-                 ScanPredicate const & pred);
+    /// Track a file for automatic deletion.  Sets the reference count
+    /// of the file to 1.  When the reference count drops to 0
+    /// (through calls to release()), the file will be deleted unless
+    /// it is untrack()'ed before then.
+    void track(std::string const & filename);
 
-    bool get(Cell & x);
-    void reopen();
+    /// Remove a file from automatic deletion tracking.
+    void untrack(std::string const & filename);
 
-private:
-    void setMinRow(warp::IntervalPoint<std::string> const & minRow);
-    bool openNextScanner();
+    /// Add a reference to a file tracked for automatic deletion.
+    void addReference(std::string const & filename);
+
+    /// Release a reference on a tracked file.  If this causes the
+    /// reference count to drop to 0, the file will be deleted.
+    void release(std::string const & filename);
 };
 
 
-#endif // KDI_TABLET_SUPERSCANNER_H
+#endif // KDI_TABLET_FILETRACKER_H

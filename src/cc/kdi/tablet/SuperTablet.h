@@ -69,6 +69,7 @@ public:
                 MetaConfigManagerPtr const & configMgr,
                 SharedLoggerPtr const & logger,
                 SharedCompactorPtr const & compactor,
+                FileTrackerPtr const & tracker,
                 SharedSplitterPtr const & splitter);
     ~SuperTablet();
 

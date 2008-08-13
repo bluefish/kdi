@@ -127,6 +127,7 @@ SuperTablet::SuperTablet(std::string const & name,
                          MetaConfigManagerPtr const & configMgr,
                          SharedLoggerPtr const & logger,
                          SharedCompactorPtr const & compactor,
+                         FileTrackerPtr const & tracker,
                          SharedSplitterPtr const & splitter) :
     splitter(splitter),
     mutationsBlocked(false),
@@ -149,6 +150,7 @@ SuperTablet::SuperTablet(std::string const & name,
                 configMgr,
                 logger,
                 compactor,
+                tracker,
                 *i,
                 this
                 )

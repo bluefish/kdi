@@ -40,6 +40,7 @@
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/SharedSplitter.h>
 #include <kdi/tablet/FileConfigManager.h>
+#include <kdi/tablet/FileTracker.h>
 
 // For SuperTablet implementation
 #include <kdi/tablet/MetaConfigManager.h>
@@ -60,6 +61,7 @@ namespace {
     class SuperTabletMaker
     {
         tablet::MetaConfigManagerPtr metaConfigMgr;
+        tablet::FileTrackerPtr tracker;
         tablet::SharedLoggerPtr logger;
         tablet::SharedCompactorPtr compactor;
         tablet::SharedSplitterPtr splitter;
@@ -70,7 +72,8 @@ namespace {
                          std::string const & metaTableUri,
                          std::string const & server) :
             metaConfigMgr(new tablet::MetaConfigManager(root, server)),
-            logger(new tablet::SharedLogger(metaConfigMgr)),
+            tracker(new tablet::FileTracker),
+            logger(new tablet::SharedLogger(metaConfigMgr, tracker)),
             compactor(new tablet::SharedCompactor),
             splitter(new tablet::SharedSplitter)
         {
@@ -93,6 +96,7 @@ namespace {
                         fixedMgr,
                         logger,
                         compactor,
+                        tracker,
                         cfgs.front()
                         )
                     );
@@ -128,7 +132,7 @@ namespace {
                 TablePtr p(
                     new tablet::SuperTablet(
                         name, metaConfigMgr, logger,
-                        compactor, splitter
+                        compactor, tracker, splitter
                         )
                     );
                 return p;
@@ -139,13 +143,15 @@ namespace {
     class TabletMaker
     {
         tablet::ConfigManagerPtr configMgr;
+        tablet::FileTrackerPtr tracker;
         tablet::SharedLoggerPtr logger;
         tablet::SharedCompactorPtr compactor;
 
     public:
         explicit TabletMaker(std::string const & root) :
             configMgr(new tablet::FileConfigManager(root)),
-            logger(new tablet::SharedLogger(configMgr)),
+            tracker(new tablet::FileTracker),
+            logger(new tablet::SharedLogger(configMgr, tracker)),
             compactor(new tablet::SharedCompactor)
         {
             log("TabletMaker %p: created", this);
@@ -170,7 +176,7 @@ namespace {
 
             TablePtr p(
                 new tablet::Tablet(
-                    name, configMgr, logger, compactor, cfgs.front()
+                    name, configMgr, logger, compactor, tracker,  cfgs.front()
                     )
                 );
             return p;

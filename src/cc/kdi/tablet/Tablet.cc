@@ -24,6 +24,7 @@
 #include <kdi/tablet/TabletConfig.h>
 #include <kdi/tablet/Scanner.h>
 #include <kdi/tablet/ConfigManager.h>
+#include <kdi/tablet/FileTracker.h>
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/SharedLogger.h>
 #include <kdi/scan_predicate.h>
@@ -82,12 +83,14 @@ Tablet::Tablet(std::string const & tableName,
                ConfigManagerPtr const & configMgr,
                SharedLoggerPtr const & logger,
                SharedCompactorPtr const & compactor,
+               FileTrackerPtr const & tracker,
                TabletConfig const & cfg,
                SuperTablet * superTablet) :
     tableName(tableName),
     configMgr(configMgr),
     logger(logger),
     compactor(compactor),
+    tracker(tracker),
     superTablet(superTablet),
     mutationsPending(false),
     configChanged(false)
@@ -104,6 +107,19 @@ Tablet::Tablet(std::string const & tableName,
 Tablet::~Tablet()
 {
     log("Tablet %p %s: destroyed", this, getTableName());
+
+    // Untrack files that we're still referencing -- once a Tablet is
+    // destroyed, another process may load it.  We have to assume the
+    // file names have been exported.
+    for(fragments_t::const_iterator i = fragments.begin();
+        i != fragments.end(); ++i)
+    {
+        tracker->untrack(
+            uriPopScheme(
+                (*i)->getFragmentUri()
+                )
+            );
+    }    
 }
 
 void Tablet::set(strref_t row, strref_t column, int64_t timestamp, strref_t value)
@@ -134,10 +150,12 @@ void Tablet::sync()
         // Save the new config
         saveConfig();
 
-        // Delete old files
-        // XXX move to central file tracker
-        std::for_each(deadFiles.begin(), deadFiles.end(),
-                      fs::remove);
+        // Release old files
+        for(vector<string>::const_iterator i = deadFiles.begin();
+            i != deadFiles.end(); ++i)
+        {
+            tracker->release(*i);
+        }
         deadFiles.clear();
 
         // Reset flag
@@ -287,11 +305,22 @@ Tablet::Tablet(Tablet const & o) :
     configMgr(o.configMgr),
     logger(o.logger),
     compactor(o.compactor),
+    tracker(o.tracker),
     superTablet(o.superTablet),
     fragments(o.fragments),
     mutationsPending(false),
     configChanged(false)
 {
+    // Add references to cloned fragment files
+    for(fragments_t::const_iterator i = this->fragments.begin();
+        i != this->fragments.end(); ++i)
+    {
+        tracker->addReference(
+            uriPopScheme(
+                (*i)->getFragmentUri()
+                )
+            );
+    }
 }
 
 void Tablet::loadConfig(TabletConfig const & cfg)
@@ -386,7 +415,6 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
     log("Tablet %s: replace %d fragments with %s", getTableName(),
         oldFragments.size(), newFragment->getFragmentUri());
 
-    vector<string> deadFragments;
     {
         // Lock tableSet
         lock_t lock(mutex);
@@ -396,17 +424,25 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             fragments.begin(), fragments.end(), oldFragments.begin(), oldFragments.end());
         if(i != fragments.end())
         {
-            // Mark first fragment for deletion
-            deadFragments.push_back((*i)->getFragmentUri());
+            // Mark first fragment file for release
+            deadFiles.push_back(
+                uriPopScheme(
+                    (*i)->getFragmentUri()
+                    )
+                );
 
             // Replace first item in the sequence
             *i = newFragment;
 
-            // Mark rest of the old fragments for deletion
+            // Mark rest of the old fragments for release
             fragments_t::iterator beginErase = ++i;
             for(size_t n = 1; n < oldFragments.size(); ++n, ++i)
             {
-                deadFragments.push_back((*i)->getFragmentUri());
+                deadFiles.push_back(
+                    uriPopScheme(
+                        (*i)->getFragmentUri()
+                        )
+                    );
             }
             
             // Remove the rest of the fragments from the set
@@ -420,8 +456,6 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
 
         // Note config modification
         configChanged = true;
-        deadFiles.insert(deadFiles.end(), deadFragments.begin(),
-                         deadFragments.end());
     }
 
     // Update scanners
