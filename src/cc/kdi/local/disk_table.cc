@@ -291,6 +291,64 @@ namespace
     };
 }
 
+//----------------------------------------------------------------------------
+// IndexScanner
+//----------------------------------------------------------------------------
+namespace
+{
+    class IndexScanner
+        : public flux::Stream< std::pair<std::string, size_t> >
+    {
+        Record indexRec;
+        Interval<string> rows;
+
+        IndexEntry const * cur;
+        IndexEntry const * end;
+        size_t base;
+
+    public:
+        IndexScanner(Record const & indexRec, Interval<string> const & rows) :
+            indexRec(indexRec),
+            rows(rows),
+            cur(0),
+            end(0),
+            base(0)
+        {
+            BlockIndex const * index = indexRec.as<BlockIndex>();
+            
+            cur = findIndexEntry(index, rows.getLowerBound());
+            end = index->blocks.end();
+
+            IntervalPointOrder<warp::less> lt;
+            while(cur != end && !lt(rows.getLowerBound(), *cur->startKey.row))
+            {
+                base = cur->blockOffset;
+                ++cur;
+            }
+        }
+
+        bool get(pair<string, size_t> & x)
+        {
+            if(cur == end)
+                return false;
+
+            IntervalPointOrder<warp::less> lt;
+            if(lt(rows.getUpperBound(), *cur->startKey.row))
+            {
+                end = cur;
+                return false;
+            }
+
+            x.first.assign(cur->startKey.row->begin(), cur->startKey.row->end());
+            x.second = cur->blockOffset - base;
+            base = cur->blockOffset;
+            ++cur;
+
+            return true;
+        }
+    };
+}
+
 
 //----------------------------------------------------------------------------
 // DiskTable
@@ -351,4 +409,13 @@ CellStreamPtr DiskTable::scan(ScanPredicate const & pred) const
 
     // Filter the rest
     return applyPredicateFilter(ScanPredicate(pred).clearRowPredicate(), h);
+}
+
+flux::Stream< std::pair<std::string, size_t> >::handle_t
+DiskTable::scanIndex(warp::Interval<std::string> const & rows) const
+{
+    flux::Stream< std::pair<std::string, size_t> >::handle_t p(
+        new IndexScanner(indexRec, rows)
+        );
+    return p;
 }

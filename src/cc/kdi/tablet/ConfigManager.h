@@ -61,10 +61,8 @@ public:
     /// that should be overwritten.
     virtual std::string getDataFile(std::string const & tableName) = 0;
 
-    /// Open a table URI.  The ConfigManager returns the table and a
-    /// URI that can be used to reopen the table.
-    virtual std::pair<TablePtr, std::string>
-    openTable(std::string const & uri) = 0;
+    /// Open a fragment by URI.
+    virtual FragmentPtr openFragment(std::string const & uri);
 };
 
 #endif // KDI_TABLET_CONFIGMANAGER_H

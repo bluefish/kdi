@@ -58,52 +58,29 @@ class kdi::tablet::Tablet
     typedef boost::mutex mutex_t;
     typedef mutex_t::scoped_lock lock_t;
 
+    typedef std::vector<FragmentPtr> fragments_t;
+    typedef std::vector<ScannerWeakPtr> scanner_vec_t;
+
+private:
+    mutable mutex_t mutex;
+
     std::string tableName;
+    std::string server;
+    warp::Interval<std::string> rows;
 
     ConfigManagerPtr configMgr;
     SharedLoggerPtr logger;
     SharedCompactorPtr compactor;
     SuperTablet * superTablet;
 
-    std::string server;
-    warp::Interval<std::string> rows;
+    std::vector<std::string> deadFiles;
+    fragments_t fragments;
 
     bool mutationsPending;
-    
-    struct ConfigInfo
-    {
-        bool configChanged;
-        std::vector<std::string> deadFiles;
+    bool configChanged;
 
-        ConfigInfo() : configChanged(false) {}
-    };
-    warp::Synchronized<ConfigInfo> syncConfigInfo;
-
-    struct TableInfo
-    {
-        TablePtr table;
-        std::string uri;
-        bool isStatic;
-
-        TableInfo(TablePtr const & table,
-                  std::string const & uri,
-                  bool isStatic) :
-            table(table),
-            uri(uri),
-            isStatic(isStatic) {}
-        
-        bool operator==(TablePtr const & tbl) const {
-            return table == tbl;
-        }
-    };
-
-    typedef std::list<TableInfo> tables_t;
-    warp::Synchronized<tables_t> syncTables;
-
-    typedef std::vector<ScannerWeakPtr> scanner_vec_t;
     mutable warp::Synchronized<scanner_vec_t> syncScanners;
 
-    
 public:
     Tablet(std::string const & tableName,
            ConfigManagerPtr const & configMgr,
@@ -131,15 +108,12 @@ public:
     /// predicates.
     CellStreamPtr getMergedScan(ScanPredicate const & pred) const;
 
-    /// Add a new table to the Tablet.  The tableUri can be used to
-    /// reload the table and is suitable for state serialization.
-    void addTable(TablePtr const & table, std::string const & tableUri);
+    /// Add a new fragment to the Tablet.
+    void addFragment(FragmentPtr const & fragment);
 
-    /// Replace a sequence of tables with a new table.  The URI can be
-    /// used to reload the new table.
-    void replaceTables(std::vector<TablePtr> const & oldTables,
-                       TablePtr const & newTable,
-                       std::string const & newTableUri);
+    /// Replace a sequence of ragments with a new fragment.
+    void replaceFragments(std::vector<FragmentPtr> const & oldFragments,
+                          FragmentPtr const & newFragment);
 
     /// Get the priority for compacting this Tablet.  Higher
     /// priorities are more important.  Priorities under 2 are
@@ -150,12 +124,6 @@ public:
     /// called by the Compact thread.
     void doCompaction();
 
-    /// Get the row range served by this Tablet.
-    warp::Interval<std::string> const & getRows() const
-    {
-        return rows;
-    }
-
     /// Split the tablet into two.  An approximate median row is
     /// chosen as a split point.  This tablet shrinks to the range
     /// between the split point and the end of the tablet.  A new
@@ -165,6 +133,22 @@ public:
     /// row and there is no median row, nothing happens to this tablet
     /// and the returned tablet pointer will be null.
     TabletPtr splitTablet();
+
+    /// Get the row upper bound for this Tablet.  This will never
+    /// change over the life of the tablet.
+    warp::IntervalPoint<std::string> const & getLastRow() const
+    {
+        return rows.getUpperBound();
+    }
+
+    /// Get the current row range for this Tablet.  The upper bound is
+    /// fixed for the life of the tablet, but the lower bound can
+    /// change as the tablet splits.
+    warp::Interval<std::string> getRows() const
+    {
+        // XXX need lock
+        return rows;
+    }
 
 private:
     // Copy constructor for splitting

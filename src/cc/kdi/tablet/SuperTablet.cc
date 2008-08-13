@@ -43,28 +43,28 @@ namespace {
 
         bool operator()(TabletPtr const & a, TabletPtr const & b)
         {
-            return lt(a->getRows().getUpperBound(),
-                      b->getRows().getUpperBound());
+            return lt(a->getLastRow(),
+                      b->getLastRow());
         }
 
         bool operator()(TabletPtr const & a, IntervalPoint<string> const & b)
         {
-            return lt(a->getRows().getUpperBound(), b);
+            return lt(a->getLastRow(), b);
         }
 
         bool operator()(IntervalPoint<string> const & a, TabletPtr const & b)
         {
-            return lt(a, b->getRows().getUpperBound());
+            return lt(a, b->getLastRow());
         }
 
         bool operator()(TabletPtr const & a, strref_t b)
         {
-            return lt(a->getRows().getUpperBound(), b);
+            return lt(a->getLastRow(), b);
         }
 
         bool operator()(strref_t a, TabletPtr const & b)
         {
-            return lt(a, b->getRows().getUpperBound());
+            return lt(a, b->getLastRow());
         }
     };
 
@@ -239,16 +239,31 @@ void SuperTablet::performSplit(Tablet * tablet)
     tablets.insert(it, lowTablet);
 }
 
-TabletPtr const & SuperTablet::getTablet(strref_t row) const
+TabletPtr const & SuperTablet::getTablet(warp::IntervalPoint<std::string> const & row) const
 {
     // Find tablet such that its upper bound contains the row
     TabletLt tlt;
-    vector<TabletPtr>::const_iterator i = std::upper_bound(
+    vector<TabletPtr>::const_iterator i = std::lower_bound(
         tablets.begin(), tablets.end(), row, tlt);
 
     // If the tablet lower bound also contains the row, we have a
     // match
-    if(i != tablets.end() && tlt.lt((*i)->getRows().getLowerBound(), row))
+    if(i != tablets.end() && !tlt.lt(row, (*i)->getRows().getLowerBound()))
+        return *i;
+    else
+        raise<ValueError>("row not on this server: %s", reprString(row.getValue()));
+}
+
+TabletPtr const & SuperTablet::getTablet(strref_t row) const
+{
+    // Find tablet such that its upper bound contains the row
+    TabletLt tlt;
+    vector<TabletPtr>::const_iterator i = std::lower_bound(
+        tablets.begin(), tablets.end(), row, tlt);
+
+    // If the tablet lower bound also contains the row, we have a
+    // match
+    if(i != tablets.end() && !tlt.lt(row, (*i)->getRows().getLowerBound()))
         return *i;
     else
         raise<ValueError>("row not on this server: %s", reprString(row));

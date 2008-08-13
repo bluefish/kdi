@@ -88,7 +88,9 @@ public:
     /// the Table API threads or we'll get deadlocked.
     void performSplit(Tablet * tablet);
 
-private:
+    /// Get the Tablet containing the given row point
+    TabletPtr const & getTablet(warp::IntervalPoint<std::string> const & row) const;
+
     /// Get the Tablet containing the given row
     TabletPtr const & getTablet(strref_t row) const;
 };

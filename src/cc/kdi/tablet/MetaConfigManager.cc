@@ -20,10 +20,8 @@
 
 #include <kdi/tablet/MetaConfigManager.h>
 #include <kdi/tablet/TabletName.h>
-#include <kdi/tablet/LogReader.h>
 #include <kdi/tablet/TabletConfig.h>
-#include <kdi/local/disk_table_writer.h>
-#include <kdi/local/disk_table.h>
+#include <kdi/table.h>
 #include <warp/config.h>
 #include <warp/memfile.h>
 #include <warp/uri.h>
@@ -42,8 +40,6 @@ using namespace ex;
 using namespace std;
 using boost::format;
 
-using kdi::local::DiskTableWriter;
-using kdi::local::DiskTable;
 
 namespace
 {
@@ -207,9 +203,9 @@ public:
         return base->getDataFile(tableName);
     }
 
-    std::pair<TablePtr, std::string> openTable(std::string const & uri)
+    FragmentPtr openFragment(std::string const & uri)
     {
-        return base->openTable(uri);
+        return base->openFragment(uri);
     }
 };
 
@@ -366,78 +362,6 @@ std::string MetaConfigManager::getDataFile(std::string const & tableName)
     fs::makedirs(dir);
     
     return File::openUnique(fs::resolve(dir, "$UNIQUE")).second;
-}
-
-std::pair<TablePtr, std::string>
-MetaConfigManager::openTable(std::string const & uri)
-{
-    log("MetaConfigManager: openTable %s", uri);
-
-    string scheme = uriTopScheme(uri);
-    if(scheme == "disk")
-    {
-        // Disk table: open and return
-        TablePtr p(
-            new DiskTable(
-                uriPushScheme(uriPopScheme(uri), "cache")
-                )
-            );
-        return make_pair(p, uri);
-    }
-    else if(scheme == "sharedlog")
-    {
-        // Log table: serialize to a disk table and return that.
-
-        // Get the tablet name from the URI.
-        string tableName = uriDecode(
-            uriGetParameter(uri, "table"),
-            true);
-
-        log("MetaConfigManager: loading table %s from log %s", tableName, uri);
-
-        // Read the log cells into a vector
-        vector<Cell> cells;
-        {
-            LogReader reader(
-                uriPushScheme(uriPopScheme(uri), "cache"),
-                tableName);
-            Cell x;
-            while(reader.get(x))
-                cells.push_back(x);
-        }
-
-        // Sort the cells (use a stable sort since ordering between
-        // duplicates is important)
-        std::stable_sort(cells.begin(), cells.end());
-
-        // Unique the cells.  We want the last cell of each duplicate
-        // sequence instead of the first, so we'll unique using
-        // reverse iterators.  The end returned by unique will be the
-        // first cell to keep in the forward iterator world.
-        vector<Cell>::iterator first = std::unique(
-            cells.rbegin(), cells.rend()
-            ).base();
-
-        // Write the remaining cells to a disk table
-        string diskFn = getDataFile(tableName);
-        {
-            log("MetaConfigManager: writing new table %s", diskFn);
-
-            DiskTableWriter writer(diskFn, 64<<10);
-            for(; first != cells.end(); ++first)
-                writer.put(*first);
-            writer.close();
-        }
-
-        // Reopen disk table for reading
-        TablePtr table(new DiskTable(uriPushScheme(diskFn, "cache")));
-        
-        // Return new table and URI
-        return make_pair(table, uriPushScheme(diskFn, "disk"));
-    }
-
-    // Unknown scheme
-    raise<RuntimeError>("unknown table scheme %s: %s", scheme, uri);
 }
 
 

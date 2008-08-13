@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// Copyright (C) 2007 Josh Taylor (Kosmix Corporation)
-// Created 2007-10-04
+// Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
+// Created 2008-08-05
 // 
 // This file is part of KDI.
 // 
@@ -18,62 +18,58 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_LOCAL_DISK_TABLE_H
-#define KDI_LOCAL_DISK_TABLE_H
+#ifndef KDI_TABLET_FRAGMENT_H
+#define KDI_TABLET_FRAGMENT_H
 
 #include <kdi/table.h>
-#include <boost/noncopyable.hpp>
-
-#include <oort/record.h>
 #include <warp/interval.h>
+#include <flux/stream.h>
 #include <string>
+#include <utility>
+#include <boost/shared_ptr.hpp>
 
 namespace kdi {
-namespace local {
+namespace tablet {
 
-    /// A read-only implementation of a table served out of a file.
-    class DiskTable;
+    /// A piece of a Tablet.
+    class Fragment;
 
-    /// Pointer to a DiskTable
-    typedef boost::shared_ptr<DiskTable> DiskTablePtr;
-
-    /// Pointer to a const DiskTable
-    typedef boost::shared_ptr<DiskTable const> DiskTableCPtr;
-
-} // namespace local
+} // namespace tablet
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// DiskTable
+// Fragment
 //----------------------------------------------------------------------------
-class kdi::local::DiskTable
-    : public kdi::Table,
-      private boost::noncopyable
+class kdi::tablet::Fragment
 {
-    std::string fn;
-    oort::Record indexRec;
-
 public:
-    explicit DiskTable(std::string const & fn);
+    virtual ~Fragment() {}
 
-    virtual void set(strref_t row, strref_t column, int64_t timestamp,
-                     strref_t value);
+    // Table read API
 
-    virtual void erase(strref_t row, strref_t column, int64_t timestamp);
+    virtual CellStreamPtr scan(ScanPredicate const & pred) const = 0;
 
-    virtual CellStreamPtr scan() const;
-    virtual CellStreamPtr scan(ScanPredicate const & pred) const;
+    // Fragment API
 
-    virtual void sync() { /* nothing to do */ }
+    /// Indicates if the Fragment is immutable.
+    virtual bool isImmutable() const = 0;
+
+    /// Get the URI that can be used to load this Fragment from the
+    /// ConfigManager.
+    virtual std::string getFragmentUri() const = 0;
+
+    /// Get the approximate disk space used by the cells in the given
+    /// row range.
+    virtual size_t getDiskSize(warp::Interval<std::string> const & rows) const = 0;
 
     /// Scan the index of the fragment within the given row range,
     /// returning (row, incremental-size) pairs.  The incremental size
     /// approximates the on-disk size of the cells between the last
     /// returned row key (or the given lower bound) and the current
     /// row key.
-    flux::Stream< std::pair<std::string, size_t> >::handle_t
-    scanIndex(warp::Interval<std::string> const & rows) const;
+    virtual flux::Stream< std::pair<std::string, size_t> >::handle_t
+    scanIndex(warp::Interval<std::string> const & rows) const = 0;
 };
 
 
-#endif // KDI_LOCAL_DISK_TABLE_H
+#endif // KDI_TABLET_FRAGMENT_H

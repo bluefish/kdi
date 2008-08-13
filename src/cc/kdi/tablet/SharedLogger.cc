@@ -22,8 +22,9 @@
 #include <kdi/tablet/LogWriter.h>
 #include <kdi/tablet/Tablet.h>
 #include <kdi/tablet/ConfigManager.h>
-#include <kdi/memory_table.h>
+#include <kdi/tablet/LogFragment.h>
 #include <kdi/synchronized_table.h>
+#include <kdi/scan_predicate.h>
 #include <warp/fs.h>
 #include <warp/file.h>
 #include <warp/uri.h>
@@ -104,8 +105,8 @@ namespace {
 //----------------------------------------------------------------------------
 class SharedLogger::TableGroup
 {
-    typedef std::map<TabletPtr, TablePtr> map_t;
-    map_t tableMap;
+    typedef std::map<TabletPtr, LogFragmentPtr> map_t;
+    map_t fragmentMap;
     size_t groupSize;
     std::string logUri;
 
@@ -140,24 +141,24 @@ public:
         if(logUri.empty())
             raise<RuntimeError>("applyMutations() before setLogUri()");
         
-        // Get the table for this Tablet
-        TablePtr & tbl = tableMap[tablet];
-        if(!tbl)
+        // Get the fragment for this Tablet
+        LogFragmentPtr & frag = fragmentMap[tablet];
+        if(!frag)
         {
-            // Need to make a table
-            TablePtr memTable = MemoryTable::create(false);
-            tbl = SynchronizedTable::make(memTable)->makeBuffer();
-
             // Derive table URI from log URI
-            string tableUri = uriSetParameter(
+            string uri = uriSetParameter(
                 logUri, "table",
                 uriEncode(tablet->getTableName(), true));
 
-            // Notify the Tablet that it has a new member
-            tablet->addTable(tbl, tableUri);
+            // Create a new log fragment
+            frag.reset(new LogFragment(uri));
+
+            // Notify the Tablet that it has a new fragment
+            tablet->addFragment(frag);
         }
 
-        // Add all the cells to the table
+        // Add all the cells to the writable table
+        TablePtr const & tbl = frag->getWritableTable();
         for(std::vector<Cell>::const_iterator i = cells.begin();
             i != cells.end(); ++i)
         {
@@ -171,33 +172,33 @@ public:
 
     void serialize(ConfigManagerPtr const & configMgr) const
     {
-        log("Serializing %d tables", tableMap.size());
+        log("Serializing %d fragments", fragmentMap.size());
 
-        for(map_t::const_iterator i = tableMap.begin();
-            i != tableMap.end(); ++i)
+        for(map_t::const_iterator i = fragmentMap.begin();
+            i != fragmentMap.end(); ++i)
         {
             TabletPtr tablet = i->first;
-            TablePtr memTable = i->second;
+            FragmentPtr frag = i->second;
 
             // Get an output file
             std::string fn = configMgr->getDataFile(tablet->getTableName());
             
-            // Write a DiskTable from the MemTable
+            // Write a DiskTable from the fragment
             DiskTableWriter writer(fn, 64<<10);
-            CellStreamPtr cells = memTable->scan();
+            CellStreamPtr cells = frag->scan(ScanPredicate());
             Cell x;
             while(cells->get(x))
                 writer.put(x);
             writer.close();     // XXX should sync file
 
-            // Reopen the table for reading
+            // Reopen the fragment for reading
             std::string diskUri = uriPushScheme(fn, "disk");
-            std::pair<TablePtr,string> p = configMgr->openTable(diskUri);
+            FragmentPtr newFragment = configMgr->openFragment(diskUri);
 
-            // Notify Tablet of the table change
-            vector<TablePtr> oldTables;
-            oldTables.push_back(memTable);
-            tablet->replaceTables(oldTables, p.first, p.second);
+            // Notify Tablet of the fragment change
+            vector<FragmentPtr> oldFragments;
+            oldFragments.push_back(frag);
+            tablet->replaceFragments(oldFragments, newFragment);
 
             // XXX maybe should release memTable.  if a later
             // serialization fails in this group and we go with the
@@ -210,6 +211,7 @@ public:
 
         // All tables referring to the log have been rewritten.
         // Delete the log file.
+        // XXX move to central file tracker
         fs::remove(uriPopScheme(logUri));
     }
 };

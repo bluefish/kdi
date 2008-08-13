@@ -34,6 +34,7 @@ namespace tablet {
     class Tablet;
     class SuperTablet;
     class Scanner;
+    class Fragment;
     class SharedLogger;
     class SharedCompactor;
     class SharedSplitter;
@@ -47,6 +48,7 @@ namespace tablet {
     typedef boost::shared_ptr<SuperTablet> SuperTabletPtr;
     typedef boost::shared_ptr<SuperTablet const> SuperTabletCPtr;
 
+    typedef boost::shared_ptr<Fragment> FragmentPtr;
     typedef boost::shared_ptr<Scanner> ScannerPtr;
     typedef boost::shared_ptr<SharedLogger> SharedLoggerPtr;
     typedef boost::shared_ptr<SharedCompactor> SharedCompactorPtr;

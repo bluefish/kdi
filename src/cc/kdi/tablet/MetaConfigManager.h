@@ -61,7 +61,6 @@ public:
     std::list<TabletConfig> loadTabletConfigs(std::string const & tableName);
     void setTabletConfig(std::string const & tableName, TabletConfig const & cfg);
     std::string getDataFile(std::string const & tableName);
-    std::pair<TablePtr, std::string> openTable(std::string const & uri);
 
     /// Get a ConfigManager adapter for fixed, file-based configs.
     /// This will typically be used to load the root META table.

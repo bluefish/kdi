@@ -19,6 +19,7 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/tablet/Tablet.h>
+#include <kdi/tablet/Fragment.h>
 #include <kdi/tablet/SuperTablet.h>
 #include <kdi/tablet/TabletConfig.h>
 #include <kdi/tablet/Scanner.h>
@@ -88,7 +89,8 @@ Tablet::Tablet(std::string const & tableName,
     logger(logger),
     compactor(compactor),
     superTablet(superTablet),
-    mutationsPending(false)
+    mutationsPending(false),
+    configChanged(false)
 {
     log("Tablet %p %s: created", this, getTableName());
 
@@ -126,19 +128,20 @@ void Tablet::sync()
         mutationsPending = false;
     }
 
-    LockedPtr<ConfigInfo> cfg(syncConfigInfo);
-    if(cfg->configChanged)
+    // XXX need locking
+    if(configChanged)
     {
         // Save the new config
         saveConfig();
 
         // Delete old files
-        std::for_each(cfg->deadFiles.begin(), cfg->deadFiles.end(),
+        // XXX move to central file tracker
+        std::for_each(deadFiles.begin(), deadFiles.end(),
                       fs::remove);
-        cfg->deadFiles.clear();
+        deadFiles.clear();
 
         // Reset flag
-        cfg->configChanged = false;
+        configChanged = false;
     }
 }
 
@@ -187,29 +190,31 @@ std::string Tablet::getPrettyName() const
 
 CellStreamPtr Tablet::getMergedScan(ScanPredicate const & pred) const
 {
+    validateRows(pred.getRowPredicate(), rows);
+
     // We don't support history predicates
     if(pred.getMaxHistory())
         raise<ValueError>("unsupported history predicate: %s", pred);
 
     // Get exclusive access to table list
-    LockedPtr<tables_t const> tables(syncTables);
+    lock_t lock(mutex);
 
     // If there is only one table, no merge is necessary but we still
     // have to filter erasures.  The one exception to this is if the
     // single table is fully-compacted disk table.
-    if(tables->size() == 1)
+    if(fragments.size() == 1)
     {
-        if(tables->front().isStatic)
+        if(fragments.front()->isImmutable())
         {
             // This is a compacted disk table.  It should contain no
             // erasures.
-            return tables->front().table->scan(pred);
+            return fragments.front()->scan(pred);
         }
         else
         {
             // The table may contain erasures.
             CellStreamPtr filter = makeErasureFilter();
-            filter->pipeFrom(tables->front().table->scan(pred));
+            filter->pipeFrom(fragments.front()->scan(pred));
             return filter;
         }
     }
@@ -220,10 +225,10 @@ CellStreamPtr Tablet::getMergedScan(ScanPredicate const & pred) const
     // possible and well-formed).  Tables added to the merge in
     // reverse order so later streams override earlier streams.
     CellStreamPtr merge = CellMerge::make(true);
-    for(tables_t::const_reverse_iterator i = tables->rbegin();
-        i != tables->rend(); ++i)
+    for(fragments_t::const_reverse_iterator i = fragments.rbegin();
+        i != fragments.rend(); ++i)
     {
-        merge->pipeFrom(i->table->scan(pred));
+        merge->pipeFrom((*i)->scan(pred));
     }
     return merge;
 }
@@ -267,7 +272,7 @@ TabletPtr Tablet::splitTablet()
     lowTablet->rows = low;
     this->rows = high;
 
-    log("Tablet split complete: low=%s high=%s",
+    log("Tablet split complete: low=(%s) high=(%s)",
         lowTablet->getPrettyName(),
         this->getPrettyName());
 
@@ -277,18 +282,16 @@ TabletPtr Tablet::splitTablet()
 
 Tablet::Tablet(Tablet const & o) :
     tableName(o.tableName),
+    server(o.server),
+    rows(o.rows),
     configMgr(o.configMgr),
     logger(o.logger),
     compactor(o.compactor),
     superTablet(o.superTablet),
-    server(o.server),
-    rows(o.rows),
-    mutationsPending(false)
+    fragments(o.fragments),
+    mutationsPending(false),
+    configChanged(false)
 {
-    // XXX: Clone our input fragments.  If things can be shared, just
-    // copy the shared pointer.  Also need to figure out how to deal
-    // with scanners.
-    cloneFragments();
 }
 
 void Tablet::loadConfig(TabletConfig const & cfg)
@@ -300,16 +303,15 @@ void Tablet::loadConfig(TabletConfig const & cfg)
     // Load our tables
     bool uriChanged = false;
     {
-        LockedPtr<tables_t> tables(syncTables);
-        tables->clear();
+        lock_t lock(mutex);
+        fragments.clear();
         vector<string> const & uris = cfg.getTableUris();
         for(vector<string>::const_iterator i = uris.begin();
             i != uris.end(); ++i)
         {
-            std::pair<TablePtr, string> p = configMgr->openTable(*i);
-            tables->push_back(TableInfo(p.first, p.second, true));
-        
-            if(p.second != *i)
+            fragments.push_back(configMgr->openFragment(*i));
+
+            if(!uriChanged && fragments.back()->getFragmentUri() != *i)
                 uriChanged = true;
         }
     }
@@ -332,100 +334,94 @@ void Tablet::saveConfig() const
 
 std::vector<std::string> Tablet::getFragmentUris() const
 {
-    LockedPtr<tables_t const> tables(syncTables);
+    lock_t lock(mutex);
 
     // Build list of fragment uris
     vector<string> uris;
-    uris.reserve(tables->size());
-    for(tables_t::const_iterator i = tables->begin();
-        i != tables->end(); ++i)
+    uris.reserve(fragments.size());
+    for(fragments_t::const_iterator i = fragments.begin();
+        i != fragments.end(); ++i)
     {
-        uris.push_back(i->uri);
+        uris.push_back((*i)->getFragmentUri());
     }
 
     return uris;
 }
 
-void Tablet::addTable(TablePtr const & table, std::string const & tableUri)
+void Tablet::addFragment(FragmentPtr const & fragment)
 {
-    EX_CHECK_NULL(table);
+    EX_CHECK_NULL(fragment);
 
-    log("Tablet %s: add table (%p) %s", getTableName(), table.get(), tableUri);
+    log("Tablet %s: add fragment %s", getTableName(), fragment->getFragmentUri());
 
     bool wantCompaction = false;
     {
         // Lock tables
-        LockedPtr<tables_t> tables(syncTables);
+        lock_t lock(mutex);
 
         // Add to table list
-        tables->push_back(TableInfo(table, tableUri, false));
+        fragments.push_back(fragment);
 
         // Let's just say we want a compaction if we have more than 5
         // tables (or more than 4 static tables)
-        wantCompaction = (tables->size() > 5);
-    }
+        wantCompaction = (fragments.size() > 5);
 
-    // Note that config has changed
-    LockedPtr<ConfigInfo>(syncConfigInfo)->configChanged = true;
+        // Note that config has changed
+        configChanged = true;
+    }
 
     // Request a compaction if we need one
     if(wantCompaction)
         compactor->requestCompaction(shared_from_this());
 }
 
-void Tablet::replaceTables(std::vector<TablePtr> const & oldTables,
-                           TablePtr const & newTable,
-                           std::string const & newTableUri)
+void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
+                              FragmentPtr const & newFragment)
 {
     // Check args
-    if(oldTables.empty())
-        raise<ValueError>("replaceTables with empty table sequence");
-    EX_CHECK_NULL(newTable);
+    if(oldFragments.empty())
+        raise<ValueError>("replaceFragments with empty fragment sequence");
+    EX_CHECK_NULL(newFragment);
 
-    log("Tablet %s: replace %d tables with (%p) %s", getTableName(),
-        oldTables.size(), newTable.get(), newTableUri);
+    log("Tablet %s: replace %d fragments with %s", getTableName(),
+        oldFragments.size(), newFragment->getFragmentUri());
 
-    vector<string> deadFiles;
+    vector<string> deadFragments;
     {
         // Lock tableSet
-        LockedPtr<tables_t> tables(syncTables);
+        lock_t lock(mutex);
 
-        // Find old sequence in table vector
-        tables_t::iterator i = std::search(
-            tables->begin(), tables->end(), oldTables.begin(), oldTables.end());
-        if(i != tables->end())
+        // Find old sequence in fragment vector
+        fragments_t::iterator i = std::search(
+            fragments.begin(), fragments.end(), oldFragments.begin(), oldFragments.end());
+        if(i != fragments.end())
         {
-            // Mark first table for deletion
-            if(uriTopScheme(i->uri) == "disk")
-                deadFiles.push_back(uriPopScheme(i->uri));
+            // Mark first fragment for deletion
+            deadFragments.push_back((*i)->getFragmentUri());
 
             // Replace first item in the sequence
-            *i = TableInfo(newTable, newTableUri, true);
+            *i = newFragment;
 
-            // Mark rest of the old tables for deletion
-            tables_t::iterator beginErase = ++i;
-            for(size_t n = 1; n < oldTables.size(); ++n, ++i)
+            // Mark rest of the old fragments for deletion
+            fragments_t::iterator beginErase = ++i;
+            for(size_t n = 1; n < oldFragments.size(); ++n, ++i)
             {
-                if(uriTopScheme(i->uri) == "disk")
-                    deadFiles.push_back(uriPopScheme(i->uri));
+                deadFragments.push_back((*i)->getFragmentUri());
             }
             
-            // Remove the rest of the tables from the set
-            tables->erase(beginErase, i);
+            // Remove the rest of the fragments from the set
+            fragments.erase(beginErase, i);
         }
         else
         {
             // We didn't know about that sequence
-            raise<RuntimeError>("replaceTables with unknown table sequence");
+            raise<RuntimeError>("replaceFragments with unknown fragment sequence");
         }
-    }
 
-    // Note config modification
-    {
-        LockedPtr<ConfigInfo> cfg(syncConfigInfo);
-        cfg->configChanged = true;
-        cfg->deadFiles.insert(cfg->deadFiles.end(),
-                              deadFiles.begin(), deadFiles.end());
+        // Note config modification
+        configChanged = true;
+        deadFiles.insert(deadFiles.end(), deadFragments.begin(),
+                         deadFragments.end());
     }
 
     // Update scanners
@@ -458,11 +454,11 @@ namespace
 
 size_t Tablet::getCompactionPriority() const
 {
-    LockedPtr<tables_t const> tables(syncTables);
+    lock_t lock(mutex);
 
     // Get the number of static tables in the set
-    size_t n = tables->size();
-    if(n && !tables->back().isStatic)
+    size_t n = fragments.size();
+    if(n && !fragments.back()->isImmutable())
         --n;
     
     // Return the number of static tables we have (don't bother if
@@ -472,7 +468,7 @@ size_t Tablet::getCompactionPriority() const
 
 void Tablet::doCompaction()
 {
-    vector<TablePtr> compactionTables;
+    vector<FragmentPtr> compactionFragments;
     bool filterErasures = false;
 
     log("Tablet %s: start compaction", getTableName());
@@ -484,13 +480,13 @@ void Tablet::doCompaction()
 
         int const K = 8;
 
-        LockedPtr<tables_t const> tables(syncTables);
+        lock_t lock(mutex);
        
         // Find the last static table
-        tables_t::const_iterator last = tables->begin();
-        for(tables_t::const_reverse_iterator i = tables->rbegin(); i != tables->rend(); ++i)
+        fragments_t::const_iterator last = fragments.begin();
+        for(fragments_t::const_reverse_iterator i = fragments.rbegin(); i != fragments.rend(); ++i)
         {
-            if(i->isStatic)
+            if((*i)->isImmutable())
             {
                 last = i.base();
                 break;
@@ -498,16 +494,14 @@ void Tablet::doCompaction()
         }
         // Get the beginning of the trailing range.  We want to filter
         // erasures if our compaction includes the first table.
-        tables_t::const_iterator first = tables->begin();
+        fragments_t::const_iterator first = fragments.begin();
         if(distance(first, last) > K)
             advance(first, distance(first, last) - K);
         else
             filterErasures = true;
 
-        // Make a copy of the table pointers to be compacted
-        compactionTables.reserve(K);
-        for(; first != last; ++first)
-            compactionTables.push_back(first->table);
+        // Make a copy of the fragment pointers to be compacted
+        compactionFragments.insert(compactionFragments.end(), first, last);
     }
 
     // Get an output file
@@ -518,10 +512,11 @@ void Tablet::doCompaction()
 
     // Build compaction merge stream
     CellStreamPtr merge = CellMerge::make(filterErasures);
-    for(vector<TablePtr>::const_reverse_iterator i = compactionTables.rbegin();
-        i != compactionTables.rend(); ++i)
+    for(vector<FragmentPtr>::const_reverse_iterator i =
+            compactionFragments.rbegin();
+        i != compactionFragments.rend(); ++i)
     {
-        merge->pipeFrom((*i)->scan());
+        merge->pipeFrom((*i)->scan(ScanPredicate()));
     }
 
     // Compact the tables
@@ -534,23 +529,23 @@ void Tablet::doCompaction()
 
     // Reopen the table for reading
     std::string diskUri = uriPushScheme(fn, "disk");
-    std::pair<TablePtr,string> p = configMgr->openTable(diskUri);
-
+    FragmentPtr frag = configMgr->openFragment(diskUri);
 
     // Update table set
-    replaceTables(compactionTables, p.first, p.second);
+    replaceFragments(compactionFragments, frag);
 }
 
 size_t Tablet::getDiskSize() const
 {
-    LockedPtr<tables_t const> tables(syncTables);
+    lock_t lock(mutex);
 
     size_t sum = 0;
-    for(tables_t::const_iterator i = tables->begin();
-        i != tables->end(); ++i)
+    for(fragments_t::const_iterator i = fragments.begin();
+        i != fragments.end(); ++i)
     {
         /// XXX: need to know disk size of each fragment
-        sum += i->diskSize;
+        /// XXX: this is expensive, could cache this info
+        sum += (*i)->getDiskSize(rows);
     }
 
     return sum;

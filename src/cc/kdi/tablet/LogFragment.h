@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
-// Created 2008-05-21
+// Created 2008-08-05
 // 
 // This file is part of KDI.
 // 
@@ -18,55 +18,46 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_TABLET_FILECONFIGMANAGER_H
-#define KDI_TABLET_FILECONFIGMANAGER_H
+#ifndef KDI_TABLET_LOGFRAGMENT_H
+#define KDI_TABLET_LOGFRAGMENT_H
 
-#include <kdi/tablet/ConfigManager.h>
-#include <warp/synchronized.h>
+#include <kdi/tablet/Fragment.h>
+#include <boost/shared_ptr.hpp>
 
 namespace kdi {
 namespace tablet {
 
-    class FileConfigManager;
+    /// Tablet fragment for a mutable table backed by a shared log.
+    class LogFragment;
+
+    typedef boost::shared_ptr<LogFragment> LogFragmentPtr;
 
 } // namespace tablet
 } // namespace kdi
 
-
 //----------------------------------------------------------------------------
-// FileConfigManager
+// LogFragment
 //----------------------------------------------------------------------------
-class kdi::tablet::FileConfigManager
-    : public kdi::tablet::ConfigManager
+class kdi::tablet::LogFragment
+    : public kdi::tablet::Fragment
 {
-    /// Per-directory config management
-    class DirInfo;
-
-    /// Overall directory map
-    class DirMap
-    {
-        typedef boost::shared_ptr<DirInfo> dir_ptr_t;
-        typedef std::map<std::string, dir_ptr_t> map_t;
-
-        std::string rootDir;
-        map_t infos;
-
-    public:
-        explicit DirMap(std::string const & rootDir);
-        DirInfo & getDir(std::string const & name);
-    };
-
-    warp::Synchronized<DirMap> syncDirMap;
+    TablePtr logTable;
+    std::string uri;
 
 public:
-    explicit FileConfigManager(std::string const & rootDir);
-    ~FileConfigManager();
+    explicit LogFragment(std::string const & uri);
+    TablePtr const & getWritableTable() { return logTable; }
 
-    // ConfigManager API
-    std::list<TabletConfig> loadTabletConfigs(std::string const & tableName);
-    void setTabletConfig(std::string const & tableName, TabletConfig const & cfg);
-    std::string getDataFile(std::string const & tableName);
+    // Fragment API
+    virtual CellStreamPtr scan(ScanPredicate const & pred) const;
+
+    virtual bool isImmutable() const;
+    virtual std::string getFragmentUri() const;
+    virtual size_t getDiskSize(warp::Interval<std::string> const & rows) const;
+
+    virtual flux::Stream< std::pair<std::string, size_t> >::handle_t
+    scanIndex(warp::Interval<std::string> const & rows) const;
 };
 
 
-#endif // KDI_TABLET_FILECONFIGMANAGER_H
+#endif // KDI_TABLET_LOGFRAGMENT_H
