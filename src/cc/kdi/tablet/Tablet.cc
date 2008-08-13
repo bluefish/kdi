@@ -54,25 +54,42 @@ namespace {
     /// Split tablets that get larger than 400 MB
     size_t const SPLIT_THRESHOLD = 400 << 20;
 
-    /// Make sure row is in tablet range or raise a RowNotInTabletError
-    inline void validateRow(strref_t row, Interval<string> const & rows)
+    /// Make a printable name for the Tablet
+    std::string makePrettyName(std::string const & tableName,
+                               IntervalPoint<string> const & last)
     {
-        if(!rows.contains(row, warp::less()))
-            raise<RowNotInTabletError>("%s", row);
+        ostringstream oss;
+        oss << tableName << '(';
+        if(last.isFinite())
+            oss << reprString(last.getValue());
+        else
+            oss << "END";
+        oss << ')';
+        return oss.str();
     }
 
-    /// Make sure row set is in tablet range or raise a RowNotInTabletError
-    inline void validateRows(ScanPredicate::StringSetCPtr const & rowSet,
-                             Interval<string> const & rows)
+}
+
+//----------------------------------------------------------------------------
+// Tablet inline
+//----------------------------------------------------------------------------
+void Tablet::validateRow(strref_t row) const
+{
+    lock_t lock(mutex);
+    if(!rows.contains(row, warp::less()))
+        raise<RowNotInTabletError>("%s", row);
+}
+
+void Tablet::validateRows(ScanPredicate const & pred) const
+{
+    lock_t lock(mutex);
+    if(pred.getRowPredicate())
     {
-        if(rowSet)
-        {
-            if(!rows.contains(rowSet->getHull()))
-                raise<RowNotInTabletError>("%s", *rowSet);
-        }
-        else if(!rows.isInfinite())
-            raise<RowNotInTabletError>("<< >>");
+        if(!rows.contains(pred.getRowPredicate()->getHull()))
+            raise<RowNotInTabletError>("%s", *pred.getRowPredicate());
     }
+    else if(!rows.isInfinite())
+        raise<RowNotInTabletError>("<< >>");
 }
 
 
@@ -86,28 +103,51 @@ Tablet::Tablet(std::string const & tableName,
                FileTrackerPtr const & tracker,
                TabletConfig const & cfg,
                SuperTablet * superTablet) :
-    tableName(tableName),
     configMgr(configMgr),
     logger(logger),
     compactor(compactor),
     tracker(tracker),
     superTablet(superTablet),
+    tableName(tableName),
+    server(cfg.getServer()),
+    prettyName(makePrettyName(tableName, cfg.getTabletRows().getUpperBound())),
+    rows(cfg.getTabletRows()),
     mutationsPending(false),
     configChanged(false)
 {
-    log("Tablet %p %s: created", this, getTableName());
+    log("Tablet %p %s: created", this, getPrettyName());
 
     EX_CHECK_NULL(configMgr);
     EX_CHECK_NULL(logger);
     EX_CHECK_NULL(compactor);
+    EX_CHECK_NULL(tracker);
 
-    loadConfig(cfg);
+    // Load our fragments
+    bool uriChanged = false;
+    vector<string> const & uris = cfg.getTableUris();
+    for(vector<string>::const_iterator i = uris.begin();
+        i != uris.end(); ++i)
+    {
+        // Load the fragment from the config manager
+        FragmentPtr frag = configMgr->openFragment(*i);
+        fragments.push_back(frag);
+
+        // Check to see if the fragment URI changed on load.
+        if(fragments.back()->getFragmentUri() != *i)
+            uriChanged = true;
+    }
+
+    // If a table URI changed during the load, resave our config
+    if(uriChanged)
+    {
+        log("Tablet config changed on load, saving: %s", getPrettyName());
+        lock_t lock(mutex);
+        saveConfig(lock);
+    }
 }
 
 Tablet::~Tablet()
 {
-    log("Tablet %p %s: destroyed", this, getTableName());
-
     // Untrack files that we're still referencing -- once a Tablet is
     // destroyed, another process may load it.  We have to assume the
     // file names have been exported.
@@ -120,46 +160,54 @@ Tablet::~Tablet()
                 )
             );
     }    
+
+    log("Tablet %p %s: destroyed", this, getPrettyName());
 }
 
 void Tablet::set(strref_t row, strref_t column, int64_t timestamp, strref_t value)
 {
-    validateRow(row, rows);
+    validateRow(row);
     logger->set(shared_from_this(), row, column, timestamp, value);
+    
+    lock_t lock(mutex);
     mutationsPending = true;
 }
 
 void Tablet::erase(strref_t row, strref_t column, int64_t timestamp)
 {
-    validateRow(row, rows);
+    validateRow(row);
     logger->erase(shared_from_this(), row, column, timestamp);
+
+    lock_t lock(mutex);
     mutationsPending = true;
 }
     
 void Tablet::sync()
 {
-    if(mutationsPending)
+    lock_t lock(mutex);
+
+    // Sync pending mutations
+    while(mutationsPending)
     {
-        logger->sync();
         mutationsPending = false;
+        lock.unlock();
+        logger->sync();
+        lock.lock();
     }
 
-    // XXX need locking
-    if(configChanged)
+    // Save our config
+    saveConfig(lock);
+
+    // Grab the dead file list and unlock
+    vector<string> files;
+    files.swap(deadFiles);
+    lock.unlock();
+
+    // Release dead files
+    for(vector<string>::const_iterator i = files.begin();
+        i != files.end(); ++i)
     {
-        // Save the new config
-        saveConfig();
-
-        // Release old files
-        for(vector<string>::const_iterator i = deadFiles.begin();
-            i != deadFiles.end(); ++i)
-        {
-            tracker->release(*i);
-        }
-        deadFiles.clear();
-
-        // Reset flag
-        configChanged = false;
+        tracker->release(*i);
     }
 }
 
@@ -171,7 +219,7 @@ CellStreamPtr Tablet::scan() const
 CellStreamPtr Tablet::scan(ScanPredicate const & pred) const
 {
     // Make sure this is a valid scan for this tablet
-    validateRows(pred.getRowPredicate(), rows);
+    validateRows(pred);
 
     // Strip the history predicate -- we'll implement it as a
     // filter after everything else
@@ -194,27 +242,15 @@ CellStreamPtr Tablet::scan(ScanPredicate const & pred) const
         return scanner;
 }
 
-std::string Tablet::getPrettyName() const
-{
-    ostringstream oss;
-    oss << "table=" << reprString(tableName)
-        << " last=";
-    if(rows.getUpperBound().isFinite())
-        oss << reprString(rows.getUpperBound().getValue());
-    else
-        oss << "END";
-    return oss.str();
-}
-
 CellStreamPtr Tablet::getMergedScan(ScanPredicate const & pred) const
 {
-    validateRows(pred.getRowPredicate(), rows);
+    validateRows(pred);
 
     // We don't support history predicates
     if(pred.getMaxHistory())
         raise<ValueError>("unsupported history predicate: %s", pred);
 
-    // Get exclusive access to table list
+    // Get exclusive access to fragment list
     lock_t lock(mutex);
 
     // If there is only one table, no merge is necessary but we still
@@ -258,8 +294,10 @@ TabletPtr Tablet::splitTablet()
     // Make sure outstanding mutations are stable
     sync();
 
+    lock_t lock(mutex);
+
     // Choose a median row
-    std::string splitRow = chooseSplitRow();
+    std::string splitRow = chooseSplitRow(lock);
 
     // Make the new intervals
     Interval<string> low(rows);
@@ -279,10 +317,10 @@ TabletPtr Tablet::splitTablet()
     // Save new tablet configs -- write the high first because it is
     // somewhat less expensive to recover from a missing low tablet
     // than a missing high tablet.
-    vector<string> uris = getFragmentUris();
+    vector<string> uris = getFragmentUris(lock);
     TabletConfig highCfg(high, uris, server);
     TabletConfig lowCfg(low, uris, server);
-    configMgr->setTabletConfig(tableName, highCfg);
+    configMgr->setTabletConfig(tableName, highCfg); // XXX should unlock
     configMgr->setTabletConfig(tableName, lowCfg);
 
     // Clone this tablet and tweak both instances
@@ -290,23 +328,27 @@ TabletPtr Tablet::splitTablet()
     lowTablet->rows = low;
     this->rows = high;
 
-    log("Tablet split complete: low=(%s) high=(%s)",
+    log("Tablet split complete: low=%s high=%s",
         lowTablet->getPrettyName(),
         this->getPrettyName());
+
+    // Release split flag
+    splitPending = false;
 
     // Return new tablet
     return lowTablet;
 }
 
 Tablet::Tablet(Tablet const & o) :
-    tableName(o.tableName),
-    server(o.server),
-    rows(o.rows),
     configMgr(o.configMgr),
     logger(o.logger),
     compactor(o.compactor),
     tracker(o.tracker),
     superTablet(o.superTablet),
+    tableName(o.tableName),
+    server(o.server),
+    prettyName(makePrettyName(tableName, o.rows.getUpperBound())),
+    rows(o.rows),
     fragments(o.fragments),
     mutationsPending(false),
     configChanged(false)
@@ -323,47 +365,35 @@ Tablet::Tablet(Tablet const & o) :
     }
 }
 
-void Tablet::loadConfig(TabletConfig const & cfg)
+void Tablet::saveConfig(lock_t & lock)
 {
-    // Grab the server name and row interval
-    server = cfg.getServer();
-    rows = cfg.getTabletRows();
+    if(!lock)
+        raise<ValueError>("need lock");
 
-    // Load our tables
-    bool uriChanged = false;
+    if(!configChanged)
+        return;
+
+    do
     {
-        lock_t lock(mutex);
-        fragments.clear();
-        vector<string> const & uris = cfg.getTableUris();
-        for(vector<string>::const_iterator i = uris.begin();
-            i != uris.end(); ++i)
-        {
-            fragments.push_back(configMgr->openFragment(*i));
+        configChanged = false;
+        vector<string> uris = getFragmentUris(lock);
 
-            if(!uriChanged && fragments.back()->getFragmentUri() != *i)
-                uriChanged = true;
-        }
-    }
+        lock.unlock();
 
-    // If a table URI changed during the load, resave our config
-    if(uriChanged)
-    {
-        log("Tablet config changed on load, saving: %s", getPrettyName());
-        saveConfig();
-    }
+        // Save our config
+        configMgr->setTabletConfig(tableName, TabletConfig(rows, uris, server));
+
+        lock.lock();
+
+        // Loop if something has updated the config while we were
+        // saving the old one
+    } while(configChanged);
 }
 
-void Tablet::saveConfig() const
+std::vector<std::string> Tablet::getFragmentUris(lock_t const & lock) const
 {
-    // Save our config
-    configMgr->setTabletConfig(
-        tableName,
-        TabletConfig(rows, getFragmentUris(), server));
-}
-
-std::vector<std::string> Tablet::getFragmentUris() const
-{
-    lock_t lock(mutex);
+    if(!lock)
+        raise<ValueError>("need lock");
 
     // Build list of fragment uris
     vector<string> uris;
@@ -381,7 +411,7 @@ void Tablet::addFragment(FragmentPtr const & fragment)
 {
     EX_CHECK_NULL(fragment);
 
-    log("Tablet %s: add fragment %s", getTableName(), fragment->getFragmentUri());
+    log("Tablet %s: add fragment %s", getPrettyName(), fragment->getFragmentUri());
 
     bool wantCompaction = false;
     {
@@ -412,9 +442,10 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
         raise<ValueError>("replaceFragments with empty fragment sequence");
     EX_CHECK_NULL(newFragment);
 
-    log("Tablet %s: replace %d fragments with %s", getTableName(),
+    log("Tablet %s: replace %d fragments with %s", getPrettyName(),
         oldFragments.size(), newFragment->getFragmentUri());
 
+    bool wantSplit = false;
     {
         // Lock tableSet
         lock_t lock(mutex);
@@ -456,13 +487,21 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
 
         // Note config modification
         configChanged = true;
+
+        // Check to see if we should split
+        if(!splitPending && superTablet &&
+           getDiskSize(lock) >= SPLIT_THRESHOLD)
+        {
+            splitPending = true;
+            wantSplit = true;
+        }
     }
 
     // Update scanners
     updateScanners();
 
-    // Check to see if we should split
-    if(superTablet && getDiskSize() >= SPLIT_THRESHOLD)
+    // Maybe request a split
+    if(wantSplit)
         superTablet->requestSplit(this);
 }
 
@@ -505,7 +544,7 @@ void Tablet::doCompaction()
     vector<FragmentPtr> compactionFragments;
     bool filterErasures = false;
 
-    log("Tablet %s: start compaction", getTableName());
+    log("Tablet %s: start compaction", getPrettyName());
     
     // Choose the sequence of tables to compact
     {
@@ -559,19 +598,23 @@ void Tablet::doCompaction()
         writer.put(x);
     writer.close();     // XXX should sync file
 
-    log("Tablet %s: end compaction", getTableName());
+    log("Tablet %s: end compaction", getPrettyName());
 
     // Reopen the table for reading
     std::string diskUri = uriPushScheme(fn, "disk");
     FragmentPtr frag = configMgr->openFragment(diskUri);
 
+    // Track the new file for automatic deletion
+    tracker->track(fn);
+
     // Update table set
     replaceFragments(compactionFragments, frag);
 }
 
-size_t Tablet::getDiskSize() const
+size_t Tablet::getDiskSize(lock_t const & lock) const
 {
-    lock_t lock(mutex);
+    if(!lock)
+        raise<ValueError>("need lock");
 
     size_t sum = 0;
     for(fragments_t::const_iterator i = fragments.begin();
@@ -585,9 +628,36 @@ size_t Tablet::getDiskSize() const
     return sum;
 }
 
-std::string Tablet::chooseSplitRow() const
+std::string Tablet::chooseSplitRow(lock_t const & lock) const
 {
-    return std::string();
+    if(!lock)
+        raise<ValueError>("need lock");
+
+    typedef pair<string,size_t> pair_t;
+    typedef flux::Stream<pair_t>::handle_t stream_t;
+    
+    size_t totalSize = getDiskSize(lock);
+    streamptr_t merge = flux::makeMerge<pair_t>(warp::less());
+    for(fragments_t::const_iterator i = fragments.begin();
+        i != fragments.end(); ++i)
+    {
+        merge->pipeFrom((*i)->scanIndex(rows));
+    }
+
+    lock.unlock();
+
+    size_t middle = totalSize / 2;
+    size_t cumulativeSize = 0;
+    pair_t x;
+    while(cumulativeSize < middle && merge->get(x))
+        cumulativeSize += x.second;
+    
+    log("Tablet %s: totalSize=%s, split=%.1f%%, row=%s",
+        getPrettyName(), 100.0*cumulativeSize/totalSize,
+        x.first);
+
+    lock.lock();
+    return x.first;
 }
 
 void Tablet::updateScanners() const

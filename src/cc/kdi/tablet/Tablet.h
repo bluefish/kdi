@@ -62,24 +62,28 @@ class kdi::tablet::Tablet
     typedef std::vector<ScannerWeakPtr> scanner_vec_t;
 
 private:
+    // These are initialized by the constructor and never change.
+    // They may be accessed in a thread-safe manner.
+    ConfigManagerPtr       const configMgr;
+    SharedLoggerPtr        const logger;
+    SharedCompactorPtr     const compactor;
+    FileTrackerPtr         const tracker;
+    SuperTablet *          const superTablet;
+    std::string            const tableName;
+    std::string            const server;
+    std::string            const prettyName;
+
+    // The following may change over the life of the Tablet.  Accesses
+    // to them should be synchronized by holding a lock on the Tablet
+    // mutex.
+    warp::Interval<std::string>  rows;
+    fragments_t                  fragments;
+    std::vector<std::string>     deadFiles;
+    bool                         mutationsPending;
+    bool                         configChanged;
+    bool                         splitPending;
+
     mutable mutex_t mutex;
-
-    std::string tableName;
-    std::string server;
-    warp::Interval<std::string> rows;
-
-    ConfigManagerPtr configMgr;
-    SharedLoggerPtr logger;
-    SharedCompactorPtr compactor;
-    FileTrackerPtr tracker;
-    SuperTablet * superTablet;
-
-    std::vector<std::string> deadFiles;
-    fragments_t fragments;
-
-    bool mutationsPending;
-    bool configChanged;
-
     mutable warp::Synchronized<scanner_vec_t> syncScanners;
 
 public:
@@ -103,7 +107,7 @@ public:
     std::string const & getTableName() const { return tableName; }
 
     /// Get a name suitable for printing in debug messages
-    std::string getPrettyName() const;
+    std::string const & getPrettyName() const { return prettyName; }
 
     /// Get a merged scan of all the tables in this this Tablet, using
     /// the given predicate.  This method does not support history
@@ -156,17 +160,24 @@ private:
     // Copy constructor for splitting
     Tablet(Tablet const & other);
 
-    void loadConfig(TabletConfig const & cfg);
-    void saveConfig() const;
+    void saveConfig(lock_t & lock);
 
-    std::vector<std::string> getFragmentUris() const;
+    std::vector<std::string> getFragmentUris(lock_t const & lock) const;
 
-    size_t getDiskSize() const;
-    std::string chooseSplitRow() const;
+    size_t getDiskSize(lock_t const & lock) const;
+    std::string chooseSplitRow(lock_t const & lock) const;
 
     /// Call reopen() on all Scanners.  Expired scanners will be
     /// filtered out of list as well.
     void updateScanners() const;
+
+    /// Make sure row is in tablet range or raise a
+    /// RowNotInTabletError
+    inline void validateRow(strref_t row) const;
+
+    /// Make sure predicate row set is in tablet range or raise a
+    /// RowNotInTabletError
+    inline void validateRows(ScanPredicate const & pred) const;
 };
 
 
