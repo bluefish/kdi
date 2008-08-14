@@ -113,7 +113,8 @@ Tablet::Tablet(std::string const & tableName,
     prettyName(makePrettyName(tableName, cfg.getTabletRows().getUpperBound())),
     rows(cfg.getTabletRows()),
     mutationsPending(false),
-    configChanged(false)
+    configChanged(false),
+    splitPending(false)
 {
     log("Tablet %p %s: created", this, getPrettyName());
 
@@ -142,6 +143,7 @@ Tablet::Tablet(std::string const & tableName,
     {
         log("Tablet config changed on load, saving: %s", getPrettyName());
         lock_t lock(mutex);
+        postConfigChange(lock);
         saveConfig(lock);
     }
 }
@@ -197,18 +199,6 @@ void Tablet::sync()
 
     // Save our config
     saveConfig(lock);
-
-    // Grab the dead file list and unlock
-    vector<string> files;
-    files.swap(deadFiles);
-    lock.unlock();
-
-    // Release dead files
-    for(vector<string>::const_iterator i = files.begin();
-        i != files.end(); ++i)
-    {
-        tracker->release(*i);
-    }
 }
 
 CellStreamPtr Tablet::scan() const
@@ -323,9 +313,9 @@ TabletPtr Tablet::splitTablet()
     configMgr->setTabletConfig(tableName, highCfg); // XXX should unlock
     configMgr->setTabletConfig(tableName, lowCfg);
 
-    // Clone this tablet and tweak both instances
-    TabletPtr lowTablet(new Tablet(*this));
-    lowTablet->rows = low;
+    // Clone this tablet with new row bounds and change bounds on this
+    // tablet
+    TabletPtr lowTablet(new Tablet(*this, low));
     this->rows = high;
 
     log("Tablet split complete: low=%s high=%s",
@@ -339,7 +329,7 @@ TabletPtr Tablet::splitTablet()
     return lowTablet;
 }
 
-Tablet::Tablet(Tablet const & o) :
+Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
     configMgr(o.configMgr),
     logger(o.logger),
     compactor(o.compactor),
@@ -347,11 +337,12 @@ Tablet::Tablet(Tablet const & o) :
     superTablet(o.superTablet),
     tableName(o.tableName),
     server(o.server),
-    prettyName(makePrettyName(tableName, o.rows.getUpperBound())),
-    rows(o.rows),
+    prettyName(makePrettyName(tableName, rows.getUpperBound())),
+    rows(rows),
     fragments(o.fragments),
     mutationsPending(false),
-    configChanged(false)
+    configChanged(false),
+    splitPending(false)
 {
     // Add references to cloned fragment files
     for(fragments_t::const_iterator i = this->fragments.begin();
@@ -363,6 +354,14 @@ Tablet::Tablet(Tablet const & o) :
                 )
             );
     }
+}
+
+void Tablet::postConfigChange(lock_t const & lock)
+{
+    if(!lock)
+        raise<ValueError>("need lock");
+    
+    configChanged = true;
 }
 
 void Tablet::saveConfig(lock_t & lock)
@@ -388,6 +387,14 @@ void Tablet::saveConfig(lock_t & lock)
         // Loop if something has updated the config while we were
         // saving the old one
     } while(configChanged);
+
+    // Release dead files
+    for(vector<string>::const_iterator i = deadFiles.begin();
+        i != deadFiles.end(); ++i)
+    {
+        tracker->release(*i);
+    }
+    deadFiles.clear();
 }
 
 std::vector<std::string> Tablet::getFragmentUris(lock_t const & lock) const
@@ -425,8 +432,8 @@ void Tablet::addFragment(FragmentPtr const & fragment)
         // tables (or more than 4 static tables)
         wantCompaction = (fragments.size() > 5);
 
-        // Note that config has changed
-        configChanged = true;
+        // Save changes to config
+        postConfigChange(lock);
     }
 
     // Request a compaction if we need one
@@ -485,8 +492,8 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             raise<RuntimeError>("replaceFragments with unknown fragment sequence");
         }
 
-        // Note config modification
-        configChanged = true;
+        // Save changes to config
+        postConfigChange(lock);
 
         // Check to see if we should split
         if(!splitPending && superTablet &&
@@ -625,10 +632,13 @@ size_t Tablet::getDiskSize(lock_t const & lock) const
         sum += (*i)->getDiskSize(rows);
     }
 
+    log("Tablet %s: diskSize = %s",
+        getPrettyName(), sizeString(sum));
+
     return sum;
 }
 
-std::string Tablet::chooseSplitRow(lock_t const & lock) const
+std::string Tablet::chooseSplitRow(lock_t & lock) const
 {
     if(!lock)
         raise<ValueError>("need lock");
@@ -637,7 +647,7 @@ std::string Tablet::chooseSplitRow(lock_t const & lock) const
     typedef flux::Stream<pair_t>::handle_t stream_t;
     
     size_t totalSize = getDiskSize(lock);
-    streamptr_t merge = flux::makeMerge<pair_t>(warp::less());
+    stream_t merge = flux::makeMerge<pair_t>(warp::less());
     for(fragments_t::const_iterator i = fragments.begin();
         i != fragments.end(); ++i)
     {
@@ -652,9 +662,11 @@ std::string Tablet::chooseSplitRow(lock_t const & lock) const
     while(cumulativeSize < middle && merge->get(x))
         cumulativeSize += x.second;
     
-    log("Tablet %s: totalSize=%s, split=%.1f%%, row=%s",
-        getPrettyName(), 100.0*cumulativeSize/totalSize,
-        x.first);
+    log("Tablet %s: totalSize=%s, split=%.1f%%, splitRow=%s",
+        getPrettyName(),
+        sizeString(totalSize),
+        100.0*cumulativeSize/totalSize,
+        reprString(x.first));
 
     lock.lock();
     return x.first;

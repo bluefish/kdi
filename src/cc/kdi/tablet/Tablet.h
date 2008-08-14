@@ -157,15 +157,16 @@ public:
     }
 
 private:
-    // Copy constructor for splitting
-    Tablet(Tablet const & other);
+    // Constructor for splitting
+    Tablet(Tablet const & other, warp::Interval<std::string> const & rows);
 
+    void postConfigChange(lock_t const & lock);
     void saveConfig(lock_t & lock);
 
     std::vector<std::string> getFragmentUris(lock_t const & lock) const;
 
     size_t getDiskSize(lock_t const & lock) const;
-    std::string chooseSplitRow(lock_t const & lock) const;
+    std::string chooseSplitRow(lock_t & lock) const;
 
     /// Call reopen() on all Scanners.  Expired scanners will be
     /// filtered out of list as well.

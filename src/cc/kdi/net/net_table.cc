@@ -277,16 +277,21 @@ class NetTable::Impl
         Uri u(wrap(uri));
         UriAuthority ua(u.authority);
 
-        if(!ua.host || !ua.port)
-            raise<RuntimeError>("need remote host and port: %s", uri);
-        
+        std::string host("localhost");
+        if(ua.host)
+            host.assign(ua.host.begin(), ua.host.end());
+
+        std::string port("10000");
+        if(ua.port)
+            port.assign(ua.port.begin(), ua.port.end());
+
         try {
             // Get TableManager
             details::TableManagerPrx mgr =
                 details::TableManagerPrx::checkedCast(
                     getCommunicator()->stringToProxy(
                         (format("TableManager:tcp -h %s -p %s")
-                         % ua.host % ua.port).str()
+                         % host % port).str()
                         )
                     );
 
@@ -294,7 +299,8 @@ class NetTable::Impl
             table = mgr->openTable(fs::path(uri));
         }
         catch(Ice::Exception const & ex) {
-            raise<RuntimeError>("couldn't open net table %s: %s", uri, ex);
+            raise<RuntimeError>("couldn't open net table %s (%s:%s): %s",
+                                uri, host, port, ex);
         }
     }
 
