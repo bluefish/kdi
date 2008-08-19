@@ -22,13 +22,14 @@
 #include <kdi/tablet/Tablet.h>
 #include <kdi/tablet/TabletName.h>
 #include <kdi/tablet/TabletConfig.h>
-#include <kdi/tablet/SharedSplitter.h>
+#include <kdi/tablet/WorkQueue.h>
 #include <kdi/tablet/SuperScanner.h>
 #include <kdi/cell_filter.h>
 #include <kdi/scan_predicate.h>
 #include <warp/interval.h>
 #include <warp/log.h>
 #include <boost/format.hpp>
+#include <boost/bind.hpp>
 
 using namespace kdi;
 using namespace kdi::tablet;
@@ -130,8 +131,8 @@ SuperTablet::SuperTablet(std::string const & name,
                          SharedLoggerPtr const & logger,
                          SharedCompactorPtr const & compactor,
                          FileTrackerPtr const & tracker,
-                         SharedSplitterPtr const & splitter) :
-    splitter(splitter),
+                         WorkQueuePtr const & workQueue) :
+    workQueue(workQueue),
     mutationsBlocked(false),
     mutationsPending(0)
 {
@@ -153,6 +154,7 @@ SuperTablet::SuperTablet(std::string const & name,
                 logger,
                 compactor,
                 tracker,
+                workQueue,
                 *i,
                 this
                 )
@@ -231,7 +233,13 @@ void SuperTablet::sync()
 
 void SuperTablet::requestSplit(Tablet * tablet)
 {
-    splitter->enqueueSplit(shared_from_this(), tablet);
+    workQueue->post(
+        boost::bind(
+            &SuperTablet::performSplit,
+            shared_from_this(),
+            tablet
+            )
+        );
 }
 
 void SuperTablet::performSplit(Tablet * tablet)

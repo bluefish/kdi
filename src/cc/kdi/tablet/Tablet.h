@@ -68,6 +68,7 @@ private:
     SharedLoggerPtr        const logger;
     SharedCompactorPtr     const compactor;
     FileTrackerPtr         const tracker;
+    WorkQueuePtr           const workQueue;
     SuperTablet *          const superTablet;
     std::string            const tableName;
     std::string            const server;
@@ -93,6 +94,7 @@ public:
            SharedLoggerPtr const & logger,
            SharedCompactorPtr const & compactor,
            FileTrackerPtr const & tracker,
+           WorkQueuePtr const & workQueue,
            TabletConfig const & cfg,
            SuperTablet * superTablet = 0);
     ~Tablet();
@@ -162,6 +164,7 @@ private:
     Tablet(Tablet const & other, warp::Interval<std::string> const & rows);
 
     void postConfigChange(lock_t const & lock);
+    void doSaveConfig();
     void saveConfig(lock_t & lock);
 
     std::vector<std::string> getFragmentUris(lock_t const & lock) const;

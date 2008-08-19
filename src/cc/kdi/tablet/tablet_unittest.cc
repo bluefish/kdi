@@ -27,6 +27,7 @@
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/FileConfigManager.h>
 #include <kdi/tablet/FileTracker.h>
+#include <kdi/tablet/WorkQueue.h>
 #include <boost/format.hpp>
 
 #include <warp/init.h>
@@ -54,12 +55,14 @@ namespace
         FileTrackerPtr tracker;
         SharedLoggerPtr logger;
         SharedCompactorPtr compactor;
+        WorkQueuePtr workQueue;
 
         Setup() :
             configMgr(new FileConfigManager("memfs:/")),
             tracker(new FileTracker),
             logger(new SharedLogger(configMgr, tracker)),
-            compactor(new SharedCompactor)
+            compactor(new SharedCompactor),
+            workQueue(new WorkQueue(1))
         {
         }
     };
@@ -77,7 +80,7 @@ BOOST_AUTO_UNIT_TEST(table_api_basic)
         i != cfgs.end(); ++i)
     {
         TabletPtr t(
-            new Tablet(NAME, s.configMgr, s.logger, s.compactor, s.tracker, *i));
+            new Tablet(NAME, s.configMgr, s.logger, s.compactor, s.tracker, s.workQueue, *i));
 
         unittest::testTableInterface(t);
     }

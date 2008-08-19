@@ -25,6 +25,7 @@
 #include <kdi/tablet/Scanner.h>
 #include <kdi/tablet/ConfigManager.h>
 #include <kdi/tablet/FileTracker.h>
+#include <kdi/tablet/WorkQueue.h>
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/SharedLogger.h>
 #include <kdi/scan_predicate.h>
@@ -38,6 +39,7 @@
 #include <warp/log.h>
 #include <ex/exception.h>
 #include <boost/format.hpp>
+#include <boost/bind.hpp>
 
 #include <kdi/local/disk_table_writer.h>
 using kdi::local::DiskTableWriter;
@@ -101,12 +103,14 @@ Tablet::Tablet(std::string const & tableName,
                SharedLoggerPtr const & logger,
                SharedCompactorPtr const & compactor,
                FileTrackerPtr const & tracker,
+               WorkQueuePtr const & workQueue,
                TabletConfig const & cfg,
                SuperTablet * superTablet) :
     configMgr(configMgr),
     logger(logger),
     compactor(compactor),
     tracker(tracker),
+    workQueue(workQueue),
     superTablet(superTablet),
     tableName(tableName),
     server(cfg.getServer()),
@@ -123,6 +127,7 @@ Tablet::Tablet(std::string const & tableName,
     EX_CHECK_NULL(logger);
     EX_CHECK_NULL(compactor);
     EX_CHECK_NULL(tracker);
+    EX_CHECK_NULL(workQueue);
 
     // Load our fragments
     bool uriChanged = false;
@@ -144,7 +149,7 @@ Tablet::Tablet(std::string const & tableName,
     {
         log("Tablet config changed on load, saving: %s", getPrettyName());
         lock_t lock(mutex);
-        postConfigChange(lock);
+        configChanged = true;
         saveConfig(lock);
     }
 }
@@ -335,6 +340,7 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
     logger(o.logger),
     compactor(o.compactor),
     tracker(o.tracker),
+    workQueue(o.workQueue),
     superTablet(o.superTablet),
     tableName(o.tableName),
     server(o.server),
@@ -364,6 +370,19 @@ void Tablet::postConfigChange(lock_t const & lock)
         raise<ValueError>("need lock");
     
     configChanged = true;
+
+    workQueue->post(
+        boost::bind(
+            &Tablet::doSaveConfig,
+            shared_from_this()
+            )
+        );
+}
+
+void Tablet::doSaveConfig()
+{
+    lock_t lock(mutex);
+    saveConfig(lock);
 }
 
 void Tablet::saveConfig(lock_t & lock)

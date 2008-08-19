@@ -50,7 +50,7 @@ class kdi::tablet::SuperTablet
     typedef boost::mutex mutex_t;
     typedef mutex_t::scoped_lock lock_t;
 
-    SharedSplitterPtr splitter;
+    WorkQueuePtr workQueue;
 
     std::vector<TabletPtr> tablets;
     mutable std::vector<SuperScannerWeakPtr> scanners;
@@ -71,7 +71,7 @@ public:
                 SharedLoggerPtr const & logger,
                 SharedCompactorPtr const & compactor,
                 FileTrackerPtr const & tracker,
-                SharedSplitterPtr const & splitter);
+                WorkQueuePtr const & workQueue);
     ~SuperTablet();
 
     // Table API
