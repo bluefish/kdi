@@ -34,6 +34,7 @@ namespace tablet {
     class Tablet;
     class SuperTablet;
     class Scanner;
+    class SuperScanner;
     class Fragment;
     class SharedLogger;
     class SharedCompactor;
@@ -51,6 +52,7 @@ namespace tablet {
 
     typedef boost::shared_ptr<Fragment> FragmentPtr;
     typedef boost::shared_ptr<Scanner> ScannerPtr;
+    typedef boost::shared_ptr<SuperScanner> SuperScannerPtr;
     typedef boost::shared_ptr<SharedLogger> SharedLoggerPtr;
     typedef boost::shared_ptr<SharedCompactor> SharedCompactorPtr;
     typedef boost::shared_ptr<SharedSplitter> SharedSplitterPtr;
@@ -60,6 +62,7 @@ namespace tablet {
 
     typedef boost::weak_ptr<Tablet> TabletWeakPtr;
     typedef boost::weak_ptr<Scanner> ScannerWeakPtr;
+    typedef boost::weak_ptr<SuperScanner> SuperScannerWeakPtr;
 
 } // namespace tablet
 } // namespace kdi

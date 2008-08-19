@@ -25,6 +25,7 @@
 #include <kdi/cell.h>
 #include <kdi/scan_predicate.h>
 #include <warp/interval.h>
+#include <boost/thread/mutex.hpp>
 #include <string>
 
 namespace kdi {
@@ -41,7 +42,7 @@ namespace tablet {
 class kdi::tablet::SuperScanner
     : public kdi::CellStream
 {
-    SuperTabletPtr superTablet;
+    SuperTabletCPtr superTablet;
     ScanPredicate pred;
 
     warp::IntervalSet<std::string> remainingRows;
@@ -50,8 +51,10 @@ class kdi::tablet::SuperScanner
     CellStreamPtr scanner;
     Cell lastCell;
 
+    boost::mutex mutex;
+
 public:
-    SuperScanner(SuperTabletPtr const & superTablet,
+    SuperScanner(SuperTabletCPtr const & superTablet,
                  ScanPredicate const & pred);
 
     bool get(Cell & x);

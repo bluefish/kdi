@@ -23,6 +23,8 @@
 #include <kdi/tablet/TabletName.h>
 #include <kdi/tablet/TabletConfig.h>
 #include <kdi/tablet/SharedSplitter.h>
+#include <kdi/tablet/SuperScanner.h>
+#include <kdi/cell_filter.h>
 #include <kdi/scan_predicate.h>
 #include <warp/interval.h>
 #include <warp/log.h>
@@ -189,21 +191,30 @@ CellStreamPtr SuperTablet::scan() const
 
 CellStreamPtr SuperTablet::scan(ScanPredicate const & pred) const
 {
-    // Figure out row range in predicate
-    Interval<string> rows;
-    if(pred.getRowPredicate())
-        rows = pred.getRowPredicate()->getHull();
-    else
-        rows.setInfinite();
+    SuperScannerPtr scanner;
+    CellStreamPtr output;
 
-    // Map row range to a single tablet
-    TabletLt tlt;
-    vector<TabletPtr>::const_iterator i = std::upper_bound(
-        tablets.begin(), tablets.end(), rows.getLowerBound(), tlt);
-    if(i != tablets.end() && (*i)->getRows().contains(rows))
-        return (*i)->scan(pred);
+    // Put history filter on outside
+    if(pred.getMaxHistory())
+    {
+        ScanPredicate p(pred);
+        p.setMaxHistory(0);
+        scanner.reset(new SuperScanner(shared_from_this(), p));
+        output = makeHistoryFilter(pred.getMaxHistory());
+        output->pipeFrom(scanner);
+    }
     else
-        raise<ValueError>("predicate does not map to a single tablet");
+    {
+        scanner.reset(new SuperScanner(shared_from_this(), pred));
+        output = scanner;
+    }
+
+    {
+        lock_t lock(mutex);
+        scanners.push_back(scanner);
+    }
+
+    return output;
 }
 
 void SuperTablet::sync()
@@ -239,6 +250,9 @@ void SuperTablet::performSplit(Tablet * tablet)
     vector<TabletPtr>::iterator it = std::lower_bound(
         tablets.begin(), tablets.end(), lowTablet, TabletLt());
     tablets.insert(it, lowTablet);
+
+    // Reopen scanners
+    updateScanners();
 }
 
 TabletPtr const & SuperTablet::getTablet(warp::IntervalPoint<std::string> const & row) const
@@ -269,4 +283,37 @@ TabletPtr const & SuperTablet::getTablet(strref_t row) const
         return *i;
     else
         raise<ValueError>("row not on this server: %s", reprString(row));
+}
+
+namespace
+{
+    struct ReopenSuperScannerOrRemove
+    {
+        /// Reopen the scanner if the handle is still valid.  If not,
+        /// return true, as it should be removed from the list.
+        bool operator()(SuperScannerWeakPtr const & weakScanner) const
+        {
+            SuperScannerPtr scanner = weakScanner.lock();
+            if(scanner)
+            {
+                scanner->reopen();
+                return false;   // don't remove scanner
+            }
+            else
+                return true;    // remove expired scanner
+        }
+    };
+}
+
+void SuperTablet::updateScanners() const
+{
+    lock_t lock(mutex);
+
+    // Reopen all valid scanners, remove all null scanners.
+    scanners.erase(
+        std::remove_if(
+            scanners.begin(),
+            scanners.end(),
+            ReopenSuperScannerOrRemove()),
+        scanners.end());
 }

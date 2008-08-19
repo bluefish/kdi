@@ -31,7 +31,7 @@ using namespace std;
 //----------------------------------------------------------------------------
 // SuperScanner
 //----------------------------------------------------------------------------
-SuperScanner::SuperScanner(SuperTabletPtr const & superTablet,
+SuperScanner::SuperScanner(SuperTabletCPtr const & superTablet,
                            ScanPredicate const & pred) :
     superTablet(superTablet),
     pred(pred)
@@ -44,6 +44,8 @@ SuperScanner::SuperScanner(SuperTabletPtr const & superTablet,
 
 bool SuperScanner::get(Cell & x)
 {
+    boost::mutex::scoped_lock lock(mutex);
+
     // Reopen scanner if we need to
     if(!scanner)
     {
@@ -99,6 +101,8 @@ bool SuperScanner::get(Cell & x)
 
 void SuperScanner::reopen()
 {
+    boost::mutex::scoped_lock lock(mutex);
+
     if(!scanner)
         return;
 

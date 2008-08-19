@@ -53,11 +53,12 @@ class kdi::tablet::SuperTablet
     SharedSplitterPtr splitter;
 
     std::vector<TabletPtr> tablets;
+    mutable std::vector<SuperScannerWeakPtr> scanners;
 
     bool mutationsBlocked;
     size_t mutationsPending;
 
-    mutex_t mutex;
+    mutable mutex_t mutex;
     boost::condition allQuiet;
     boost::condition allowMutations;
 
@@ -94,6 +95,9 @@ public:
 
     /// Get the Tablet containing the given row
     TabletPtr const & getTablet(strref_t row) const;
+
+private:
+    void updateScanners() const;
 };
 
 

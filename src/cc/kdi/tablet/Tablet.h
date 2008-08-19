@@ -82,6 +82,7 @@ private:
     bool                         mutationsPending;
     bool                         configChanged;
     bool                         splitPending;
+    bool                         isCompacting;
 
     mutable mutex_t mutex;
     mutable warp::Synchronized<scanner_vec_t> syncScanners;

@@ -114,7 +114,8 @@ Tablet::Tablet(std::string const & tableName,
     rows(cfg.getTabletRows()),
     mutationsPending(false),
     configChanged(false),
-    splitPending(false)
+    splitPending(false),
+    isCompacting(false)
 {
     log("Tablet %p %s: created", this, getPrettyName());
 
@@ -342,7 +343,8 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
     fragments(o.fragments),
     mutationsPending(false),
     configChanged(false),
-    splitPending(false)
+    splitPending(false),
+    isCompacting(false)
 {
     // Add references to cloned fragment files
     for(fragments_t::const_iterator i = this->fragments.begin();
@@ -496,7 +498,7 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
         postConfigChange(lock);
 
         // Check to see if we should split
-        if(!splitPending && superTablet &&
+        if(!splitPending && !isCompacting && superTablet &&
            getDiskSize(lock) >= SPLIT_THRESHOLD)
         {
             splitPending = true;
@@ -536,6 +538,10 @@ size_t Tablet::getCompactionPriority() const
 {
     lock_t lock(mutex);
 
+    // Can't split and compact at the same time
+    if(splitPending)
+        return 0;
+
     // Get the number of static tables in the set
     size_t n = fragments.size();
     if(n && !fragments.back()->isImmutable())
@@ -548,7 +554,20 @@ size_t Tablet::getCompactionPriority() const
 
 void Tablet::doCompaction()
 {
+    {
+        lock_t lock(mutex);
+
+        if(splitPending)
+        {
+            log("Tablet %s: split pending, abort compaction", getPrettyName());
+            return;
+        }
+        
+        isCompacting = true;
+    }
+
     vector<FragmentPtr> compactionFragments;
+    ScanPredicate compactionPred;
     bool filterErasures = false;
 
     log("Tablet %s: start compaction", getPrettyName());
@@ -582,6 +601,12 @@ void Tablet::doCompaction()
 
         // Make a copy of the fragment pointers to be compacted
         compactionFragments.insert(compactionFragments.end(), first, last);
+
+        // Set the compaction predicate to look at the full row range
+        // (and only the row range) for this Tablet
+        compactionPred.setRowPredicate(
+            IntervalSet<string>().add(rows)
+            );
     }
 
     // Get an output file
@@ -596,7 +621,7 @@ void Tablet::doCompaction()
             compactionFragments.rbegin();
         i != compactionFragments.rend(); ++i)
     {
-        merge->pipeFrom((*i)->scan(ScanPredicate()));
+        merge->pipeFrom((*i)->scan(compactionPred));
     }
 
     // Compact the tables
@@ -616,6 +641,11 @@ void Tablet::doCompaction()
 
     // Update table set
     replaceFragments(compactionFragments, frag);
+
+    {
+        lock_t lock(mutex);
+        isCompacting = false;
+    }
 }
 
 size_t Tablet::getDiskSize(lock_t const & lock) const
