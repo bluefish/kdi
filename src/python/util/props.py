@@ -20,6 +20,7 @@
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 import re
+import cStringIO
 
 _bracket = re.compile(r'[\[\]]')
 _kvsep = (re.compile(r'\s+'), re.compile(r'\s*:\s*'), re.compile(r'\s*=\s*'))
@@ -274,6 +275,11 @@ class Properties(object):
 
     def __contains__(self, key):
         return self.props.contains(key)
+
+    def __str__(self):
+        out = cStringIO.StringIO()
+        self.dump(out)
+        return out.getvalue()
 
     def dump(self, out, keys=None, valuesOnly=False, noSpace=False):
         if keys is None:
