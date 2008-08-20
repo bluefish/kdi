@@ -6,6 +6,8 @@ prepend_path()
 {
   if ! eval test -z "\"\${$1##*:$2:*}\"" -o -z "\"\${$1%%*:$2}\"" -o -z "\"\${$1##$2:*}\"" -o -z "\"\${$1##$2}\"" ; then
     eval "$1=$2:\$$1"
+  elif eval test -z "\"\$$1\"" ; then
+    eval "$1=$2"
   fi
 }
 
@@ -15,3 +17,5 @@ prepend_path PATH "$ROOT/bin"
 prepend_path LD_LIBRARY_PATH "$ROOT/lib"
 prepend_path PYTHONPATH "$ROOT/src/python"
 prepend_path PYTHONPATH "$ROOT/lib/python"
+
+export PATH LD_LIBRARY_PATH PYTHONPATH

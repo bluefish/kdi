@@ -4,6 +4,7 @@
 # Setup
 #----------------------------------------------------------------------------
 DEFAULT_BASE=$HOME/kdi
+DEFAULT_PORT=10000
 
 #----------------------------------------------------------------------------
 # Usage function
@@ -20,6 +21,7 @@ function usage()
     echo
     echo "   -h             Print this help message"
     echo "   -d DIR         Instance directory (default=$DEFAULT_BASE)"
+    echo "   -p PORT        Server port (default=$DEFAULT_PORT)"
     echo "   -m META        Meta table host"
     
     exit 2
@@ -28,10 +30,11 @@ function usage()
 #----------------------------------------------------------------------------
 # Parse args
 #----------------------------------------------------------------------------
-args=$(getopt "hd:m:" $*) || usage
+args=$(getopt "hd:m:p:" $*) || usage
 set -- $args
 
 BASE=$DEFAULT_BASE
+PORT=$DEFAULT_PORT
 META=
 
 while (( $# > 0 ))
@@ -39,6 +42,7 @@ do
     case "$1" in
 	-h) usage 1 ;;
 	-d) BASE=$2; shift 2 ;;
+	-p) PORT=$2; shift 2 ;;
 	-m) META=$2; shift 2 ;;
 	--) shift; break ;;
 	*)
@@ -68,7 +72,7 @@ case $1 in
 	    exit 1
 	fi
 	cat >$BASE/ice.cfg <<EOF
-TableAdapter.Endpoints=tcp -p 10000
+TableAdapter.Endpoints=tcp -p $PORT
 Ice.MessageSizeMax=32768
 Ice.ThreadPool.Server.Size=4
 Ice.ThreadPool.Server.SizeWarn=0
@@ -77,9 +81,9 @@ EOF
 	export PATH=$BASE/bin:$PATH
 
 	if [[ -n $META ]]; then
-	    ARGS="--mode super --server $(hostname) --meta kdi://$META:10000/META"
-	    if [[ "$META" == "$(hostname)" ]]; then
-		ARGS="$ARGS --load META"
+	    ARGS="--mode super --server $(hostname)"
+	    if [[ "$META" != "$(hostname)" ]]; then
+		ARGS="$ARGS --meta kdi://$META:$PORT/META"
 	    fi
 	else
 	    ARGS="--mode tablet"
