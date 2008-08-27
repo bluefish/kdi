@@ -1,0 +1,59 @@
+#----------------------------------------------------------------------------
+# Evaluation of KDI/Hypertable compatibility
+#----------------------------------------------------------------------------
+
+  - HT API doesn't allow arbitrary binary keys.  It uses
+    null-terminated strings.  This will break the KDI META table
+    (which HT replaces anyway).  It will also cause problems for
+    Colligo.  KDI wrapper can encode nulls.
+
+  - HT requires keys set in ascending timestamp order.
+
+  - HT may not allow rows after "\xff\xff".
+
+  - HT timestamps are unsigned.
+
+  - HT timestamp of zero seems to translate to current time, except
+    for weird case in performance_test
+
+
+#----------------------------------------------------------------------------
+# Complaints
+#----------------------------------------------------------------------------
+
+  - KeySpec is problem waiting to happen.  You can pass in temporary
+    String objects and it will hold pointers to their internal data.
+    It's hard to use safely.
+
+  - Requirement of including "Common/Compat.h" first in non-library
+    code is a bit draconian.
+
+#----------------------------------------------------------------------------
+# Strategy
+#----------------------------------------------------------------------------
+
+  - Encode all key material so Hypertable likes it.  Use a base-64
+    encoding variant that preserves string ordering.
+
+  - Rather than using Hypertable timestamps, encode the timestamp into
+    the column qualifier.  Store (timestamp ^ MAX_TS) as MSB at end of
+    column, then encode entire column using base-64 encoder.
+  
+  - Put all KDI columns under column family "X" for now.
+
+  So, KDI to Hypertable:
+
+    KDI cell:        (r, c, t, v)
+    Hypertable cell: (b64(r), "X:"+b64(c+encode(t)), v)
+
+  Use Hypertable's server-assigned time value for the HT timestamp.
+  Set up HT schema with MAX_VERSIONS=1.
+
+
+#----------------------------------------------------------------------------
+# Bugs
+#----------------------------------------------------------------------------
+
+With a fresh HT, load some cells.  Scan them.  They should be there.
+Erase them.  Scan them.  The should be gone.  Load the same cells.
+Scan them.  Not all of the cells show up.  Bug.
