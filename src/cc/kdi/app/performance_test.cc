@@ -22,6 +22,7 @@
 #include <warp/options.h>
 #include <warp/strutil.h>
 #include <warp/timer.h>
+#include <warp/file.h>
 #include <warp/log.h>
 
 #include <boost/format.hpp>
@@ -179,12 +180,23 @@ void threadEntry(std::string const & tableUri, size_t nCells, size_t id)
     }
 }
 
+void seedRand()
+{
+    FilePtr fp = File::input("/dev/random");
+    unsigned int seed = 0;
+    fp->read(&seed, sizeof(seed));
+    fp->close();
+    srand(seed);
+}
+
 
 //----------------------------------------------------------------------------
 // main
 //----------------------------------------------------------------------------
 int main(int ac, char ** av)
 {
+    seedRand();
+
     OptionParser op("%prog [options] <table-URI>");
     {
         using namespace boost::program_options;
