@@ -235,7 +235,6 @@ CFLAGS += -O3
 CXXFLAGS += -finline-functions
 else
 ifeq ($(VARIANT), debug)
-CPPFLAGS += -DDEBUG
 CFLAGS += -g
 else
 ifeq ($(VARIANT), superdebug)
