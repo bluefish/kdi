@@ -61,6 +61,11 @@ std::ostream & warp::operator<<(std::ostream & o, Timestamp const & t)
     // Format time as a string
     time_t sec = t / 1000000;
     int64_t frac = t % 1000000;
+    if(frac < 0)
+    {
+        --sec;
+        frac += 1000000;
+    }
     struct tm gmt;
     gmtime_r(&sec, &gmt);
     char buf[256];
