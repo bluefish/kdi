@@ -91,7 +91,6 @@ def scanModuleDeps(fn, depKey, magicKey):
 class DepNode:
     pass
 
-
 #----------------------------------------------------------------------------
 # main
 #----------------------------------------------------------------------------
@@ -110,7 +109,14 @@ def main():
     if not opt.magickey:
         op.error('need --magickey')
 
+    if opt.base:
+        bases = opt.base.split(os.pathsep)
+    else:
+        bases = ['']
+
     # Scan modules and build node map
+    err = False
+    nodes = []
     nodemap = {}
     for fn in args:
         # Get module deps
@@ -118,35 +124,52 @@ def main():
         if deps is None:
             continue
 
-        # Get node name for this module
-        name = os.path.dirname(fn)
-        if opt.base and name.startswith(opt.base):
-            name = name[len(opt.base):]
-        name = name.strip(os.sep).replace(os.sep, '_')
+        # Get node names for this module
+        dir = os.path.dirname(fn)
+        name = None
+        for base in bases:
+            if dir.startswith(base):
+                name = dir[len(base):].strip(os.sep)
+                if name:
+                    break
+        if not name:
+            print >>sys.stderr, 'not in a base directory: %r' % fn
+            err = True
+            continue
+        elif name in nodemap:
+            print >>sys.stderr, 'module name is ambiguous: %r' % name
+            err = True
+            continue
 
         # Make node
         n = DepNode()
+        n.refname = name.replace(os.sep, '_')
+        n.module = dir
         n.name = name
-        n.module = fn
         n.parents = deps
         n.children = []
         n.parentsLeft = len(deps)
 
-        # Add to node map
-        nodemap[name] = n
+        # Add node to node list
+        nodes.append(n)
+
+        # Add names to node map
+        nodemap[n.refname] = n
+    if err:
+        sys.exit(1)
 
     # Init topological sort
     err = False
     pending = []
-    for name,node in nodemap.iteritems():
+    for node in nodes:
         for pname in node.parents:
             if pname not in nodemap:
-                print >>sys.stderr, 'Undefined library %r referenced from %r' % (pname, name)
+                print >>sys.stderr, 'Undefined library %r referenced from %r' % (pname, node.refname)
                 err = True
                 continue
             pnode = nodemap[pname]
             if node is pnode:
-                print >>sys.stderr, 'Library %r refers to itself' % name
+                print >>sys.stderr, 'Library %r refers to itself' % node.refname
                 err = True
                 continue
             pnode.children.append(node)
@@ -166,10 +189,10 @@ def main():
                 pending.append(child)
 
     # Make sure there are no cycles
-    if len(sorted) < len(nodemap) and not opt.graph:
-        for node in nodemap.itervalues():
+    if len(sorted) < len(nodes) and not opt.graph:
+        for node in nodes:
             if node.parentsLeft:
-                print >>sys.stderr, 'Library %r has dependency cycles' % node.name
+                print >>sys.stderr, 'Library %r has dependency cycles' % node.refname
         sys.exit(1)
 
     # Open output file
@@ -183,13 +206,17 @@ def main():
         print >>f, 'digraph magicdeps {'
         print >>f, '   rankdir=LR;'
         #print >>f, '   concentrate=true;'
-        for node in nodemap:
-            for parent in nodemap[node].parents:
-                print >>f, '   "%s" -> "%s";' % (node, parent)
+        for node in nodes:
+            for child in node.children:
+                print >>f, '   "%s" -> "%s";' % (child.name, node.name)
         print >>f, '}'
     else:
         # Write module list
-        print >>f, 'MODULES := %s' % ' '.join([x.name.replace('_', os.sep) for x in sorted])
+        print >>f, 'MODULES := %s' % ' '.join([x.module for x in sorted])
+
+        # Write module names
+        for node in nodes:
+            print >>f, 'MNAME_%s := %s' % (node.module.replace(os.sep, '_'), node.name)
 
     # Close output
     f.close()

@@ -31,7 +31,7 @@ all:
 #----------------------------------------------------------------------------
 _AUTO_MODULES := build/cc/automodules.mk
 -include $(_AUTO_MODULES)
-$(_AUTO_MODULES): $(shell find src/cc -name module.mk) $(MODULES:%=src/cc/%/module.mk)
+$(_AUTO_MODULES): $(shell find src/cc -name module.mk) $(MODULES:%=%/module.mk)
 	@echo "Generating module dependencies"
 	@[ -d $(@D) ] || mkdir -p $(@D) && \
 	 ./genmodules -d MAGIC_MODULE_DEPS -m "include magic.mk" -b src/cc -o $@ $^
@@ -164,11 +164,11 @@ syminstall: binsyminstall libsyminstall pysyminstall
 	@echo "Generating graph: $@"
 	@dot -Tpng -o $@ $^
 
-build/cc/moduledeps.dot: $(MODULES:%=src/cc/%/module.mk)
+build/cc/moduledeps.dot: $(MODULES:%=%/module.mk)
 	@echo "Collecting inter-module dependencies: $@"
 	@./genmodules -d MAGIC_MODULE_DEPS -m "include magic.mk" -b src/cc -g -o $@ $^
 
-# build/cc/externaldeps.dot: $(MODULES:%=src/cc/%/module.mk)
+# build/cc/externaldeps.dot: $(MODULES:%=%/module.mk)
 # 	@echo "Collecting external dependencies: $@"
 # 	@./genmodules -d MAGIC_EXTERNAL_DEPS -m "include magic.mk" -b src/cc -g -o $@ $^
 
@@ -308,9 +308,10 @@ srcs2obj = $(call src2obj,$(1),cc) $(call src2obj,$(1),cpp) \
 
 define import
 
-MODULE := $(1)
-SRC_DIR := $(src)/$(1)
-BUILD_DIR := $(build)/$(1)
+MODULE := $$(MNAME_$(subst /,_,$(1)))
+SRC_DIR := $(1)
+BUILD_DIR := $(build)/$(subst $(src)/,$(empty),$(1))
+DEP_DIR := $(dep)/$(subst $(src)/,$(empty),$(1))
 
 MAGIC_MODULE_DEPS :=
 MAGIC_EXTERNAL_DEPS :=
@@ -319,8 +320,8 @@ MAGIC_FLAGS_CXXFLAGS :=
 MAGIC_FLAGS_CFLAGS :=
 MAGIC_LINK_TYPE :=
 
-SRC := $(wildcard $(src)/$(1)/*.cc) $(wildcard $(src)/$(1)/*.cpp) \
-       $(wildcard $(src)/$(1)/*.c) $(wildcard $(src)/$(1)/*.ice)
+SRC := $(wildcard $(1)/*.cc) $(wildcard $(1)/*.cpp) \
+       $(wildcard $(1)/*.c) $(wildcard $(1)/*.ice)
 OBJ := $$(call srcs2obj,$$(SRC))
 
 TARGETS :=
@@ -330,8 +331,8 @@ LIB_INSTALL :=
 PY_INSTALL :=
 CLEAN_EXTRA :=
 
-#$$(warning Importing module $(1): $(src)/$(1)/module.mk)
--include $(src)/$(1)/module.mk
+$$(warning Importing module $$(MODULE): $(1)/module.mk)
+-include $(1)/module.mk
 
 .PHONY: $$(MODULE) $$(MODULE)_clean \
 	$$(MODULE)_bininstall $$(MODULE)_libinstall $$(MODULE)_pyinstall \
@@ -428,6 +429,7 @@ $(foreach x,$(MODULES),$(eval $(call import,$(x))))
 MODULE = $(error Invalid reference to MODULE variable)
 SRC_DIR = $(error Invalid reference to SRC_DIR variable)
 BUILD_DIR = $(error Invalid reference to BUILD_DIR variable)
+DEP_DIR = $(error Invalid reference to DEP_DIR variable)
 SRC = $(error Invalid reference to SRC variable)
 OBJ = $(error Invalid reference to OBJ variable)
 TARGETS = $(error Invalid reference to TARGETS variable)
