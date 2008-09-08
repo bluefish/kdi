@@ -30,11 +30,12 @@ all:
 # Automatic module list
 #----------------------------------------------------------------------------
 _AUTO_MODULES := build/cc/automodules.mk
+_SRC_BASES := src/cc
 -include $(_AUTO_MODULES)
 $(_AUTO_MODULES): $(shell find src/cc -name module.mk) $(MODULES:%=%/module.mk)
 	@echo "Generating module dependencies"
 	@[ -d $(@D) ] || mkdir -p $(@D) && \
-	 ./genmodules -d MAGIC_MODULE_DEPS -m "include magic.mk" -b src/cc -o $@ $^
+	 ./genmodules -d MAGIC_MODULE_DEPS -m "include magic.mk" -b $(_SRC_BASES) -o $@ $^
 
 #----------------------------------------------------------------------------
 # Build config
@@ -166,11 +167,11 @@ syminstall: binsyminstall libsyminstall pysyminstall
 
 build/cc/moduledeps.dot: $(MODULES:%=%/module.mk)
 	@echo "Collecting inter-module dependencies: $@"
-	@./genmodules -d MAGIC_MODULE_DEPS -m "include magic.mk" -b src/cc -g -o $@ $^
+	@./genmodules -d MAGIC_MODULE_DEPS -m "include magic.mk" -b $(_SRC_BASES) -g -o $@ $^
 
 # build/cc/externaldeps.dot: $(MODULES:%=%/module.mk)
 # 	@echo "Collecting external dependencies: $@"
-# 	@./genmodules -d MAGIC_EXTERNAL_DEPS -m "include magic.mk" -b src/cc -g -o $@ $^
+# 	@./genmodules -d MAGIC_EXTERNAL_DEPS -m "include magic.mk" -b $(_SRC_BASES) -g -o $@ $^
 
 #depgraph: build/cc/moduledeps.svg build/cc/externaldeps.svg
 depgraph: build/cc/moduledeps.svg build/cc/moduledeps.png
@@ -225,13 +226,16 @@ endif
 all_obj :=
 
 # Set tool flags (with variants)
-CPPFLAGS := -I$(src) -I$(build) $(CPPFLAGS)
+
+CPPFLAGS := $(patsubst %,-I%,$(subst :, ,$(_SRC_BASES))) \
+            $(patsubst %,-I%,$(subst :, ,$(subst $(src),$(build),$(_SRC_BASES)))) \
+	    $(CPPFLAGS)
 CFLAGS := -Wall -fPIC $(CFLAGS)
 CXXFLAGS := -ftemplate-depth-100 $(CXXFLAGS)
 LDFLAGS := -Wl,--enable-new-dtags $(LDFLAGS)
 ifeq ($(VARIANT), release)
 CPPFLAGS += -DRELEASE -DNDEBUG
-CFLAGS += -O3
+CFLAGS += -O3 -g
 CXXFLAGS += -finline-functions
 else
 ifeq ($(VARIANT), debug)
@@ -245,7 +249,7 @@ CFLAGS += -ggdb3
 else
 ifeq ($(VARIANT), profile)
 CPPFLAGS += -DPROFILE -DNDEBUG
-CFLAGS += -O3 -pg
+CFLAGS += -O3 -pg -g
 CXXFLAGS += -finline-functions
 else
 $(error Unknown build variant "$(VARIANT)")
@@ -308,7 +312,7 @@ srcs2obj = $(call src2obj,$(1),cc) $(call src2obj,$(1),cpp) \
 
 define import
 
-MODULE := $$(MNAME_$(subst /,_,$(1)))
+MODULE := $$(if $$(MNAME_$(subst /,_,$(1))),$$(MNAME_$(subst /,_,$(1))),$(1))
 SRC_DIR := $(1)
 BUILD_DIR := $(build)/$(subst $(src)/,$(empty),$(1))
 DEP_DIR := $(dep)/$(subst $(src)/,$(empty),$(1))
@@ -319,6 +323,7 @@ MAGIC_FLAGS_CPPFLAGS :=
 MAGIC_FLAGS_CXXFLAGS :=
 MAGIC_FLAGS_CFLAGS :=
 MAGIC_LINK_TYPE :=
+MAGIC_REQUIRE_VARS :=
 
 SRC := $(wildcard $(1)/*.cc) $(wildcard $(1)/*.cpp) \
        $(wildcard $(1)/*.c) $(wildcard $(1)/*.ice)
@@ -331,7 +336,10 @@ LIB_INSTALL :=
 PY_INSTALL :=
 CLEAN_EXTRA :=
 
+ifneq ($(strip $(VERBOSE)),)
 $$(warning Importing module $$(MODULE): $(1)/module.mk)
+endif
+
 -include $(1)/module.mk
 
 .PHONY: $$(MODULE) $$(MODULE)_clean \

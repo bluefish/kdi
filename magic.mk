@@ -55,6 +55,30 @@ endif
 
 
 #----------------------------------------------------------------------------
+# Make module conditional on variables
+#----------------------------------------------------------------------------
+define _DISABLE_MODULE
+
+ifneq ($(strip $(VERBOSE)),)
+$$(warning Disabling $(MODULE) because of undefined variable(s): $(1))
+endif
+
+OBJ :=
+MAGIC_MODULE_DEPS :=
+MAGIC_EXTERNAL_DEPS :=
+MAGIC_FLAGS_CPPFLAGS :=
+MAGIC_FLAGS_CXXFLAGS :=
+MAGIC_FLAGS_CFLAGS :=
+MAGIC_LINK_TYPE :=
+
+endef
+
+_DEREF = $(eval _deref_val:=$$($(1)))$(_deref_val)
+_UNDEFINED_VARS := $(strip $(foreach cond,$(MAGIC_REQUIRE_VARS),$(if $(call _DEREF,$(cond)),,$(cond))))
+$(if $(_UNDEFINED_VARS),$(eval $(call _DISABLE_MODULE,$(_UNDEFINED_VARS))))
+
+
+#----------------------------------------------------------------------------
 # Split objects into different classes
 #----------------------------------------------------------------------------
 _MAIN_OBJ := $(filter %_main.o,$(OBJ))
@@ -198,8 +222,8 @@ endef
 define _LIB_EMPTY
 _LIB_A :=
 _LIB_SO :=
-KLIB_$(_LIBNAME)_A = $$(warning Empty module '$(_LIBNAME)' referenced from '$$(MODULE)')
-KLIB_$(_LIBNAME)_SO = $$(warning Empty module '$(_LIBNAME)' referenced from '$$(MODULE)')
+KLIB_$(_LIBNAME)_A = $(if $(_UNDEFINED_VARS),,$$(warning Empty module '$(_LIBNAME)' referenced from '$$(MODULE)'))
+KLIB_$(_LIBNAME)_SO = $(if $(_UNDEFINED_VARS),,$$(warning Empty module '$(_LIBNAME)' referenced from '$$(MODULE)'))
 endef
 
 
