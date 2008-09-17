@@ -350,8 +350,8 @@ namespace {
         static condition_t creationDone;
 
         // Parse our parameters
-        size_t writeCount = 32;
-        size_t readCount = 32;
+        size_t writeCount = 1;
+        size_t readCount = 1;
         parseInt(writeCount, wrap(uriGetParameter(uri, "syncWriteCount")));
         parseInt(readCount, wrap(uriGetParameter(uri, "syncReadCount")));
 
