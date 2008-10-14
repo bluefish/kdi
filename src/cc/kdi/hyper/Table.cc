@@ -219,16 +219,144 @@ namespace
 
         bool get(kdi::Cell & x)
         {
-            try {
-                ::Hypertable::Cell cell;
-                if(!scanner->next(cell))
-                    return false;
+            ::Hypertable::Cell cell;
+            if(!scanner->next(cell))
+                return false;
 
-                x = decodeCell(cell);
-                return true;
+            x = decodeCell(cell);
+            return true;
+        }
+    };
+
+
+    class RetryScanner
+        : public kdi::CellStream
+    {
+        kdi::ScanPredicate pred;
+        ::Hypertable::TablePtr table;
+        kdi::CellStreamPtr scanner;
+        
+        kdi::Cell lastCell;
+        bool catchUp;
+
+        void reopen()
+        {
+            using namespace kdi;
+
+            try {
+                ::Hypertable::ScanSpecBuilder spec;
+
+                spec.add_column("X");
+                spec.set_return_deletes(false);
+                spec.set_max_versions(1);
+
+                // Set up row predicate
+                {
+                    ScanPredicate::StringSetCPtr rows;
+                    if(lastCell)
+                    {
+                        // If we've already scanned some cells, clip
+                        // scan to last returned row
+                        rows = pred.clipRows(
+                            warp::makeLowerBound(
+                                lastCell.getRow().toString(), true
+                                )
+                            ).getRowPredicate();
+                    }
+                    else
+                    {
+                        // Haven't returned anything yet, use original
+                        // predicate
+                        rows = pred.getRowPredicate();
+                    }
+
+                    // If we have a row constraint, add it to the scan
+                    // spec
+                    if(rows)
+                        addRowIntervals(spec, *rows);
+                }
+
+                // Open scanner
+                ::Hypertable::TableScannerPtr hyperScanner =
+                      table->create_scanner(spec.get());
+
+                // Assume that HT will do the row filtering for us
+                CellStreamPtr p(new Scanner(hyperScanner));
+                scanner = applyPredicateFilter(
+                    ScanPredicate(pred).clearRowPredicate(),
+                    p);
             }
             catch(::Hypertable::Exception const & ex) {
                 rethrow(ex);
+            }
+        }
+
+    public:
+        RetryScanner(kdi::ScanPredicate const & pred, ::Hypertable::TablePtr const & table) :
+            pred(pred),
+            table(table),
+            catchUp(false)
+        {
+            reopen();
+        }
+
+        bool get(kdi::Cell & x)
+        {
+            int const MAX_TRIES = 2;
+
+            for(int attempt = 1;; ++attempt)
+            {
+                try {
+                    if(catchUp)
+                    {
+                        // We're in catch-up mode.  We've recently
+                        // reopened the scan, now we need to make sure
+                        // that the next cell we return is after the
+                        // last cell we returned.
+                        while(scanner->get(x))
+                        {
+                            if(lastCell < x)
+                            {
+                                // This cell is after out last
+                                lastCell = x;
+                                catchUp = false;
+                                return true;
+                            }
+                        }
+
+                        // Ran out of cells -- there is nothing after
+                        // our last
+                        return false;
+                    }
+                    
+                    // Get the next cell in the scan (if there is one)
+                    if(!scanner->get(x))
+                        return false;
+
+                    // Save it in case we need to restart
+                    lastCell = x;
+                    return true;
+                }
+                catch(::Hypertable::Exception const & ex) {
+
+                    // If this isn't a scanner timeout error, rethrow
+                    // it.  Or, if we've tried too many times,
+                    // rethrow.
+                    if(attempt >= MAX_TRIES ||
+                       ex.code() != ::Hypertable::Error::RANGESERVER_INVALID_SCANNER_ID)
+                    {
+                        rethrow(ex);
+                    }
+
+                    // Reopen scans that have timed out (we get an
+                    // invalid scanner ID error)
+                    reopen();
+
+                    // Note that we have to catch up if we've already
+                    // returned some cells
+                    if(lastCell)
+                        catchUp = true;
+                }
             }
         }
     };
@@ -301,28 +429,8 @@ kdi::CellStreamPtr kdi::hyper::Table::scan() const
 kdi::CellStreamPtr kdi::hyper::Table::scan(
     ScanPredicate const & pred) const
 {
-    try {
-        ::Hypertable::ScanSpecBuilder spec;
-
-        spec.add_column("X");
-        spec.set_return_deletes(false);
-        spec.set_max_versions(1);
-
-        if(ScanPredicate::StringSetCPtr rows = pred.getRowPredicate())
-            addRowIntervals(spec, *rows);
-
-        ::Hypertable::TableScannerPtr scanner =
-              table->create_scanner(spec.get());
-
-        // Assume that HT will do the row filtering for us
-        CellStreamPtr p(new Scanner(scanner));
-        return applyPredicateFilter(
-            ScanPredicate(pred).clearRowPredicate(),
-            p);
-    }
-    catch(::Hypertable::Exception const & ex) {
-        rethrow(ex);
-    }
+    CellStreamPtr p(new RetryScanner(pred, table));
+    return p;
 }
 
 
