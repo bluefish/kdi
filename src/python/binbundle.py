@@ -27,6 +27,15 @@
 import os
 import sys
 
+class MissingDependency(Exception):
+    def __init__(self, binFile, missingDep):
+        self.binFile = binFile
+        self.missingDep = missingDep
+
+    def __str__(self):
+        return 'unresolved dependency in %r: %r' % (self.binFile, self.missingDep)
+
+
 def getDeps(fn, includeAbsolute=False):
     #print 'ldd "%s"' % fn
     deps = []
@@ -61,8 +70,7 @@ def getDependentFiles(fn, _cache={}):
     targets = set()
     for sym,target in getDeps(fn):
         if not target:
-            print >>sys.stderr, 'unresolved dependency in %r: %r' % (fn, sym)
-            continue
+            raise MissingDependency(fn, sym)
         targets.add(target)
         targets.update(getDependentFiles(target))
 
@@ -93,10 +101,14 @@ def main():
     op.add_option('-o', '--output')
     opt,args = op.parse_args()
 
-    targets = set()
-    for x in args:
-        targets.add(x)
-        targets.update(getDependentFiles(x))
+    try:
+        targets = set()
+        for x in args:
+            targets.add(x)
+            targets.update(getDependentFiles(x))
+    except MissingDependency, ex:
+        print >>sys.stderr, ex
+        sys.exit(1)
 
     out = [ x for x in targets
             if not x.startswith('/lib') and not x.startswith('/usr/lib') ]
