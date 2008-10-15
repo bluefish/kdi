@@ -22,6 +22,7 @@
 #include <warp/xml/xml_parser.h>
 #include <warp/options.h>
 #include <warp/vstring.h>
+#include <ex/exception.h>
 #include <boost/scoped_ptr.hpp>
 #include <string>
 #include <vector>
@@ -51,6 +52,45 @@ namespace
         }
         return true;
     }
+
+    class CounterTable : public kdi::Table
+    {
+        TablePtr table;
+        size_t nSet;
+        size_t nErase;
+        
+    public:
+        CounterTable(TablePtr const & table) :
+            table(table), nSet(0), nErase(0)
+        {
+        }
+
+        void set(strref_t r, strref_t c, int64_t t, strref_t v)
+        {
+            table->set(r,c,t,v);
+            ++nSet;
+        }
+
+        void erase(strref_t r, strref_t c, int64_t t)
+        {
+            table->erase(r,c,t);
+            ++nErase;
+        }
+
+        void sync()
+        {
+            table->sync();
+        }
+
+        CellStreamPtr scan() const
+        {
+            EX_UNIMPLEMENTED_FUNCTION;
+        }
+
+        size_t getSetCount() const { return nSet; }
+        size_t getEraseCount() const { return nErase; }
+    };
+
 }
 
 //----------------------------------------------------------------------------
@@ -304,17 +344,27 @@ int main(int ac, char ** av)
         op.addOption("tuple", "Use tuple parser (default)");
         op.addOption("xml,x", "Use XML parser");
         op.addOption("aol", "Use AOL Snowchains parser");
+        op.addOption("verbose,v", "Be verbose");
     }
     
     OptionMap opt;
     ArgumentList args;
     op.parseOrBail(ac, av, opt, args);
 
+    bool verbose = hasopt(opt, "verbose");
+
     string arg;
     if(!opt.get("table", arg))
         op.error("need --table");
     
     TablePtr table = Table::open(arg);
+
+    boost::shared_ptr<CounterTable> counter;
+    if(verbose)
+    {
+        counter.reset(new CounterTable(table));
+        table = counter;
+    }
 
     boost::scoped_ptr<LoaderBase> loader;
     if(hasopt(opt, "xml"))
@@ -335,10 +385,20 @@ int main(int ac, char ** av)
     for(ArgumentList::const_iterator ai = args.begin();
         ai != args.end(); ++ai)
     {
-        loader->load(File::input(*ai));
+        FilePtr fp = File::input(*ai);
+        if(verbose)
+            cerr << "Loading from: " << fp->getName() << endl;
+
+        loader->load(fp);
     }
     
+    if(verbose)
+        cerr << "Syncing data" << endl;
     table->sync();
+
+    if(verbose)
+        cerr << "Set " << counter->getSetCount() << " cell(s)" << endl
+             << "Erased " << counter->getEraseCount() << " cell(s)" << endl;
 
     return 0;
 }
