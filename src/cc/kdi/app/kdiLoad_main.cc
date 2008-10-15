@@ -57,11 +57,10 @@ namespace
     {
         TablePtr table;
         size_t nSet;
-        size_t nErase;
         
     public:
         CounterTable(TablePtr const & table) :
-            table(table), nSet(0), nErase(0)
+            table(table), nSet(0)
         {
         }
 
@@ -73,8 +72,7 @@ namespace
 
         void erase(strref_t r, strref_t c, int64_t t)
         {
-            table->erase(r,c,t);
-            ++nErase;
+            EX_UNIMPLEMENTED_FUNCTION;
         }
 
         void sync()
@@ -88,7 +86,6 @@ namespace
         }
 
         size_t getSetCount() const { return nSet; }
-        size_t getEraseCount() const { return nErase; }
     };
 
 }
@@ -358,6 +355,8 @@ int main(int ac, char ** av)
         op.error("need --table");
     
     TablePtr table = Table::open(arg);
+    if(verbose)
+        cerr << "Loading to table: " << arg << endl;
 
     boost::shared_ptr<CounterTable> counter;
     if(verbose)
@@ -387,7 +386,7 @@ int main(int ac, char ** av)
     {
         FilePtr fp = File::input(*ai);
         if(verbose)
-            cerr << "Loading from: " << fp->getName() << endl;
+            cerr << "Loading from file: " << fp->getName() << endl;
 
         loader->load(fp);
     }
@@ -397,8 +396,7 @@ int main(int ac, char ** av)
     table->sync();
 
     if(verbose)
-        cerr << "Set " << counter->getSetCount() << " cell(s)" << endl
-             << "Erased " << counter->getEraseCount() << " cell(s)" << endl;
+        cerr << "Loaded " << counter->getSetCount() << " cell(s)" << endl;
 
     return 0;
 }
