@@ -30,55 +30,6 @@
 namespace warp {
 namespace parsing {
 
-    namespace details {
-
-        using namespace boost::spirit;
-
-        /// parse the second part of a timestamp as a float: SS[.s*]
-        template <typename T>
-        struct second_parser_policies
-        {
-            typedef uint_parser<T, 10, 2, 2>    n_parser_t;
-            typedef uint_parser<T, 10, 1, -1>   frac_parser_t;
-    
-            static const bool allow_leading_dot  = false;
-            static const bool allow_trailing_dot = true;
-            static const bool expect_dot         = false;
-    
-            template <typename ScannerT>
-            static typename match_result<ScannerT, nil_t>::type
-            parse_sign(ScannerT& scan)
-            { return scan.no_match(); }
-    
-            template <typename ScannerT>
-            static typename parser_result<n_parser_t, ScannerT>::type
-            parse_n(ScannerT& scan)
-            { return n_parser_t().parse(scan); }
-    
-            template <typename ScannerT>
-            static typename parser_result<chlit<>, ScannerT>::type
-            parse_dot(ScannerT& scan)
-            { return ch_p('.').parse(scan); }
-    
-            template <typename ScannerT>
-            static typename parser_result<frac_parser_t, ScannerT>::type
-            parse_frac_n(ScannerT& scan)
-            { return frac_parser_t().parse(scan); }
-    
-            template <typename ScannerT>
-            static typename match_result<ScannerT, nil_t>::type
-            parse_exp(ScannerT& scan)
-            { return scan.no_match(); }
-    
-            template <typename ScannerT>
-            static typename match_result<ScannerT, nil_t>::type
-            parse_exp_n(ScannerT& scan)
-            { return scan.no_match(); }
-        };
-    
-        boost::spirit::real_parser<double, second_parser_policies<double> > const second_p;
-    }
-
     /// Parse a timestamp and convert it into an integer
     /// representing the number of microseconds since
     /// 1970-01-01T00:00:00Z.  The timestamp may either be an ISO8601
@@ -123,7 +74,7 @@ namespace parsing {
             memset(&t, 0, sizeof(t));
             t.tm_mday = 1;
             t.tm_isdst = isDst;
-            double sec = 0;
+            uint64_t usec = 0;
     
             int parsedTimezone = localTimezone;
     
@@ -151,7 +102,10 @@ namespace parsing {
                            // Optional minute
                            !( !ch_p(':') >> uint2_p[assign_a(t.tm_min)] >>
                               // Optional second
-                              !( !ch_p(':') >> details::second_p[assign_a(sec)] )
+                              !( !ch_p(':') >> uint2_p[assign_a(t.tm_sec)] >>
+                                 // Optional microsecond
+                                 !( ch_p('.') >> (+digit_p)[AssignMicroseconds(usec)] )
+                               )
                             )
                          ) >>
                         // Optional time zone
@@ -161,13 +115,38 @@ namespace parsing {
                              !( !ch_p(':') >> uint2_p[assign_a(tzMin)] )
                            )[AssignTimezone(parsedTimezone, tzIsNegative, tzHour, tzMin)][assign_a(t.tm_isdst, 0)]
                          )
-                    )[AssignDate(result, t, sec, parsedTimezone, localTimezone)]
+                    )[AssignDate(result, t, usec, parsedTimezone, localTimezone)]
                 )
                 .parse(scan)
                 .length();
         }
     
     private:
+        struct AssignMicroseconds
+        {
+            uint64_t & usec;
+
+            AssignMicroseconds(uint64_t & usec) : usec(usec) {}
+            
+            template <class Iter>
+            void operator()(Iter a, Iter b) const
+            {
+                int digits = 0;
+                Iter end = a;
+
+                // Select up to 6 digits for the microsecond field
+                for(; end != b && digits < 6; ++end, ++digits)
+                    ;
+
+                // Parse the digits
+                parseInt(usec, a, end);
+
+                // Extend so we have at least six digits
+                for(; digits < 6; ++digits)
+                    usec *= 10;
+            }
+        };
+
         struct AssignTimezone
         {
             int & tzOffset;
@@ -202,13 +181,13 @@ namespace parsing {
         {
             int64_t & r;
             struct tm const & t;
-            double const & sec;
+            uint64_t const & usec;
             int const & parsedTimezone;
             int const & localTimezone;
             
-            AssignDate(int64_t & r, struct tm const & t, double const & sec,
+            AssignDate(int64_t & r, struct tm const & t, uint64_t const & usec,
                        int const & parsedTimezone, int const & localTimezone) :
-                r(r), t(t), sec(sec),
+                r(r), t(t), usec(usec),
                 parsedTimezone(parsedTimezone),
                 localTimezone(localTimezone)
             {
@@ -222,7 +201,8 @@ namespace parsing {
                 //     << "D   " << t.tm_mday << endl
                 //     << "h   " << t.tm_hour << endl
                 //     << "m   " << t.tm_min << endl
-                //     << "s   " << sec << endl
+                //     << "s   " << t.tm_sec << endl
+                //     << "us  " << usec << endl
                 //     << "dst " << t.tm_isdst << endl
                 //     << "PTZ " << parsedTimezone << endl
                 //     << "LTZ " << localTimezone << endl;
@@ -238,7 +218,7 @@ namespace parsing {
                     t2.tm_mon -= 1;
     
                 time_t utc = mktime(&t2) + (localTimezone - parsedTimezone);
-                r = int64_t(utc) * 1000000 + int64_t(sec * 1e6);
+                r = int64_t(utc) * 1000000 + usec;
             }
         };
     };
