@@ -23,7 +23,11 @@
 using namespace sdstore;
 using namespace warp;
 
-#ifndef NDEBUG
+//#ifndef NDEBUG
+//#define REPORT_CELL_STATISTICS
+//#endif
+
+#ifdef REPORT_CELL_STATISTICS
 
 #include <warp/strutil.h>
 #include <warp/call_queue.h>
@@ -137,7 +141,7 @@ public:
         DynamicCell const * cell = cast(data);
         if(cell->refCount.decrementAndTest())
         {
-#ifndef NDEBUG
+#ifdef REPORT_CELL_STATISTICS
             MProf::get().remove(cell);
 #endif
             delete cell;
@@ -154,7 +158,7 @@ Cell DynamicCell::make(strref_t row, strref_t column, int64_t timestamp,
     static Interpreter interp;
     DynamicCell * data = new DynamicCell(row, column, timestamp, value);
 
-#ifndef NDEBUG
+#ifdef REPORT_CELL_STATISTICS
     MProf::get().add(data);
 #endif
 
@@ -210,7 +214,7 @@ public:
         DynamicCellErasure const * cell = cast(data);
         if(cell->refCount.decrementAndTest())
         {
-#ifndef NDEBUG
+#ifdef REPORT_CELL_STATISTICS
             MProf::get().remove(cell);
 #endif
             delete cell;
@@ -227,7 +231,7 @@ Cell DynamicCellErasure::make(strref_t row, strref_t column,
     static Interpreter interp;
     DynamicCellErasure * data = new DynamicCellErasure(row, column, timestamp);
 
-#ifndef NDEBUG
+#ifdef REPORT_CELL_STATISTICS
     MProf::get().add(data);
 #endif
 
