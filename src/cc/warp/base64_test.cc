@@ -75,7 +75,7 @@ int main(int ac, char ** av)
             while((sz = input->read(inBuf, sizeof(inBuf))))
             {
                 char * end = decoder.decode_iter(
-                    StringRange(inBuf, sz),
+                    inBuf, inBuf + sz,
                     &outBuf[0]);
                 output->write(outBuf, end - outBuf);
             }

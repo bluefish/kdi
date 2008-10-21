@@ -142,3 +142,23 @@ BOOST_AUTO_UNIT_TEST(sortable_test)
     BOOST_CHECK(c.orderTest("\xd6\xbeQb\xcag\xc6" "7\x15\xe6\x80", "\xb3"));
     BOOST_CHECK(c.orderTest("I\x0bJ\xd8w\xe4\xb3\xec\xb3\xeb", "\xd1\xa4L\x94" "a}\xb9\""));
 }
+
+BOOST_AUTO_UNIT_TEST(strip_decode_test)
+{
+    Base64Encoder encoder;
+    std::string encoded;
+
+    encoder.encode("hello there!", encoded);
+    
+    Base64Decoder decoder;
+    std::string decoded;
+    
+    decoder.decode(encoded, decoded);
+    BOOST_CHECK_EQUAL(decoded, "hello there!");
+    
+    decoder.decode(encoded+"\n", decoded);
+    BOOST_CHECK_EQUAL(decoded, "hello there!");
+
+    decoder.decode(encoded+"\n\n"+encoded, decoded);
+    BOOST_CHECK_EQUAL(decoded, "hello there!hello there!");
+}

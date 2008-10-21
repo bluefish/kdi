@@ -25,6 +25,7 @@
 #include <warp/string_range.h>
 #include <ex/exception.h>
 #include <stdint.h>
+#include <algorithm>
 
 namespace warp {
 
@@ -125,68 +126,71 @@ public:
     /// contain 64 unique characters.
     explicit Base64Decoder(strref_t alphabet);
 
-    /// Decode input into an output iterator
-    template <class It>
-    It decode_iter(strref_t src, It dst) const
+    /// Decode input iterator sequence into an output iterator.
+    /// Non-alphabet characters in the input are ignored.  If the
+    /// input sequence is 1 (mod 4) alphabet characters long, the last
+    /// character will be ignored.
+    template <class InputIt, class OutputIt>
+    OutputIt decode_iter(InputIt src_begin, InputIt src_end,
+                         OutputIt dst) const
     {
-        using namespace ex;
+        using std::find_if;
+        InAlphabet inAlphabet(number);
 
-        if((src.size() % 4) == 1)
-            raise<ValueError>("input has invalid length");
-
-        size_t sz = src.size() * 3 / 4;
-        char const * s = src.begin();
-            
         // Loop, converting 4 bytes of input into 3 bytes of
         // output
-        for(size_t i = sz % 3; i < sz; i += 3)
+        src_begin = find_if(src_begin, src_end, inAlphabet);
+        while(src_begin != src_end)
         {
-            uint8_t s0 = number[uint8_t(*s++)];
-            uint8_t s1 = number[uint8_t(*s++)];
-            uint8_t s2 = number[uint8_t(*s++)];
-            uint8_t s3 = number[uint8_t(*s++)];
+            // Get byte 1 of 4
+            uint8_t s0 = number[uint8_t(*src_begin)];
+            src_begin = find_if(++src_begin, src_end, inAlphabet);
+            if(src_begin == src_end)
+            {
+                // If this is the only byte left, then we have invalid
+                // input.  Ignore the last byte.
+                break;
+            }
 
-            if((s0 | s1 | s2 | s3) & 0xc0)
-                raise<ValueError>("invalid input character");
+            // Get byte 2 of 4
+            uint8_t s1 = number[uint8_t(*src_begin)];
+            src_begin = find_if(++src_begin, src_end, inAlphabet);
+            if(src_begin == src_end)
+            {
+                // Only 2 bytes left -- convert to 1 byte of output
+                *dst = char((s0 << 2) | (s1 >> 4));   ++dst;
+                break;
+            }
 
+            // Get byte 3 of 4
+            uint8_t s2 = number[uint8_t(*src_begin)];
+            src_begin = find_if(++src_begin, src_end, inAlphabet);
+            if(src_begin == src_end)
+            {
+                // Only 3 bytes left -- convert to 2 bytes of output
+                *dst = char((s0 << 2) | (s1 >> 4));   ++dst;
+                *dst = char((s1 << 4) | (s2 >> 2));   ++dst;
+                break;
+            }
+            
+            // Get byte 4 of 4
+            uint8_t s3 = number[uint8_t(*src_begin)];
+            src_begin = find_if(++src_begin, src_end, inAlphabet);
+
+            // Convert 4 bytes of input to 3 bytes of output
             *dst = char((s0 << 2) | (s1 >> 4));   ++dst;
             *dst = char((s1 << 4) | (s2 >> 2));   ++dst;
             *dst = char((s2 << 6) | s3);          ++dst;
         }
 
-        // Convert the remaining input, if any.
-        switch(sz % 3)
-        {
-            case 1:
-            {
-                // 2 more bytes of input
-                uint8_t s0 = number[uint8_t(*s++)];
-                uint8_t s1 = number[uint8_t(*s++)];
-                    
-                if((s0 | s1) & 0xc0)
-                    raise<ValueError>("invalid input character");
-
-                *dst = char((s0 << 2) | (s1 >> 4));   ++dst;
-                break;
-            }
-                    
-            case 2:
-            {
-                // 3 more bytes of input
-                uint8_t s0 = number[uint8_t(*s++)];
-                uint8_t s1 = number[uint8_t(*s++)];
-                uint8_t s2 = number[uint8_t(*s++)];
-
-                if((s0 | s1 | s2) & 0xc0)
-                    raise<ValueError>("invalid input character");
-
-                *dst = char((s0 << 2) | (s1 >> 4));   ++dst;
-                *dst = char((s1 << 4) | (s2 >> 2));   ++dst;
-                break;
-            }
-        }
-
         return dst;
+    }
+
+    /// Decode a string into an output iterator
+    template <class OutputIt>
+    OutputIt decode_iter(strref_t src, OutputIt dst) const
+    {
+        return decode_iter(src.begin(), src.end(), dst);
     }
 
     /// Decode input to a resizable container of characters
@@ -195,8 +199,21 @@ public:
     {
         size_t sz = src.size() * 3 / 4;
         dst.resize(sz);
-        decode_iter(src, &dst[0]);
+        dst.erase(decode_iter(src, dst.begin()), dst.end());
     }
+
+private:
+    /// Functor returns true if the argument is a character in the
+    /// decoder alphabet.
+    struct InAlphabet
+    {
+        uint8_t const * number;
+        InAlphabet(uint8_t const * number) : number(number) {}
+        inline bool operator()(char c) const
+        {
+            return (number[uint8_t(c)] & 0xc0) == 0;
+        }
+    };
 };
 
 
