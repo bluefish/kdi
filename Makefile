@@ -502,7 +502,7 @@ MK_RUNPATH = LD_RUN_PATH="$(subst $(space),$(colon),$(call MK_GET_ABS_DIRS,$(fil
 MK_OBJECTS = $(filter-out %.so,$+)
 MK_LIBPATH = $(patsubst %,-L%,$(call MK_GET_DIRS,$(filter %.so,$^)))
 MK_LIBRARIES = $(patsubst lib%,-l%,$(basename $(notdir $(filter %.so,$^))))
-
+MK_SYMBOLS = $(if $(strip $(filter %.a,$^)),$$(nm --defined-only $(filter %.a,$^) | fgrep ridiculous_init_autocall_for_ | awk '{print "-Wl,--undefined=" $$3}'))
 
 #----------------------------------------------------------------------------
 # Compile and dependency rules for C++ (.cc extension)
@@ -625,7 +625,7 @@ $(build)/%_wrap_java.cc: $(src)/%.i
 #----------------------------------------------------------------------------
 %:
 	@echo "Link $@"
-	@$(MK_TDIR) && $(MK_RUNPATH) $(CXX) -rdynamic $(CXXFLAGS) -o $@ $(MK_OBJECTS) $(MK_LIBPATH) $(LDFLAGS) $(MK_LIBRARIES)
+	@$(MK_TDIR) && $(MK_RUNPATH) $(CXX) -rdynamic $(CXXFLAGS) -o $@ $(MK_OBJECTS) $(MK_LIBPATH) $(LDFLAGS) $(MK_SYMBOLS) $(MK_LIBRARIES)
 
 
 #----------------------------------------------------------------------------

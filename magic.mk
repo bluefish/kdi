@@ -177,7 +177,7 @@ endef
 define _ADD_MODULE_DEP
 KLIB_$(2)_A ?= $$(warning Undefined module '$(2)' referenced from '$(MODULE)')
 KLIB_$(2)_SO ?= $$(warning Undefined module '$(2)' referenced from '$(MODULE)')
-$(1): $$(KLIB_$(2)_$(_LINKTYPE))
+$(1): $$(KLIB_$(2)_$(3))
 endef
 
 
@@ -210,7 +210,7 @@ KLIB_$(_LIBNAME)_SO := $$(_LIB_SO)
 $$(_LIB_A) $$(_LIB_SO): $(_LIB_OBJ)
 
 # Add dependencies on other libraries to the shared library
-$$(foreach y,$(_MDEPS),$$(eval $$(call _ADD_MODULE_DEP,$$(_LIB_SO),$$(y))))
+$$(foreach y,$(_MDEPS),$$(eval $$(call _ADD_MODULE_DEP,$$(_LIB_SO),$$(y),SO)))
 $$(foreach y,$(_XDEPS),$$(eval $$(call _ADD_EXTERNAL_DEP,$$(_LIB_SO),$$(y))))
 
 endef
@@ -239,8 +239,8 @@ _LIB_TARGETS := $(_LIB_A) $(_LIB_SO)
 #----------------------------------------------------------------------------
 define _APP_TEMPLATE
 $(1): $(2).o
-$$(if $(_LIB_OBJ),$$(eval $$(call _ADD_MODULE_DEP,$(1),$(_LIBNAME))))
-$$(foreach y,$(_MDEPS),$$(eval $$(call _ADD_MODULE_DEP,$(1),$$(y))))
+$$(if $(_LIB_OBJ),$$(eval $$(call _ADD_MODULE_DEP,$(1),$(_LIBNAME),$(3))))
+$$(foreach y,$(_MDEPS),$$(eval $$(call _ADD_MODULE_DEP,$(1),$$(y),$(3))))
 $$(foreach y,$(_XDEPS),$$(eval $$(call _ADD_EXTERNAL_DEP,$(1),$$(y))))
 endef
 
@@ -257,21 +257,21 @@ endef
 # Define main targets
 #----------------------------------------------------------------------------
 _MAIN_TARGETS := $(_MAIN_OBJ:%_main.o=%)
-$(if $(_MAIN_TARGETS),$(foreach x,$(_MAIN_TARGETS), $(eval $(call _APP_TEMPLATE,$(x),$(x)_main))))
+$(if $(_MAIN_TARGETS),$(foreach x,$(_MAIN_TARGETS), $(eval $(call _APP_TEMPLATE,$(x),$(x)_main,$(_LINKTYPE)))))
 
 
 #----------------------------------------------------------------------------
 # Define test targets
 #----------------------------------------------------------------------------
 _TEST_TARGETS := $(_TEST_OBJ:%.o=%)
-$(if $(_TEST_TARGETS),$(foreach x,$(_TEST_TARGETS), $(eval $(call _APP_TEMPLATE,$(x),$(x)))))
+$(if $(_TEST_TARGETS),$(foreach x,$(_TEST_TARGETS), $(eval $(call _APP_TEMPLATE,$(x),$(x),$(_LINKTYPE)))))
 
 
 #----------------------------------------------------------------------------
 # Define unittest targets
 #----------------------------------------------------------------------------
 _UNIT_TARGETS := $(_UNIT_OBJ:%.o=%)
-$(if $(_UNIT_TARGETS),$(foreach x,$(_UNIT_TARGETS), $(eval $(call _APP_TEMPLATE,$(x),$(x)))))
+$(if $(_UNIT_TARGETS),$(foreach x,$(_UNIT_TARGETS), $(eval $(call _APP_TEMPLATE,$(x),$(x),$(_LINKTYPE)))))
 $(if $(_UNIT_TARGETS),$(foreach x,$(_UNIT_TARGETS), $(eval $(call _UNIT_TEMPLATE,$(x),$(x)))))
 
 
@@ -279,14 +279,14 @@ $(if $(_UNIT_TARGETS),$(foreach x,$(_UNIT_TARGETS), $(eval $(call _UNIT_TEMPLATE
 # Define plugin targets
 #----------------------------------------------------------------------------
 _PLUGIN_TARGETS := $(_PLUGIN_OBJ:%_plugin.o=%.so)
-$(if $(_PLUGIN_TARGETS),$(foreach x,$(_PLUGIN_TARGETS), $(eval $(call _APP_TEMPLATE,$(x),$(x:%.so=%_plugin)))))
+$(if $(_PLUGIN_TARGETS),$(foreach x,$(_PLUGIN_TARGETS), $(eval $(call _APP_TEMPLATE,$(x),$(x:%.so=%_plugin),SO))))
 
 
 #----------------------------------------------------------------------------
 # Export targets
 #----------------------------------------------------------------------------
 TARGETS := $(_MAIN_TARGETS) $(_TEST_TARGETS) $(_UNIT_TARGETS) $(_LIB_TARGETS) $(_PLUGIN_TARGETS)
-LIB_INSTALL := $(_LIB_TARGETS) $(_PLUGIN_TARGETS)
+LIB_INSTALL := $(_LIB_SO) $(_PLUGIN_TARGETS)
 BIN_INSTALL := $(_MAIN_TARGETS)
 UNITTESTS := $(_UNIT_TARGETS)
 
