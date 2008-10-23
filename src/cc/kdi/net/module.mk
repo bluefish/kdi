@@ -1,6 +1,5 @@
 MAGIC_MODULE_DEPS := kdi_tablet
 MAGIC_EXTERNAL_DEPS := Ice IceUtil
-MAGIC_LINK_TYPE := shared
 include magic.mk
 
 # Manually add dependencies on generated headers
