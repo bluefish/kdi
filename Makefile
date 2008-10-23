@@ -492,7 +492,8 @@ endif
 # Build rules
 #----------------------------------------------------------------------------
 
-MK_TDIR = [ -d $(@D) ] || mkdir -p $(@D)
+MK_TDIR = { [ -d $(@D) ] || mkdir -p $(@D) ; }
+MK_REQUIRE_INPUTS = { [ x"$(words $^)" != x"0" ] || { echo "Target has no inputs: $@" && false ; } ; }
 
 MK_STDDIRS := /lib /lib64 /usr/lib /usr/lib64
 MK_GET_DIRS = $(filter-out $(MK_STDDIRS),$(sort $(patsubst %/,%,$(dir $(1)))))
@@ -577,7 +578,7 @@ $(build)/%_wrap_java.cc: $(src)/%.i
 #----------------------------------------------------------------------------
 %.a:
 	@echo "Archive $@"
-	@rm -f $@ && $(MK_TDIR) && $(AR) $(ARFLAGS) $@ $^
+	@rm -f $@ && $(MK_REQUIRE_INPUTS) && $(MK_TDIR) && $(AR) $(ARFLAGS) $@ $^
 
 
 #----------------------------------------------------------------------------
@@ -585,7 +586,7 @@ $(build)/%_wrap_java.cc: $(src)/%.i
 #----------------------------------------------------------------------------
 %.so:
 	@echo "Link (library) $@"
-	@$(MK_TDIR) && $(MK_RUNPATH) $(CXX) -rdynamic -shared $(CXXFLAGS) -o $@ $(MK_OBJECTS) $(MK_LIBPATH) $(LDFLAGS) $(MK_LIBRARIES)
+	@$(MK_REQUIRE_INPUTS) && $(MK_TDIR) && $(MK_RUNPATH) $(CXX) -rdynamic -shared $(CXXFLAGS) -o $@ $(MK_OBJECTS) $(MK_LIBPATH) $(LDFLAGS) $(MK_LIBRARIES)
 
 #----------------------------------------------------------------------------
 # Error rule for missing module files
@@ -625,7 +626,7 @@ $(build)/%_wrap_java.cc: $(src)/%.i
 #----------------------------------------------------------------------------
 %:
 	@echo "Link $@"
-	@$(MK_TDIR) && $(MK_RUNPATH) $(CXX) -rdynamic $(CXXFLAGS) -o $@ $(MK_OBJECTS) $(MK_LIBPATH) $(LDFLAGS) $(MK_SYMBOLS) $(MK_LIBRARIES)
+	@$(MK_REQUIRE_INPUTS) && $(MK_TDIR) && $(MK_RUNPATH) $(CXX) -rdynamic $(CXXFLAGS) -o $@ $(MK_OBJECTS) $(MK_LIBPATH) $(LDFLAGS) $(MK_SYMBOLS) $(MK_LIBRARIES)
 
 
 #----------------------------------------------------------------------------
