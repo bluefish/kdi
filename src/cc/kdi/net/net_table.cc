@@ -281,7 +281,7 @@ class NetTable::Impl
         if(ua.host)
             host.assign(ua.host.begin(), ua.host.end());
 
-        std::string port("10000");
+        std::string port("34177");
         if(ua.port)
             port.assign(ua.port.begin(), ua.port.end());
 
