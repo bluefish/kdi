@@ -368,12 +368,54 @@ namespace
 //----------------------------------------------------------------------------
 kdi::hyper::Table::Table(std::string const & tableName)
 {
+    // Get the client pointer
+    Hypertable::ClientPtr client;    
     try {
-        Hypertable::ClientPtr client = getClient();
-        table = client->open_table(tableName);
+        client = getClient();
     }
     catch(::Hypertable::Exception const & ex) {
         rethrow(ex);
+    }
+
+    // Try to open the table
+    try {
+        table = client->open_table(tableName);
+    }
+    catch(::Hypertable::Exception const & ex) {
+        if(ex.code() == ::Hypertable::Error::TABLE_DOES_NOT_EXIST)
+        {
+            // If table doesn't exist, try to create it
+            try {
+                client->create_table(
+                    tableName,
+                    "<Schema compressor=\"bmz\">"
+                    "<AccessGroup name=\"default\">"
+                    "<ColumnFamily>"
+                    "<Name>X</Name>"
+                    "<MaxVersions>1</MaxVersions>"
+                    "</ColumnFamily>"
+                    "</AccessGroup>"
+                    "</Schema>"
+                    );
+            }
+            catch(::Hypertable::Exception const & ex2) {
+                if(ex2.code() != ::Hypertable::Error::MASTER_TABLE_EXISTS)
+                    rethrow(ex2);
+            }
+
+            // Retry opening
+            try {
+                table = client->open_table(tableName);
+            }
+            catch(::Hypertable::Exception const & ex2) {
+                rethrow(ex2);
+            }
+        }
+        else
+        {
+            // Rethrow other errors
+            rethrow(ex);
+        }
     }
 }
 
