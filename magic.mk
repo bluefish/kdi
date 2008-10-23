@@ -167,7 +167,8 @@ $(foreach x,$(_MDEPS),$(eval $(call _INSTALL_CLOSURE,$(x))))
 # Add external dependency template
 #----------------------------------------------------------------------------
 define _ADD_EXTERNAL_DEP
-$(1): -l$(2)
+#$(1): -l$(2)
+$(1): $(if $(filter %_PREFER_STATIC,$(2)),$(if $(filter A,$(3)),lib$(2:%_PREFER_STATIC=%).a,-l$(2:%_PREFER_STATIC=%)),-l$(2))
 endef
 
 
@@ -211,7 +212,7 @@ $$(_LIB_A) $$(_LIB_SO): $(_LIB_OBJ)
 
 # Add dependencies on other libraries to the shared library
 $$(foreach y,$(_MDEPS),$$(eval $$(call _ADD_MODULE_DEP,$$(_LIB_SO),$$(y),SO)))
-$$(foreach y,$(_XDEPS),$$(eval $$(call _ADD_EXTERNAL_DEP,$$(_LIB_SO),$$(y))))
+$$(foreach y,$(_XDEPS),$$(eval $$(call _ADD_EXTERNAL_DEP,$$(_LIB_SO),$$(y),SO)))
 
 endef
 
@@ -241,7 +242,7 @@ define _APP_TEMPLATE
 $(1): $(2).o
 $$(if $(_LIB_OBJ),$$(eval $$(call _ADD_MODULE_DEP,$(1),$(_LIBNAME),$(3))))
 $$(foreach y,$(_MDEPS),$$(eval $$(call _ADD_MODULE_DEP,$(1),$$(y),$(3))))
-$$(foreach y,$(_XDEPS),$$(eval $$(call _ADD_EXTERNAL_DEP,$(1),$$(y))))
+$$(foreach y,$(_XDEPS),$$(eval $$(call _ADD_EXTERNAL_DEP,$(1),$$(y),$(3))))
 endef
 
 
