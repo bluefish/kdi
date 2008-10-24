@@ -119,7 +119,8 @@ Tablet::Tablet(std::string const & tableName,
     mutationsPending(false),
     configChanged(false),
     splitPending(false),
-    isCompacting(false)
+    isCompacting(false),
+    ignoreNextLogReplacement(false)
 {
     log("Tablet %p %s: created", this, getPrettyName());
 
@@ -327,6 +328,12 @@ TabletPtr Tablet::splitTablet()
     TabletPtr lowTablet(new Tablet(*this, low));
     this->rows = high;
 
+    // Set cloned log chain if necessary
+    if(!fragments.back()->isImmutable())
+        clonedLogTablet = lowTablet;
+    else
+        assert(!clonedLogTablet);
+
     log("Tablet split complete: low=%s high=%s",
         lowTablet->getPrettyName(),
         this->getPrettyName());
@@ -350,10 +357,12 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
     prettyName(makePrettyName(tableName, rows.getUpperBound())),
     rows(rows),
     fragments(o.fragments),
+    clonedLogTablet(o.clonedLogTablet),
     mutationsPending(false),
     configChanged(false),
     splitPending(false),
-    isCompacting(false)
+    isCompacting(false),
+    ignoreNextLogReplacement(false)
 {
     // Add references to cloned fragment files
     for(fragments_t::const_iterator i = this->fragments.begin();
@@ -451,6 +460,19 @@ void Tablet::addFragment(FragmentPtr const & fragment)
         // Lock tables
         lock_t lock(mutex);
 
+        // Log hackery
+        if(!fragments.empty() && fragments.back() == fragment)
+        {
+            // Duplicate add.  We cloned this log, so expect two
+            // serialization notices.
+            ignoreNextLogReplacement = true;
+            lock.unlock();
+            
+            log("Tablet %s: detected cloned log %s", getPrettyName(),
+                fragment->getFragmentUri());
+            return;
+        }
+
         // Add to table list
         fragments.push_back(fragment);
 
@@ -477,6 +499,35 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
 
     log("Tablet %s: replace %d fragments with %s", getPrettyName(),
         oldFragments.size(), newFragment->getFragmentUri());
+
+    // Log hackery
+    if(oldFragments.size() == 1 && !oldFragments[0]->isImmutable())
+    {
+        // Lock clonedLogTablet and ignoreNextLogReplacement
+        lock_t lock(mutex);
+
+        // We're replacing the in-memory log table with a serialized
+        // version.  We'll forward this update to anyone who has
+        // cloned this fragment.
+        if(clonedLogTablet)
+        {
+            log("Tablet %s: forwarding update to clone", getPrettyName());
+
+            clonedLogTablet->replaceFragments(oldFragments, newFragment);
+            clonedLogTablet.reset();
+        }
+
+        // If we're in one of these clone forwarding chains, we may
+        // get two of these messages.  If we're expecting two, ignore
+        // the first one.
+        if(ignoreNextLogReplacement)
+        {
+            log("Tablet %s: ignoring clone update", getPrettyName());
+
+            ignoreNextLogReplacement = false;
+            return;
+        }
+    }
 
     bool wantSplit = false;
     {

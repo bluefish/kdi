@@ -80,10 +80,12 @@ private:
     warp::Interval<std::string>  rows;
     fragments_t                  fragments;
     std::vector<std::string>     deadFiles;
+    TabletPtr                    clonedLogTablet;
     bool                         mutationsPending;
     bool                         configChanged;
     bool                         splitPending;
     bool                         isCompacting;
+    bool                         ignoreNextLogReplacement;
 
     mutable mutex_t mutex;
     mutable warp::Synchronized<scanner_vec_t> syncScanners;
