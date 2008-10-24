@@ -106,8 +106,18 @@ namespace {
 //----------------------------------------------------------------------------
 class SharedLogger::TableGroup
 {
-    typedef std::map<TabletPtr, LogFragmentPtr> map_t;
-    map_t fragmentMap;
+    struct TableInfo
+    {
+        LogFragmentPtr fragment;
+        std::vector<TabletPtr> tablets;
+    };
+
+    typedef std::map<std::string, TableInfo> table_map_t;
+    typedef std::map<TabletPtr, LogFragmentPtr> tablet_map_t;
+
+    table_map_t tableInfoMap;
+    tablet_map_t fragmentMap;
+
     size_t groupSize;
     std::string logUri;
 
@@ -146,13 +156,28 @@ public:
         LogFragmentPtr & frag = fragmentMap[tablet];
         if(!frag)
         {
-            // Derive table URI from log URI
-            string uri = uriSetParameter(
-                logUri, "table",
-                uriEncode(tablet->getTableName(), true));
+            // Get the TableInfo for the whole table
+            std::string const & tableName = tablet->getTableName();
+            TableInfo & info = tableInfoMap[tableName];
+            
+            // Create a new fragment if this is the first time we've
+            // seen this table
+            if(!info.fragment)
+            {
+                // Derive table URI from log URI
+                string uri = uriSetParameter(
+                    logUri, "table",
+                    uriEncode(tableName, true));
 
-            // Create a new log fragment
-            frag.reset(new LogFragment(uri));
+                // Create a new log fragment
+                info.fragment.reset(new LogFragment(uri));
+            }
+
+            // Add Tablet to the TableInfo
+            info.tablets.push_back(tablet);
+
+            // Update fragment map
+            frag = info.fragment;
 
             // Notify the Tablet that it has a new fragment
             tablet->addFragment(frag);
@@ -173,20 +198,23 @@ public:
 
     void serialize(ConfigManagerPtr const & configMgr, FileTrackerPtr const & tracker) const
     {
-        log("Serializing %d fragments", fragmentMap.size());
+        log("Serializing %d fragments", tableInfoMap.size());
 
-        for(map_t::const_iterator i = fragmentMap.begin();
-            i != fragmentMap.end(); ++i)
+        for(table_map_t::const_iterator ti = tableInfoMap.begin();
+            ti != tableInfoMap.end(); ++ti)
         {
-            TabletPtr tablet = i->first;
-            FragmentPtr frag = i->second;
+            std::string const & tableName = ti->first;
+            TableInfo const & info = ti->second;
+
+            // We should have at least one Tablet
+            assert(!info.tablets.empty());
 
             // Get an output file
-            std::string fn = configMgr->getDataFile(tablet->getTableName());
+            std::string fn = configMgr->getDataFile(tableName);
             
             // Write a DiskTable from the fragment
             DiskTableWriter writer(fn, 64<<10);
-            CellStreamPtr cells = frag->scan(ScanPredicate());
+            CellStreamPtr cells = info.fragment->scan(ScanPredicate());
             Cell x;
             while(cells->get(x))
                 writer.put(x);
@@ -199,10 +227,20 @@ public:
             // Track the new disk file for automatic deletion
             tracker->track(fn);
 
-            // Notify Tablet of the fragment change
+            // Notify Tablets of the fragment change
             vector<FragmentPtr> oldFragments;
-            oldFragments.push_back(frag);
-            tablet->replaceFragments(oldFragments, newFragment);
+            oldFragments.push_back(info.fragment);
+            for(vector<TabletPtr>::const_iterator fi = info.tablets.begin();
+                fi != info.tablets.end(); ++fi)
+            {
+                // If there are multiple Tablets, add additional
+                // tracker references
+                if(fi != info.tablets.begin())
+                    tracker->addReference(fn);
+
+                (*fi)->replaceFragments(oldFragments, newFragment);
+            }
+
 
             // XXX maybe should release memTable.  if a later
             // serialization fails in this group and we go with the
