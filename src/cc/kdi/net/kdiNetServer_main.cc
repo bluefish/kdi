@@ -45,6 +45,7 @@
 // For SuperTablet implementation
 #include <kdi/tablet/MetaConfigManager.h>
 #include <kdi/tablet/SuperTablet.h>
+#include <warp/tuple_encode.h>
 
 // For getHostName
 #include <unistd.h>
@@ -66,6 +67,7 @@ namespace {
         tablet::SharedCompactorPtr compactor;
         tablet::WorkQueuePtr workQueue;
         TablePtr metaTable;
+        std::string server;
 
     public:
         SuperTabletMaker(std::string const & root,
@@ -75,7 +77,8 @@ namespace {
             tracker(new tablet::FileTracker),
             logger(new tablet::SharedLogger(metaConfigMgr, tracker)),
             compactor(new tablet::SharedCompactor),
-            workQueue(new tablet::WorkQueue(1))
+            workQueue(new tablet::WorkQueue(1)),
+            server(server)
         {
             log("SuperTabletMaker %p: created", this);
 
@@ -129,14 +132,34 @@ namespace {
             }
             else
             {
-                log("Load table: %s", name);
-                TablePtr p(
-                    new tablet::SuperTablet(
-                        name, metaConfigMgr, logger,
-                        compactor, tracker, workQueue
-                        )
-                    );
-                return p;
+                try {
+                    log("Load table: %s", name);
+                    TablePtr p(
+                        new tablet::SuperTablet(
+                            name, metaConfigMgr, logger,
+                            compactor, tracker, workQueue
+                            )
+                        );
+                    return p;
+                }
+                catch(kdi::tablet::TableDoesNotExistError const & ex) {
+                    log("Create table: %s", name);
+                    metaTable->set(
+                        encodeTuple(make_tuple(name, "\x02", "")),
+                        "config",
+                        0,
+                        "server = " + server + "\n");
+                    metaTable->sync();
+
+                    log("Load table again: %s", name);
+                    TablePtr p(
+                        new tablet::SuperTablet(
+                            name, metaConfigMgr, logger,
+                            compactor, tracker, workQueue
+                            )
+                        );
+                    return p;
+                }
             }
         }
     };
@@ -309,7 +332,7 @@ namespace {
             adapter->addServantLocator(locator, "");
 
             // Create TableManager object
-            Ice::ObjectPtr object = new details::TableManagerI(locator);
+            Ice::ObjectPtr object = new ::kdi::net::details::TableManagerI(locator);
             adapter->add(object, ic->stringToIdentity("TableManager"));
 
             // Run server

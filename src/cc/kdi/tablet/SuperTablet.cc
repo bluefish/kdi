@@ -140,8 +140,9 @@ SuperTablet::SuperTablet(std::string const & name,
     
     if(cfgs.empty())
     {
-        raise<RuntimeError>("Table has no tablets on this server: %s",
-                            name);
+        raise<TableDoesNotExistError>(
+            "Table has no tablets on this server: %s",
+            name);
     }
 
     for(std::list<TabletConfig>::const_iterator i = cfgs.begin();

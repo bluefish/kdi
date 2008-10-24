@@ -24,6 +24,7 @@
 #include <kdi/table.h>
 #include <kdi/tablet/forward.h>
 #include <kdi/tablet/MetaConfigManager.h>
+#include <ex/exception.h>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition.hpp>
 #include <boost/noncopyable.hpp>
@@ -35,6 +36,8 @@ namespace tablet {
 
     /// A collection of Tablets in the same table.
     class SuperTablet;
+
+    EX_DECLARE_EXCEPTION(TableDoesNotExistError, ex::RuntimeError);
 
 } // namespace tablet
 } // namespace kdi
