@@ -20,6 +20,7 @@
 
 #include <kdi/tablet/FileTracker.h>
 #include <warp/fs.h>
+#include <warp/log.h>
 #include <ex/exception.h>
 
 using namespace kdi::tablet;
@@ -31,8 +32,10 @@ using namespace ex;
 //----------------------------------------------------------------------------
 void FileTracker::track(std::string const & filename)
 {
+    log("FileTracker::track: %s", filename);
+
     lock_t lock(mutex);
-        
+
     // Get the refCount.  This will be zero for a file we haven't
     // seen before.
     size_t & refCount = files[filename];
@@ -44,6 +47,8 @@ void FileTracker::track(std::string const & filename)
 
 void FileTracker::untrack(std::string const & filename)
 {
+    log("FileTracker::untrack: %s", filename);
+
     lock_t lock(mutex);
 
     // Remove file from tracked list.  No problem if it isn't there.
@@ -52,6 +57,8 @@ void FileTracker::untrack(std::string const & filename)
 
 void FileTracker::addReference(std::string const & filename)
 {
+    log("FileTracker::addReference: %s", filename);
+
     lock_t lock(mutex);
 
     // Add a reference to a file if it is already in the tracked list.
@@ -62,6 +69,8 @@ void FileTracker::addReference(std::string const & filename)
 
 void FileTracker::release(std::string const & filename)
 {
+    log("FileTracker::release: %s", filename);
+
     lock_t lock(mutex);
 
     // Find the file
@@ -76,6 +85,7 @@ void FileTracker::release(std::string const & filename)
         return;
 
     // Delete the file and remove it from the tracking list.
+    log("FileTracker removing: %s", filename);
     fs::remove(filename);
     files.erase(i);
 }

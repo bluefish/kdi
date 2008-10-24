@@ -137,6 +137,7 @@ Tablet::Tablet(std::string const & tableName,
     {
         // Load the fragment from the config manager
         FragmentPtr frag = configMgr->openFragment(*i);
+        log("Tablet %s: load fragment %s", getPrettyName(), frag->getFragmentUri());
         fragments.push_back(frag);
 
         // Check to see if the fragment URI changed on load.
@@ -162,6 +163,8 @@ Tablet::~Tablet()
     for(fragments_t::const_iterator i = fragments.begin();
         i != fragments.end(); ++i)
     {
+        log("Tablet %s: untrack fragment %s", getPrettyName(), (*i)->getFragmentUri());
+
         tracker->untrack(
             uriPopScheme(
                 (*i)->getFragmentUri()
@@ -356,6 +359,8 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
     for(fragments_t::const_iterator i = this->fragments.begin();
         i != this->fragments.end(); ++i)
     {
+        log("Tablet %s: clone fragment %s", getPrettyName(), (*i)->getFragmentUri());
+
         tracker->addReference(
             uriPopScheme(
                 (*i)->getFragmentUri()
@@ -484,6 +489,7 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
         if(i != fragments.end())
         {
             // Mark first fragment file for release
+            log("Tablet %s: ... drop fragment %s", getPrettyName(), (*i)->getFragmentUri());
             deadFiles.push_back(
                 uriPopScheme(
                     (*i)->getFragmentUri()
@@ -497,6 +503,7 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             fragments_t::iterator beginErase = ++i;
             for(size_t n = 1; n < oldFragments.size(); ++n, ++i)
             {
+                log("Tablet %s: ... drop fragment %s", getPrettyName(), (*i)->getFragmentUri());
                 deadFiles.push_back(
                     uriPopScheme(
                         (*i)->getFragmentUri()
@@ -640,6 +647,7 @@ void Tablet::doCompaction()
             compactionFragments.rbegin();
         i != compactionFragments.rend(); ++i)
     {
+        log("Tablet %s: compacting %s", getPrettyName(), (*i)->getFragmentUri());
         merge->pipeFrom((*i)->scan(compactionPred));
     }
 

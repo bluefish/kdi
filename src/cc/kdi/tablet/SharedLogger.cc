@@ -196,13 +196,13 @@ public:
             std::string diskUri = uriPushScheme(fn, "disk");
             FragmentPtr newFragment = configMgr->openFragment(diskUri);
 
+            // Track the new disk file for automatic deletion
+            tracker->track(fn);
+
             // Notify Tablet of the fragment change
             vector<FragmentPtr> oldFragments;
             oldFragments.push_back(frag);
             tablet->replaceFragments(oldFragments, newFragment);
-
-            // Track the new disk file for automatic deletion
-            tracker->track(fn);
 
             // XXX maybe should release memTable.  if a later
             // serialization fails in this group and we go with the
@@ -429,11 +429,13 @@ void SharedLogger::commitLoop()
             {
                 string fn = configMgr->getDataFile("LOGS");
                 log("Starting new log: %s", fn);
-                logWriter.reset(new LogWriter(fn));
-                tableGroup->setLogUri(logWriter->getUri());
 
                 // Track file for automatic deletion
                 tracker->track(fn);
+
+                // Create new log writer
+                logWriter.reset(new LogWriter(fn));
+                tableGroup->setLogUri(logWriter->getUri());
             }
 
             // Commit to log
