@@ -1,6 +1,6 @@
 MAGIC_FLAGS_CPPFLAGS := $(PYTHON_INCLUDE)
 
-MAGIC_MODULE_DEPS := kdi_meta kdi_net
+MAGIC_MODULE_DEPS := kdi_meta kdi_net kdi_hash
 MAGIC_EXTERNAL_DEPS := $(BOOST_PYTHON)
 include magic.mk
 
