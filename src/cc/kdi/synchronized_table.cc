@@ -349,19 +349,28 @@ namespace {
         static bool creatingTable = false;
         static condition_t creationDone;
 
-        // Parse our parameters
+        // Get buffer default sizes
         size_t writeCount = 1;
         size_t readCount = 1;
+        if(uriTopScheme(uri) == "syncbuffer")
+        {
+            writeCount = 64;
+            readCount = 64;
+        }
+
+        // Parse our parameters
         parseInt(writeCount, wrap(uriGetParameter(uri, "syncWriteCount")));
         parseInt(readCount, wrap(uriGetParameter(uri, "syncReadCount")));
 
-        // Get the cache key: the URI with our parameters stripped out
+        // Get the cache key: the URI with the sync scheme parameters
+        // stripped out
         string uriKey = uriNormalize(
-            uriEraseParameter(
+            uriPopScheme(
                 uriEraseParameter(
-                    uri,
-                    "syncWriteCount"),
-                "syncReadCount"));
+                    uriEraseParameter(
+                        uri,
+                        "syncWriteCount"),
+                    "syncReadCount")));
 
         // Get the SynchronizedTable for the key -- we loop until
         // syncTable is not null or we throw from a table error.  The
@@ -406,7 +415,7 @@ namespace {
             try {
                 // Make a new table
                 syncTable = SynchronizedTable::make(
-                    Table::open(uriPopScheme(uriKey))
+                    Table::open(uriKey)
                     );
             }
             catch(...) {
@@ -446,4 +455,5 @@ namespace {
 WARP_DEFINE_INIT(kdi_synchronized_table)
 {
     TableFactory::get().registerTable("sync", &openSyncTable);
+    TableFactory::get().registerTable("syncbuffer", &openSyncTable);
 }
