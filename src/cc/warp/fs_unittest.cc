@@ -197,3 +197,43 @@ BOOST_AUTO_TEST_CASE(test_changeExtension)
     BOOST_CHECK_EQUAL(fs::changeExtension("s://h/x.a?q#f", ""), "s://h/x?q#f");
     BOOST_CHECK_EQUAL(fs::changeExtension("s://h/x.a?q#f", ".b"), "s://h/x.b?q#f");
 }
+
+BOOST_AUTO_TEST_CASE(test_replacePath)
+{
+    BOOST_CHECK_EQUAL(fs::replacePath("s://h/x.a/y?q#f", "z/w"), "s://h/z/w?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("s://h/x.a/y?q#f", "/z/w"), "s://h/z/w?q#f");
+
+    BOOST_CHECK_EQUAL(fs::replacePath("/x.a/y?q#f", "z/w"), "z/w?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("/x.a/y?q#f", "/z/w"), "/z/w?q#f");
+
+    BOOST_CHECK_EQUAL(fs::replacePath("x.a/y?q#f", "z/w"), "z/w?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("x.a/y?q#f", "/z/w"), "/z/w?q#f");
+
+    BOOST_CHECK_EQUAL(fs::replacePath("s:/x.a/y?q#f", "z/w"), "s:z/w?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("s:/x.a/y?q#f", "/z/w"), "s:/z/w?q#f");
+
+    BOOST_CHECK_EQUAL(fs::replacePath("s:x.a/y?q#f", "z/w"), "s:z/w?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("s:x.a/y?q#f", "/z/w"), "s:/z/w?q#f");
+
+    BOOST_CHECK_EQUAL(fs::replacePath("//h/x.a/y?q#f", "z/w"), "//h/z/w?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("//h/x.a/y?q#f", "/z/w"), "//h/z/w?q#f");
+
+
+    BOOST_CHECK_EQUAL(fs::replacePath("s://h/x.a/y?q#f", ""), "s://h/?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("s://h/x.a/y?q#f", "/"), "s://h/?q#f");
+
+    BOOST_CHECK_EQUAL(fs::replacePath("/x.a/y?q#f", ""), "?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("/x.a/y?q#f", "/"), "/?q#f");
+
+    BOOST_CHECK_EQUAL(fs::replacePath("x.a/y?q#f", ""), "?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("x.a/y?q#f", "/"), "/?q#f");
+
+    BOOST_CHECK_EQUAL(fs::replacePath("s:/x.a/y?q#f", ""), "s:?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("s:/x.a/y?q#f", "/"), "s:/?q#f");
+
+    BOOST_CHECK_EQUAL(fs::replacePath("s:x.a/y?q#f", ""), "s:?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("s:x.a/y?q#f", "/"), "s:/?q#f");
+
+    BOOST_CHECK_EQUAL(fs::replacePath("//h/x.a/y?q#f", ""), "//h/?q#f");
+    BOOST_CHECK_EQUAL(fs::replacePath("//h/x.a/y?q#f", "/"), "//h/?q#f");
+}

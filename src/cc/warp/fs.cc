@@ -160,6 +160,13 @@ string fs::replacePath(string const & origUri, string const & replacementPath)
 {
     Uri u(wrap(origUri));
     string r(u.begin(), u.path.begin());
+    if(u.authority &&
+       (replacementPath.empty() || replacementPath[0] != '/'))
+    {
+        // Having an Authority implies that all Paths must be
+        // absolute.  Force a slash.
+        r += '/';
+    }
     r.append(replacementPath);
     r.append(u.path.end(), u.end());
     return r;
