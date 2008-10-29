@@ -364,13 +364,13 @@ namespace {
 
         // Get the cache key: the URI with the sync scheme parameters
         // stripped out
-        string uriKey = uriNormalize(
-            uriPopScheme(
+        string baseUri = uriPopScheme(
+            uriEraseParameter(
                 uriEraseParameter(
-                    uriEraseParameter(
-                        uri,
-                        "syncWriteCount"),
-                    "syncReadCount")));
+                    uri,
+                    "syncWriteCount"),
+                "syncReadCount"));
+        string uriKey = uriNormalize(baseUri);
 
         // Get the SynchronizedTable for the key -- we loop until
         // syncTable is not null or we throw from a table error.  The
@@ -415,7 +415,7 @@ namespace {
             try {
                 // Make a new table
                 syncTable = SynchronizedTable::make(
-                    Table::open(uriKey)
+                    Table::open(baseUri)
                     );
             }
             catch(...) {
