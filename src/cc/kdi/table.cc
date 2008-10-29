@@ -22,8 +22,28 @@
 #include <kdi/scan_predicate.h>
 #include <kdi/table_factory.h>
 #include <kdi/cell_filter.h>
+#include <kdi/RowInterval.h>
 
 using namespace kdi;
+
+namespace
+{
+    class OneInfiniteRange : public RowIntervalStream
+    {
+        bool got;
+    public:
+        OneInfiniteRange() : got(false) {}
+        bool get(RowInterval & x)
+        {
+            if(got)
+                return false;
+
+            x.setInfinite();
+            got = true;
+            return true;
+        }
+    };
+}
 
 //----------------------------------------------------------------------------
 // Table
@@ -49,4 +69,10 @@ CellStreamPtr Table::scan(strref_t predExpr) const
 TablePtr Table::open(std::string const & uri)
 {
     return TableFactory::get().create(uri);
+}
+
+RowIntervalStreamPtr Table::scanIntervals() const
+{
+    RowIntervalStreamPtr p(new OneInfiniteRange);
+    return p;
 }

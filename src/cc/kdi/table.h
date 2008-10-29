@@ -23,6 +23,7 @@
 
 #include <kdi/strref.h>
 #include <kdi/cell.h>
+#include <flux/stream.h>
 #include <boost/shared_ptr.hpp>
 #include <string>
 
@@ -39,6 +40,13 @@ namespace kdi {
 
     // Forward declaration
     class ScanPredicate;
+
+    // Forward declaration
+    class RowInterval;
+
+    // Stream typedefs
+    typedef flux::Stream<RowInterval> RowIntervalStream;
+    typedef boost::shared_ptr<RowIntervalStream> RowIntervalStreamPtr;
 
 } // namespace kdi
 
@@ -94,6 +102,16 @@ public:
     /// committed.  In the event certain mutations have failed, this
     /// may throw an exception.
     virtual void sync() = 0;
+
+    /// Get a sequence of roughly equal-sized row intervals in the
+    /// table.  The size of each interval depends on the table
+    /// implementation, but the intention is that they'll be fairly
+    /// coarse, at a scale suitable for scheduling each interval as a
+    /// separate job.  There will generally be more intervals for
+    /// larger tables.  Not all implementations provide this facility.
+    /// The default implementation returns a single interval
+    /// containing all possible rows.
+    virtual RowIntervalStreamPtr scanIntervals() const;
 
 public:
     
