@@ -880,11 +880,6 @@ void LocalTable::erase(strref_t row, strref_t column, int64_t timestamp)
     impl->erase(row, column, timestamp);
 }
 
-CellStreamPtr LocalTable::scan() const
-{
-    return impl->scan(ScanPredicate());
-}
-
 CellStreamPtr LocalTable::scan(ScanPredicate const & pred) const
 {
     return impl->scan(pred);

@@ -211,11 +211,6 @@ void Tablet::sync()
     saveConfig(lock);
 }
 
-CellStreamPtr Tablet::scan() const
-{
-    return scan(ScanPredicate());
-}
-
 CellStreamPtr Tablet::scan(ScanPredicate const & pred) const
 {
     // Make sure this is a valid scan for this tablet

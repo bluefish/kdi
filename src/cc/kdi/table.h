@@ -77,13 +77,6 @@ public:
     /// implementation of this function calls either set() or erase().
     virtual void insert(Cell const & x);
 
-    /// Scan over all cells in the table, visited in cell order.  No
-    /// guarantee is made on the time-consistency of the cells
-    /// returned in the scan.  If the table is modified after a scan
-    /// begins, any of the modifications MAY appear in the scan, with
-    /// no ordering guarantees.
-    virtual CellStreamPtr scan() const = 0;
-
     /// Scan over a subset of the cells in the table, visited in cell
     /// order.  No guarantee is made on the time-consistency of the
     /// cells returned in the scan.  If the table is modified after a
@@ -91,7 +84,14 @@ public:
     /// with no ordering guarantees.  The default implementation of
     /// this function is simply a filter over the full table scan.
     /// Specific implementations may be smarter.
-    virtual CellStreamPtr scan(ScanPredicate const & pred) const;
+    virtual CellStreamPtr scan(ScanPredicate const & pred) const = 0;
+
+    /// Scan over all cells in the table, visited in cell order.  No
+    /// guarantee is made on the time-consistency of the cells
+    /// returned in the scan.  If the table is modified after a scan
+    /// begins, any of the modifications MAY appear in the scan, with
+    /// no ordering guarantees.
+    CellStreamPtr scan() const;
 
     /// Form a ScanPredicate from the given expression and use it to
     /// perform a selective scan, as above.  This is a convenience

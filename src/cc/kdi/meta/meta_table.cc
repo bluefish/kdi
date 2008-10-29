@@ -227,11 +227,6 @@ void MetaTable::sync()
     }
 }
 
-CellStreamPtr MetaTable::scan() const
-{
-    return scan(ScanPredicate());
-}
-
 CellStreamPtr MetaTable::scan(ScanPredicate const & pred) const
 {
     CellStreamPtr p(

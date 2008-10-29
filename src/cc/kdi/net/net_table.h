@@ -54,7 +54,6 @@ public:
     virtual void set(strref_t row, strref_t column, int64_t timestamp,
                      strref_t value);
     virtual void erase(strref_t row, strref_t column, int64_t timestamp);
-    virtual CellStreamPtr scan() const;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
     virtual void sync();
     virtual RowIntervalStreamPtr scanIntervals() const;

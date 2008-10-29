@@ -70,11 +70,6 @@ void HashedTable::insert(Cell const & x)
     pick(x.getRow())->insert(x);
 }
 
-CellStreamPtr HashedTable::scan() const
-{
-    return scan(ScanPredicate());
-}
-
 CellStreamPtr HashedTable::scan(ScanPredicate const & pred) const
 {
     CellStreamPtr merge = CellMerge::make(false);

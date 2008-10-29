@@ -381,11 +381,6 @@ public:
         maybeFlush();
     }
 
-    CellStreamPtr scan() const
-    {
-        return scan(ScanPredicate());
-    }
-
     CellStreamPtr scan(ScanPredicate const & pred) const
     {
         //log("NetTable::scan(%s)", pred);
@@ -468,11 +463,6 @@ void NetTable::set(strref_t row, strref_t column, int64_t timestamp,
 void NetTable::erase(strref_t row, strref_t column, int64_t timestamp)
 {
     impl->erase(row, column, timestamp);
-}
-
-CellStreamPtr NetTable::scan() const
-{
-    return impl->scan();
 }
 
 CellStreamPtr NetTable::scan(ScanPredicate const & pred) const

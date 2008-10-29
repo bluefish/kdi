@@ -21,7 +21,6 @@
 #include <kdi/table.h>
 #include <kdi/scan_predicate.h>
 #include <kdi/table_factory.h>
-#include <kdi/cell_filter.h>
 #include <kdi/RowInterval.h>
 
 using namespace kdi;
@@ -56,9 +55,9 @@ void Table::insert(Cell const & x)
         set(x.getRow(), x.getColumn(), x.getTimestamp(), x.getValue());
 }
 
-CellStreamPtr Table::scan(ScanPredicate const & pred) const
+CellStreamPtr Table::scan() const
 {
-    return applyPredicateFilter(pred, scan());
+    return scan(ScanPredicate());
 }
 
 CellStreamPtr Table::scan(strref_t predExpr) const

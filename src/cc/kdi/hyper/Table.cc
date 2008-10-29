@@ -463,11 +463,6 @@ void kdi::hyper::Table::sync()
     }
 }
 
-kdi::CellStreamPtr kdi::hyper::Table::scan() const
-{
-    return scan(ScanPredicate());
-}
-
 kdi::CellStreamPtr kdi::hyper::Table::scan(
     ScanPredicate const & pred) const
 {

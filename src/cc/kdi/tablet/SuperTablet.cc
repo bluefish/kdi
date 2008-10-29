@@ -187,11 +187,6 @@ void SuperTablet::insert(Cell const & x)
     getTablet(x.getRow())->insert(x);
 }
 
-CellStreamPtr SuperTablet::scan() const
-{
-    return scan(ScanPredicate());
-}
-
 CellStreamPtr SuperTablet::scan(ScanPredicate const & pred) const
 {
     SuperScannerPtr scanner;

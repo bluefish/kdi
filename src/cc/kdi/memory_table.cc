@@ -132,24 +132,23 @@ void MemoryTable::erase(strref_t row, strref_t column, int64_t timestamp)
     insert(makeCellErasure(row, column, timestamp));
 }
 
-CellStreamPtr MemoryTable::scan() const
-{
-    if(filterErasures)
-    {
-        CellStreamPtr s = makeErasureFilter();
-        s->pipeFrom(scanWithErasures());
-        return s;
-    }
-    else
-        return scanWithErasures();
-}
-
 CellStreamPtr MemoryTable::scan(ScanPredicate const & pred) const
 {
-    if(!filterErasures && pred.getMaxHistory())
+    CellStreamPtr s;
+    if(filterErasures)
+    {
+        s = makeErasureFilter();
+        s->pipeFrom(scanWithErasures());
+    }
+    else if(pred.getMaxHistory())
+    {
         raise<ValueError>("cannot have history predicate with erasures");
-
-    return applyPredicateFilter(pred, scan());
+    }
+    else
+    {
+        s = scanWithErasures();
+    }
+    return applyPredicateFilter(pred, s);
 }
 
 size_t MemoryTable::getMemoryUsage() const

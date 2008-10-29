@@ -393,22 +393,27 @@ void DiskTable::erase(strref_t row, strref_t column, int64_t timestamp)
                                "DiskTable is read-only");
 }
 
-CellStreamPtr DiskTable::scan() const
-{
-    FilePtr fp = File::input(fn);
-    CellStreamPtr h(new DiskScanner(fp));
-    return h;
-}
-
 CellStreamPtr DiskTable::scan(ScanPredicate const & pred) const
 {
     FilePtr fp = File::input(fn);
 
-    // Make a scanner that handles the row predicate
-    CellStreamPtr h(new DiskScanner(fp, pred.getRowPredicate(), indexRec));
+    // Make a disk scanner appropriate for our row predicate
+    CellStreamPtr diskScanner;
+    if(ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate())
+    {
+        // Make a scanner that handles the row predicate
+        diskScanner.reset(new DiskScanner(fp, rows, indexRec));
+    }
+    else
+    {
+        // Scan everything
+        diskScanner.reset(new DiskScanner(fp));
+    }
 
     // Filter the rest
-    return applyPredicateFilter(ScanPredicate(pred).clearRowPredicate(), h);
+    return applyPredicateFilter(
+        ScanPredicate(pred).clearRowPredicate(),
+        diskScanner);
 }
 
 flux::Stream< std::pair<std::string, size_t> >::handle_t

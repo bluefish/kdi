@@ -80,7 +80,7 @@ namespace
             table->sync();
         }
 
-        CellStreamPtr scan() const
+        CellStreamPtr scan(ScanPredicate const & pred) const
         {
             EX_UNIMPLEMENTED_FUNCTION;
         }

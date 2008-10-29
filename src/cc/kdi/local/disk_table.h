@@ -61,7 +61,7 @@ public:
 
     virtual void erase(strref_t row, strref_t column, int64_t timestamp);
 
-    virtual CellStreamPtr scan() const;
+    using Table::scan;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
 
     virtual void sync() { /* nothing to do */ }

@@ -67,11 +67,6 @@ namespace {
             memTable->erase(row, column, timestamp);
         }
 
-        CellStreamPtr scan() const
-        {
-            return diskTable->scan();
-        }
-
         CellStreamPtr scan(ScanPredicate const & pred) const
         {
             return diskTable->scan(pred);

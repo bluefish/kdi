@@ -49,7 +49,6 @@ public:
                      strref_t value);
     virtual void erase(strref_t row, strref_t column, int64_t timestamp);
     virtual void sync();
-    virtual CellStreamPtr scan() const;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
 };
 

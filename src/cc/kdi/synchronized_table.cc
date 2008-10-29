@@ -235,13 +235,13 @@ public:
             flush();
     }
     
-    CellStreamPtr scan() const
+    CellStreamPtr scan(ScanPredicate const & pred) const
     {
         // If the scan buffer size is 1 or less, then we're really not
         // doing any useful buffering.  Just return the one-at-a-time
         // synchronized scanner.
         if(scanBufferSize <= 1)
-            return table->scan();
+            return table->scan(pred);
 
         // Grab table mutex so we can create a scan from the
         // underlying table
@@ -251,7 +251,7 @@ public:
         CellStreamPtr p(
             new BufferedScanner(
                 table,
-                table->table->scan(),
+                table->table->scan(pred),
                 scanBufferSize
                 )
             );
@@ -308,7 +308,7 @@ void SynchronizedTable::erase(strref_t row, strref_t column, int64_t timestamp)
     table->erase(row, column, timestamp);
 }
 
-CellStreamPtr SynchronizedTable::scan() const
+CellStreamPtr SynchronizedTable::scan(ScanPredicate const & pred) const
 {
     // Grab table mutex so we can create a scan from the underlying
     // table.
@@ -318,7 +318,7 @@ CellStreamPtr SynchronizedTable::scan() const
     CellStreamPtr p(
         new SynchronizedScanner(
             shared_from_this(),
-            table->scan()
+            table->scan(pred)
             )
         );
     return p;

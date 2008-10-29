@@ -105,7 +105,6 @@ public:
     void set(strref_t row, strref_t column, int64_t timestamp, strref_t value);
     void erase(strref_t row, strref_t column, int64_t timestamp);
     void sync();
-    CellStreamPtr scan() const;
     CellStreamPtr scan(ScanPredicate const & pred) const;
     
     /// Get the name of table of which this Tablet is a part
