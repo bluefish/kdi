@@ -51,6 +51,9 @@ class kdi::SynchronizedTable
     /// Thread-safe scanner for SynchronizedTable
     class SynchronizedScanner;
 
+    /// Thread-safe interval scanner for SynchronizedTable
+    class SynchronizedIntervalScanner;
+
     /// Buffered table interface to SynchronizedTable
     class BufferedTable;
 
@@ -80,6 +83,7 @@ public:
 
     virtual CellStreamPtr scan() const;
     virtual void sync();
+    virtual RowIntervalStreamPtr scanIntervals() const;
 
     /// Create a buffered interface to the SynchronizedTable table,
     /// using default buffer sizes.  Buffering is useful for reducing

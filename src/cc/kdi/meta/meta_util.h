@@ -35,6 +35,9 @@ namespace meta {
     /// Get the meta row key for the last tablet in the named table.
     std::string encodeLastMetaRow(strref_t tableName);
 
+    /// Scan the META table cells for the given table name.
+    CellStreamPtr metaScan(TablePtr const & metaTable, strref_t tableName);
+
     /// Start a scan of the meta table location column.  The first
     /// cell in the scan will be the tablet that contains the given
     /// row, and the scan will terminate at the end of the named

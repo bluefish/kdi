@@ -99,6 +99,14 @@ void HashedTable::sync()
     }
 }
 
+RowIntervalStreamPtr HashedTable::scanIntervals() const
+{
+    if(!tables.empty())
+        return tables.front().table->scanIntervals();
+    else
+        return kdi::Table::scanIntervals();
+}
+
 
 //----------------------------------------------------------------------------
 // Registration

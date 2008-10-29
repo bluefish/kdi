@@ -57,6 +57,7 @@ public:
     virtual CellStreamPtr scan() const;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
     virtual void sync();
+    virtual RowIntervalStreamPtr scanIntervals() const;
 };
 
 

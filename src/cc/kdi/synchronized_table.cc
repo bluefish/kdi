@@ -59,6 +59,36 @@ public:
 
 
 //----------------------------------------------------------------------------
+// SynchronizedTable::SynchronizedIntervalScanner
+//----------------------------------------------------------------------------
+class SynchronizedTable::SynchronizedIntervalScanner
+    : public RowIntervalStream
+{
+    typedef SynchronizedTable::lock_t lock_t;
+
+    SyncTableCPtr table;
+    RowIntervalStreamPtr scan;
+
+public:
+    SynchronizedIntervalScanner(SyncTableCPtr const & table,
+                                RowIntervalStreamPtr const & scan) :
+        table(table), scan(scan)
+    {
+        EX_CHECK_NULL(table);
+        EX_CHECK_NULL(scan);
+    }
+
+    virtual bool get(RowInterval & x)
+    {
+        // One-at-a-time scanner.  Grab the table mutex for each
+        // access to the scanner.
+        lock_t l(table->mutex);
+        return scan->get(x);
+    }
+};
+
+
+//----------------------------------------------------------------------------
 // SynchronizedTable::BufferedScanner
 //----------------------------------------------------------------------------
 class SynchronizedTable::BufferedScanner
@@ -236,6 +266,11 @@ public:
         // Sync table
         table->sync();
     }
+
+    RowIntervalStreamPtr scanIntervals() const
+    {
+        return table->scanIntervals();
+    }
 };
 
 
@@ -297,6 +332,22 @@ void SynchronizedTable::sync()
     // Sync table.  Note that mutations from all threads are
     // synchronized here, not just the calling thread.
     table->sync();
+}
+
+RowIntervalStreamPtr SynchronizedTable::scanIntervals() const
+{
+    // Grab table mutex so we can create a scan from the underlying
+    // table.
+    lock_t l(mutex);
+
+    // Create and return a one-at-a-time synchronized scanner.
+    RowIntervalStreamPtr p(
+        new SynchronizedIntervalScanner(
+            shared_from_this(),
+            table->scanIntervals()
+            )
+        );
+    return p;
 }
 
 TablePtr SynchronizedTable::makeBuffer()

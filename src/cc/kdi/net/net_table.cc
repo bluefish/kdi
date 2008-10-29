@@ -20,8 +20,11 @@
 
 #include <kdi/net/net_table.h>
 #include <kdi/scan_predicate.h>
+#include <kdi/RowInterval.h>
+#include <kdi/row_stream.h>
 #include <kdi/marshal/cell_block.h>
 #include <kdi/marshal/cell_block_builder.h>
+#include <kdi/meta/meta_util.h>
 #include <warp/builder.h>
 #include <warp/uri.h>
 #include <warp/log.h>
@@ -54,6 +57,54 @@ namespace
         return com;
     }
 }
+
+
+//----------------------------------------------------------------------------
+// MetaIntervalScanner
+//----------------------------------------------------------------------------
+namespace
+{
+    class MetaIntervalScanner
+        : public RowIntervalStream
+    {
+        RowStream metaRows;
+        IntervalPoint<string> lowerBound;
+        bool returnedAtLeastOne;
+
+    public:
+        explicit MetaIntervalScanner(CellStreamPtr const & metaScan) :
+            metaRows(metaScan),
+            lowerBound("", PT_INCLUSIVE_LOWER_BOUND)
+        {
+        }
+
+        bool get(RowInterval & x)
+        {
+            Cell cell;
+            if(metaRows.fetch() && metaRows.get(cell))
+            {
+                x.setLowerBound(lowerBound);
+                x.setUpperBound(kdi::meta::getTabletRowBound(cell.getRow()));
+            }
+            else if(!returnedAtLeastOne)
+            {
+                x.setLowerBound(lowerBound);
+                x.unsetUpperBound();
+            }
+            else
+            {
+                return false;
+            }
+
+            if(x.getUpperBound().isFinite())
+                lowerBound = x.getUpperBound().getAdjacentComplement();
+
+            returnedAtLeastOne = true;
+            return true;
+        }
+    };
+}
+
 
 //----------------------------------------------------------------------------
 // NetTable::Scanner
@@ -355,7 +406,26 @@ public:
         flush();
         table->sync();
     }
+
+    RowIntervalStreamPtr scanIntervals() const
+    {
+        TablePtr metaTable(
+            new NetTable(fs::replacePath(uri, "META"))
+            );
+
+        string name = fs::path(uri);
+        if(!name.empty() && name[0] == '/')
+            name = name.substr(1);
+
+        CellStreamPtr metaScan = kdi::meta::metaScan(metaTable, name);
+        RowIntervalStreamPtr p(
+            new MetaIntervalScanner(metaScan)
+            );
+        return p;
+    }
+
 };
+
 
 //----------------------------------------------------------------------------
 // NetTable::Scanner
@@ -413,6 +483,11 @@ CellStreamPtr NetTable::scan(ScanPredicate const & pred) const
 void NetTable::sync()
 {
     impl->sync();
+}
+
+RowIntervalStreamPtr NetTable::scanIntervals() const
+{
+    return impl->scanIntervals();
 }
 
 

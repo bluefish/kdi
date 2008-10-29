@@ -39,6 +39,18 @@ string kdi::meta::encodeLastMetaRow(strref_t tableName)
     return encodeTuple(make_tuple(tableName, "\x02", ""));
 }
 
+CellStreamPtr kdi::meta::metaScan(TablePtr const & metaTable,
+                                  strref_t tableName)
+{
+    ostringstream oss;
+    oss << format("%s <= row <= %s")
+        % reprString(wrap(encodeMetaRow(tableName, "")))
+        % reprString(wrap(encodeLastMetaRow(tableName)))
+        ;
+
+    return metaTable->scan(oss.str());
+}
+
 CellStreamPtr kdi::meta::metaLocationScan(
     TablePtr const & metaTable, strref_t tableName, strref_t row)
 {
