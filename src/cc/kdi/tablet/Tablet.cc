@@ -165,12 +165,9 @@ Tablet::~Tablet()
         i != fragments.end(); ++i)
     {
         log("Tablet %s: untrack fragment %s", getPrettyName(), (*i)->getFragmentUri());
-
         tracker->untrack(
             uriPopScheme(
-                (*i)->getFragmentUri()
-                )
-            );
+                (*i)->getFragmentUri()));
     }    
 
     log("Tablet %p %s: destroyed", this, getPrettyName());
@@ -364,12 +361,9 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
         i != this->fragments.end(); ++i)
     {
         log("Tablet %s: clone fragment %s", getPrettyName(), (*i)->getFragmentUri());
-
         tracker->addReference(
             uriPopScheme(
-                (*i)->getFragmentUri()
-                )
-            );
+                (*i)->getFragmentUri()));
     }
 }
 
@@ -471,6 +465,11 @@ void Tablet::addFragment(FragmentPtr const & fragment)
         // Add to table list
         fragments.push_back(fragment);
 
+        // Add a reference to the new file
+        tracker->addReference(
+            uriPopScheme(
+                fragment->getFragmentUri()));
+
         // Let's just say we want a compaction if we have more than 5
         // tables (or more than 4 static tables)
         wantCompaction = (fragments.size() > 5);
@@ -538,9 +537,7 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             log("Tablet %s: ... drop fragment %s", getPrettyName(), (*i)->getFragmentUri());
             deadFiles.push_back(
                 uriPopScheme(
-                    (*i)->getFragmentUri()
-                    )
-                );
+                    (*i)->getFragmentUri()));
 
             // Replace first item in the sequence
             *i = newFragment;
@@ -552,13 +549,16 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
                 log("Tablet %s: ... drop fragment %s", getPrettyName(), (*i)->getFragmentUri());
                 deadFiles.push_back(
                     uriPopScheme(
-                        (*i)->getFragmentUri()
-                        )
-                    );
+                        (*i)->getFragmentUri()));
             }
             
             // Remove the rest of the fragments from the set
             fragments.erase(beginErase, i);
+
+            // Add a reference to the new file
+            tracker->addReference(
+                uriPopScheme(
+                    newFragment->getFragmentUri()));
         }
         else
         {
@@ -710,7 +710,7 @@ void Tablet::doCompaction()
     FragmentPtr frag = configMgr->openFragment(diskUri);
 
     // Track the new file for automatic deletion
-    tracker->track(fn);
+    FileTracker::AutoTracker autoTrack(*tracker, fn);
 
     // Update table set
     replaceFragments(compactionFragments, frag);

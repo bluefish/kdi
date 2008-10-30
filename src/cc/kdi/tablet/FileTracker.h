@@ -47,6 +47,25 @@ class kdi::tablet::FileTracker
     boost::mutex mutex;
 
 public:
+    /// Scoped file tracking
+    class AutoTracker
+    {
+        FileTracker & tracker;
+        std::string filename;
+
+    public:
+        AutoTracker(FileTracker & tracker, std::string const & filename) :
+            tracker(tracker), filename(filename)
+        {
+            tracker.track(filename);
+        }
+        ~AutoTracker()
+        {
+            tracker.release(filename);
+        }
+    };
+
+public:
     /// Track a file for automatic deletion.  Sets the reference count
     /// of the file to 1.  When the reference count drops to 0
     /// (through calls to release()), the file will be deleted unless

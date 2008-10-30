@@ -225,7 +225,7 @@ public:
             FragmentPtr newFragment = configMgr->openFragment(diskUri);
 
             // Track the new disk file for automatic deletion
-            tracker->track(fn);
+            FileTracker::AutoTracker autoTrack(*tracker, fn);
 
             // Notify Tablets of the fragment change
             vector<FragmentPtr> oldFragments;
@@ -233,14 +233,8 @@ public:
             for(vector<TabletPtr>::const_iterator fi = info.tablets.begin();
                 fi != info.tablets.end(); ++fi)
             {
-                // If there are multiple Tablets, add additional
-                // tracker references
-                if(fi != info.tablets.begin())
-                    tracker->addReference(fn);
-
                 (*fi)->replaceFragments(oldFragments, newFragment);
             }
-
 
             // XXX maybe should release memTable.  if a later
             // serialization fails in this group and we go with the
