@@ -530,30 +530,15 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
 
         // Find old sequence in fragment vector
         fragments_t::iterator i = std::search(
-            fragments.begin(), fragments.end(), oldFragments.begin(), oldFragments.end());
+            fragments.begin(), fragments.end(),
+            oldFragments.begin(), oldFragments.end());
         if(i != fragments.end())
         {
-            // Mark first fragment file for release
-            log("Tablet %s: ... drop fragment %s", getPrettyName(), (*i)->getFragmentUri());
-            deadFiles.push_back(
-                uriPopScheme(
-                    (*i)->getFragmentUri()));
-
             // Replace first item in the sequence
             *i = newFragment;
 
-            // Mark rest of the old fragments for release
-            fragments_t::iterator beginErase = ++i;
-            for(size_t n = 1; n < oldFragments.size(); ++n, ++i)
-            {
-                log("Tablet %s: ... drop fragment %s", getPrettyName(), (*i)->getFragmentUri());
-                deadFiles.push_back(
-                    uriPopScheme(
-                        (*i)->getFragmentUri()));
-            }
-            
             // Remove the rest of the fragments from the set
-            fragments.erase(beginErase, i);
+            fragments.erase(i + 1, i + oldFragments.size());
 
             // Add a reference to the new file
             tracker->addReference(
@@ -566,7 +551,24 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             raise<RuntimeError>("replaceFragments with unknown fragment sequence");
         }
 
-        // Save changes to config
+        // Unlock and update scanners.  Scanners must update before we
+        // can mark files for release, as the scanners may hold
+        // references to some of these files.
+        lock.unlock();
+        updateScanners();
+        lock.lock();
+
+        // Mark old fragment files for release
+        for(vector<FragmentPtr>::const_iterator i = oldFragments.begin();
+            i != oldFragments.end(); ++i)
+        {
+            log("Tablet %s: ... drop fragment %s", getPrettyName(), (*i)->getFragmentUri());
+            deadFiles.push_back(
+                uriPopScheme(
+                    (*i)->getFragmentUri()));
+        }
+
+        // Queue a config rewrite to save changes
         postConfigChange(lock);
 
         // Check to see if we should split
@@ -577,9 +579,6 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             wantSplit = true;
         }
     }
-
-    // Update scanners
-    updateScanners();
 
     // Maybe request a split
     if(wantSplit)
