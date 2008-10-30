@@ -43,6 +43,12 @@ void TimeoutLocator::cleanup()
         map_t::iterator cur = it;
         ++it;
 
+        if(!cur->second)
+        {
+            // Pointer is null, it's in mid creation
+            continue;
+        }
+
         kdi::Timestamp expiration = cur->second->getLastAccess() +
             kdi::Timestamp::fromSeconds(cur->second->timeoutSeconds);
 
