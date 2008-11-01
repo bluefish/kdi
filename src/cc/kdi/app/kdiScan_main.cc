@@ -22,6 +22,7 @@
 #include <kdi/scan_predicate.h>
 #include <warp/options.h>
 #include <warp/strutil.h>
+#include <warp/timer.h>
 #include <warp/xml/xml_escape.h>
 #include <ex/exception.h>
 #include <iostream>
@@ -79,6 +80,7 @@ int main(int ac, char ** av)
         cout << "<?xml version=\"1.0\"?>" << endl
              << "<cells>" << endl;
 
+    WallTimer totalTimer;
     size_t nCellsTotal = 0;
     size_t nBytesTotal = 0;
     for(ArgumentList::const_iterator ai = args.begin(); ai != args.end(); ++ai)
@@ -87,8 +89,10 @@ int main(int ac, char ** av)
             cerr << "scanning: " << *ai << endl;
         CellStreamPtr scan = Table::open(*ai)->scan(pred);
         Cell x;
+        WallTimer tableTimer;
         size_t nCells = 0;
         size_t nBytes = 0;
+        size_t reportAfter = (verbose ? 5000 : 0);
         while(scan->get(x))
         {
             nBytes += x.getRow().size();
@@ -96,9 +100,18 @@ int main(int ac, char ** av)
             nBytes += x.getValue().size();
             ++nCells;
             
-            if(verbose && (nCells % 10000) == 0)
-                cerr << format("%d cells so far (%sB), current row=%s")
-                    % nCells % sizeString(nBytes) % reprString(x.getRow()) << endl;
+            if(--reportAfter == 0)
+            {
+                double dt = tableTimer.getElapsed();
+                cerr << format("%d cells so far (%s cells/s, %sB, %sB/s), current row=%s")
+                    % nCells
+                    % sizeString(size_t(nCells / dt), 1000)
+                    % sizeString(nBytes, 1024)
+                    % sizeString(size_t(nBytes / dt), 1024)
+                    % reprString(x.getRow())
+                     << endl;
+                reportAfter = size_t(nCells * 5 / dt);
+            }
 
             if(count)
                 continue;
@@ -118,8 +131,16 @@ int main(int ac, char ** av)
                 cout << x << endl;
         }
         if(verbose)
-            cerr << format("%d cells in scan (%sB)")
-                % nCells % sizeString(nBytes) << endl;
+        {
+            double dt = totalTimer.getElapsed();
+            cerr << format("%d cells in scan (%s cells/s, %sB, %sB/s, %.2f sec)")
+                % nCells
+                % sizeString(size_t(nCells / dt), 1000)
+                % sizeString(nBytes, 1024)
+                % sizeString(size_t(nBytes / dt), 1024)
+                % dt
+                 << endl;
+        }
 
         nCellsTotal += nCells;
         nBytesTotal += nBytes;
@@ -132,8 +153,16 @@ int main(int ac, char ** av)
         cout << nCellsTotal << endl;
 
     if(verbose)
-        cerr << format("%d cells total (%sB)")
-            % nCellsTotal % sizeString(nBytesTotal) << endl;
+    {
+        double dt = totalTimer.getElapsed();
+        cerr << format("%d cells total (%s cells/s, %sB, %sB/s, %.2f sec)")
+            % nCellsTotal
+            % sizeString(size_t(nCellsTotal / dt), 1000)
+            % sizeString(nBytesTotal, 1024)
+            % sizeString(size_t(nBytesTotal / dt), 1024)
+            % dt
+             << endl;
+    }
 
     return 0;
 }
