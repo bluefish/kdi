@@ -18,11 +18,28 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
+#include <kdi/table.h>
+#include <kdi/scan_predicate.h>
+#include <kdi/meta/meta_util.h>
+#include <warp/timestamp.h>
+#include <warp/fs.h>
+#include <warp/dir.h>
+#include <warp/config.h>
+#include <warp/uri.h>
+#include <warp/interval.h>
+#include <warp/memfile.h>
+#include <ex/exception.h>
+
 #include <warp/options.h>
 #include <string>
+#include <vector>
+#include <algorithm>
+#include <iostream>
+#include <boost/algorithm/string.hpp>
 
 using namespace warp;
-//using namespace kdi;
+using namespace ex;
+using namespace kdi;
 //using namespace kdi::tablet;
 using namespace std;
 
@@ -41,14 +58,14 @@ std::string extractTableName(std::string const & tableDir,
     Uri tableUri(tableDir);
     Uri dataUri(dataDir);
 
-    using boost::algorithms::starts_with;
+    using boost::algorithm::starts_with;
 
     if(!starts_with(tableUri.path, dataUri.path))
         raise<ValueError>("can't get table name: tableDir=%s dataDir=%s",
                           tableDir, dataDir);
 
-    char const * begin = dataUri.path.begin() + tableUri.path.size();
-    char const * end = dataUri.path.end();
+    char const * begin = tableUri.path.begin() + dataUri.path.size();
+    char const * end = tableUri.path.end();
     while(begin != end && *begin == '/')
         ++begin;
     while(begin != end && end[-1] == '/')
@@ -69,8 +86,8 @@ void buildCandidateSet(
     std::vector<std::string> & tableSet)
 {
     bool addedTable = false;
-    Directory dir(scanDir);
-    for(std::string path; dir.getPath(path);)
+    DirPtr dir = Directory::open(scanDir);
+    for(string path; dir->readPath(path);)
     {
         if(fs::isDirectory(path))
         {
@@ -78,7 +95,7 @@ void buildCandidateSet(
             continue;
         }
 
-        Timestamp mtime = Time::fromSeconds(fs::modificationTime(path));
+        Timestamp mtime = Timestamp::fromSeconds(fs::modificationTime(path));
         if(mtime >= beforeTime)
             continue;
         
@@ -104,9 +121,9 @@ void buildActiveSetFromConfig(
     std::vector<std::string> & activeSet)
 {
     Config const & tables = config.getChild("tables");
-    for(size_t i = 0; i < cfg.getNumChildren(); ++i)
+    for(size_t i = 0; i < tables.numChildren(); ++i)
     {
-        string path = extractFragmentFile(cfg.getChild(i).get());
+        string path = extractFragmentFile(tables.getChild(i).get());
         activeSet.push_back(path);
     }
 }
@@ -122,8 +139,8 @@ kdi::ScanPredicate makeMetaScanPredicate(
     {
         rows.add(
             Interval<string>()
-            .setLowerBound(encodeMetaRow(*ti, ""))
-            .setUpperBound(encodeLastMetaRow(*ti))
+            .setLowerBound(kdi::meta::encodeMetaRow(*ti, ""))
+            .setUpperBound(kdi::meta::encodeLastMetaRow(*ti))
             );
     }
 
@@ -137,7 +154,7 @@ void buildActiveSetFromMeta(
     std::vector<std::string> const & tableSet,
     std::vector<std::string> & activeSet)
 {
-    CellStreamPtr metaScan = metaTable.scan(makeMetaScanPredicate(tableSet));
+    CellStreamPtr metaScan = metaTable->scan(makeMetaScanPredicate(tableSet));
     Cell x;
     while(metaScan->get(x))
     {
@@ -249,27 +266,65 @@ int main(int ac, char ** av)
         op.addOption("verbose,v", "be verbose");
     }
 
-    // Scan the data directory.  For each directory containing files:
-    {
-        // Decide the table name from the directory name and add it to
-        // the table set
+    OptionMap opt;
+    ArgumentList args;
+    op.parseOrBail(ac, av, opt, args);
 
-        // Add all files older than --before to the candidate set
+    bool dryrun = hasopt(opt, "dryrun");
+    bool verbose = hasopt(opt, "verbose");
 
-        // If the directory contains a state file, try to read it as a
-        // config file.  If that works, add the state file and all
-        // files it references to the active set
-    }
-
-    // Scan the META table for the table set.  For each config:
-    {
-        // If we have a server restriction and the config is for
-        // another server, skip it.
-
-        // Add all files referenced by the config to the active set
-    }
-
-    // Find the delete set: candidate set minus the active set
+    string metaTable;
+    if(!opt.get("meta", metaTable))
+        op.error("need --meta");
+    else if(verbose)
+        cerr << "Using META table: " << metaTable << endl;
     
-    // Delete each file in the delete set (or not, if --dryrun)
+    string dataDir;
+    if(!opt.get("data", dataDir) || !fs::isDirectory(dataDir))
+        op.error("need --data directory");
+    else if(verbose)
+        cerr << "Using data directory: " << dataDir << endl;
+    
+    string serverRestriction;
+    if(opt.get("server", serverRestriction) && verbose)
+        cerr << "Using server restriction: " << serverRestriction << endl;
+
+    string beforeStr;
+    Timestamp beforeTime;
+    if(opt.get("before", beforeStr))
+    {
+        if(fs::isFile(beforeStr))
+        {
+            beforeTime = Timestamp::fromSeconds(
+                fs::modificationTime(beforeStr));
+        }
+        else
+        {
+            beforeTime = Timestamp::fromString(beforeStr);
+        }
+    }
+    else
+    {
+        beforeTime = Timestamp::now();
+    }
+    if(verbose)
+        cerr << "Filtering files after: " << beforeTime << endl;
+
+
+    if(verbose)
+        cerr << "Searching for garbage files..." << endl;
+
+    vector<string> garbageFiles;
+    findTabletGarbage(dataDir, Table::open(metaTable), beforeTime,
+                      serverRestriction, garbageFiles);
+
+    if(verbose)
+        cerr << "Found " << garbageFiles.size() << " file(s):" << endl;
+
+    for(vector<string>::const_iterator i = garbageFiles.begin();
+        i != garbageFiles.end(); ++i)
+    {
+        if(verbose || dryrun)
+            cerr << *i << endl;
+    }
 }
