@@ -30,21 +30,15 @@
 #include <vector>
 #include <string>
 
-// For LocalTable implementation
-#include <kdi/local/local_table.h>
-
-// For Tablet implementation
+// For SuperTablet implementation
+#include <kdi/tablet/SuperTablet.h>
 #include <kdi/tablet/Tablet.h>
 #include <kdi/tablet/TabletConfig.h>
 #include <kdi/tablet/SharedLogger.h>
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/WorkQueue.h>
-#include <kdi/tablet/FileConfigManager.h>
 #include <kdi/tablet/FileTracker.h>
-
-// For SuperTablet implementation
 #include <kdi/tablet/MetaConfigManager.h>
-#include <kdi/tablet/SuperTablet.h>
 #include <warp/tuple_encode.h>
 
 // For getHostName
@@ -164,74 +158,6 @@ namespace {
         }
     };
 
-    class TabletMaker
-    {
-        tablet::ConfigManagerPtr configMgr;
-        tablet::FileTrackerPtr tracker;
-        tablet::SharedLoggerPtr logger;
-        tablet::SharedCompactorPtr compactor;
-        tablet::WorkQueuePtr workQueue;
-
-    public:
-        explicit TabletMaker(std::string const & root) :
-            configMgr(new tablet::FileConfigManager(root)),
-            tracker(new tablet::FileTracker),
-            logger(new tablet::SharedLogger(configMgr, tracker)),
-            compactor(new tablet::SharedCompactor),
-            workQueue(new tablet::WorkQueue(1))
-        {
-            log("TabletMaker %p: created", this);
-        }
-        
-        ~TabletMaker()
-        {
-            workQueue->shutdown();
-            compactor->shutdown();
-            logger->shutdown();
-
-            log("TabletMaker %p: destroyed", this);
-        }
-
-        TablePtr makeTable(std::string const & name) const
-        {
-            using kdi::tablet::TabletConfig;
-
-            std::list<TabletConfig> cfgs = configMgr->loadTabletConfigs(name);
-            if(cfgs.size() != 1)
-                raise<RuntimeError>("loaded %d configs for table: %s",
-                                    cfgs.size(), name);
-
-            TablePtr p(
-                new tablet::Tablet(
-                    name, configMgr, logger, compactor,
-                    tracker, workQueue, cfgs.front()
-                    )
-                );
-            return p;
-        }
-    };
-
-    class LocalTableMaker
-    {
-        std::string root;
-
-    public:
-        explicit LocalTableMaker(std::string const & root) :
-            root(root)
-        {
-        }
-
-        TablePtr makeTable(std::string const & name) const
-        {
-            TablePtr p(
-                new local::LocalTable(
-                    fs::resolve(root, name)
-                    )
-                );
-            return p;
-        }
-    };
-
     std::string getHostName()
     {
         char buf[256];
@@ -251,7 +177,7 @@ namespace {
             OptionParser op("%prog [ICE-parameters] [options]");
             {
                 using namespace boost::program_options;
-                op.addOption("mode,m", value<string>()->default_value("local"),
+                op.addOption("mode,m", value<string>()->default_value("super"),
                              "Server mode");
 
                 op.addOption("root,r", value<string>()->default_value("."),
@@ -292,19 +218,7 @@ namespace {
 
             // Init server based on mode
             boost::function<TablePtr (std::string const &)> tableMaker;
-            if(mode == "local")
-            {
-                log("Starting in LocalTable mode");
-                boost::shared_ptr<LocalTableMaker> p(new LocalTableMaker(tableRoot));
-                tableMaker = boost::bind(&LocalTableMaker::makeTable, p, _1);
-            }
-            else if(mode == "tablet")
-            {
-                log("Starting in Tablet mode");
-                boost::shared_ptr<TabletMaker> p(new TabletMaker(tableRoot));
-                tableMaker = boost::bind(&TabletMaker::makeTable, p, _1);
-            }
-            else if(mode == "super")
+            if(mode == "super")
             {
                 string meta;
                 opt.get("meta", meta);

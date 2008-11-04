@@ -22,7 +22,7 @@ function usage()
     echo "   -h             Print this help message"
     echo "   -d DIR         Instance directory (default=$DEFAULT_BASE)"
     echo "   -p PORT        Server port (default=$DEFAULT_PORT)"
-    echo "   -m META        Meta table host"
+    #echo "   -m META        Meta table host"
     
     exit 2
 }
@@ -30,7 +30,7 @@ function usage()
 #----------------------------------------------------------------------------
 # Parse args
 #----------------------------------------------------------------------------
-args=$(getopt "hd:m:p:" $*) || usage
+args=$(getopt "hd:p:" $*) || usage
 set -- $args
 
 BASE=$DEFAULT_BASE
@@ -43,7 +43,7 @@ do
 	-h) usage 1 ;;
 	-d) BASE=$2; shift 2 ;;
 	-p) PORT=$2; shift 2 ;;
-	-m) META=$2; shift 2 ;;
+	#-m) META=$2; shift 2 ;;
 	--) shift; break ;;
 	*)
 	    echo "Unexpected option: $1"
@@ -80,16 +80,7 @@ EOF
 	export LD_LIBRARY_PATH=$BASE/bin:$LD_LIBRARY_PATH
 	export PATH=$BASE/bin:$PATH
 
-	if [[ -n $META ]]; then
-	    ARGS="--mode super --server $(hostname)"
-	    if [[ "$META" != "$(hostname)" ]]; then
-		ARGS="$ARGS --meta kdi://$META:$PORT/META"
-	    fi
-	else
-	    ARGS="--mode tablet"
-	fi
-
-	kdiNetServer --root $BASE/data $ARGS --Ice.Config=$BASE/ice.cfg \
+	kdiNetServer --root $BASE/data --Ice.Config=$BASE/ice.cfg \
             >> $BASE/kdi.log 2>&1 </dev/null &
 	echo $! > $BASE/kdi.pid
 	;;
