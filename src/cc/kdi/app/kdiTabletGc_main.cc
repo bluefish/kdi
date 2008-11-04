@@ -40,7 +40,6 @@
 using namespace warp;
 using namespace ex;
 using namespace kdi;
-//using namespace kdi::tablet;
 using namespace std;
 
 // Notes:
@@ -52,6 +51,9 @@ using namespace std;
 // (e.g. only include a file in the active set if it hits the Bloom
 // filter of the candidate set).
 
+
+/// Given a table directory path and the server's base data directory,
+/// extract the name of the table associated with the directory.
 std::string extractTableName(std::string const & tableDir,
                              std::string const & dataDir)
 {
@@ -78,6 +80,11 @@ std::string extractTableName(std::string const & tableDir,
     return string(begin, end);
 }
 
+/// Scan a tablet server's data directory for garbage candidate files.
+/// Only files older than beforeTime are considered.  As files are
+/// discovered, they are added to the candidate set.  Also, a set of
+/// table names is built from the names of each directory containing
+/// data files.
 void buildCandidateSet(
     std::string const & scanDir,
     std::string const & dataDir,
@@ -112,7 +119,10 @@ void buildCandidateSet(
     }
 }
 
-std::string extractFragmentFile(std::string const & fragmentUri, std::string const & dataDir)
+/// Given a fragment URI from a tablet config and the server data
+/// directory, figure out the file path for the fragment file.
+std::string extractFragmentFile(std::string const & fragmentUri,
+                                std::string const & dataDir)
 {
     Uri u(fragmentUri);
     return fs::resolve(
@@ -121,6 +131,8 @@ std::string extractFragmentFile(std::string const & fragmentUri, std::string con
         );
 }
 
+/// Add all the files referenced by fragments in a tablet config to
+/// the active set.
 void buildActiveSetFromConfig(
     Config const & config,
     std::string const & dataDir,
@@ -135,6 +147,8 @@ void buildActiveSetFromConfig(
     }
 }
 
+/// Build a scan predicate to retrieve the tablet configs for each
+/// named table from the META table.
 kdi::ScanPredicate makeMetaScanPredicate(
     std::vector<std::string> const & tableSet)
 {
@@ -155,6 +169,9 @@ kdi::ScanPredicate makeMetaScanPredicate(
     return pred;
 }
 
+/// Scan the META table for the configs of the named tables.  For each
+/// config (that matches the serverRestriction, if any), add all
+/// referenced files to the active set.
 void buildActiveSetFromMeta(
     kdi::TablePtr const & metaTable,
     std::string const & dataDir,
@@ -178,6 +195,9 @@ void buildActiveSetFromMeta(
     }
 }
 
+/// Look for Table "state" files in the data directory for each named
+/// table.  If the state file exists and contains a valid config, add
+/// it and all the fragment files it references to the active set.
 void buildActiveSetFromState(
     std::string const & dataDir,
     std::vector<std::string> const & tableSet,
@@ -205,6 +225,7 @@ void buildActiveSetFromState(
     }
 }
 
+/// Sort a vector of strings and remove all duplicates.
 void sortAndUnique(std::vector<std::string> & vec)
 {
     std::sort(vec.begin(), vec.end());
@@ -213,6 +234,21 @@ void sortAndUnique(std::vector<std::string> & vec)
         vec.end());
 }
 
+/// Scan a tablet server data directory looking for garbage data
+/// files.  "Garbage" is any file in the data directory no longer
+/// needed for the correct operation of any tablet server operating
+/// from that directory.
+///
+/// To find the garbage set, we find the set of all files in the
+/// directory and subtract the set of active files.  The active set is
+/// built by scanning live tablet config data from the META table and
+/// in per-directory state files.
+///
+/// Because the server can be creating new files all the time, it is
+/// important to restrict the file set under consideration to those
+/// older than a certain time.  The time should be chosen such that no
+/// temporary new file can be older than it.  A good choice would be
+/// the startup time of the current server instance.
 void findTabletGarbage(
     std::string const & dataDir,
     kdi::TablePtr const & metaTable,
@@ -224,42 +260,28 @@ void findTabletGarbage(
     vector<string> tableSet;
     vector<string> activeSet;
 
+    // Scan the data directory to get candidate files and the set of
+    // table names
     buildCandidateSet(dataDir, dataDir, beforeTime, candidateSet, tableSet);
     
+    // Using the table names, build the active set from state files in
+    // the data directory
     buildActiveSetFromState(dataDir, tableSet, activeSet);
-    buildActiveSetFromMeta(metaTable, dataDir, serverRestriction, tableSet, activeSet);
 
+    // Augment the active set with files referenced in the META table
+    // for each table
+    buildActiveSetFromMeta(metaTable, dataDir, serverRestriction,
+                           tableSet, activeSet);
+
+    // Make the "sets" into sets
     sortAndUnique(candidateSet);
     sortAndUnique(activeSet);
 
+    // The garbage set is the candidate set minus the active set
     std::set_difference(
         candidateSet.begin(), candidateSet.end(),
         activeSet.begin(), activeSet.end(),
         std::back_inserter(garbageFiles));
-
-    // Scan the data directory.  For each directory containing files:
-    {
-        // Decide the table name from the directory name and add it to
-        // the table set
-
-        // Add all files older than --before to the candidate set
-
-        // If the directory contains a state file, try to read it as a
-        // config file.  If that works, add the state file and all
-        // files it references to the active set
-    }
-
-    // Scan the META table for the table set.  For each config:
-    {
-        // If we have a server restriction and the config is for
-        // another server, skip it.
-
-        // Add all files referenced by the config to the active set
-    }
-
-    // Find the delete set: candidate set minus the active set
-    
-    // Delete each file in the delete set (or not, if --dryrun)
 }
     
 int main(int ac, char ** av)
@@ -324,6 +346,7 @@ int main(int ac, char ** av)
     if(verbose)
         cerr << "Searching for garbage files..." << endl;
 
+    // Build the garbage set
     vector<string> garbageFiles;
     findTabletGarbage(dataDir, Table::open(metaTable), beforeTime,
                       serverRestriction, garbageFiles);
@@ -331,6 +354,7 @@ int main(int ac, char ** av)
     if(verbose)
         cerr << "Found " << garbageFiles.size() << " file(s):" << endl;
 
+    // Print and/or delete each file in the garbage set
     for(vector<string>::const_iterator i = garbageFiles.begin();
         i != garbageFiles.end(); ++i)
     {
