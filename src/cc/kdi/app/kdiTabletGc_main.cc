@@ -101,30 +101,37 @@ void buildCandidateSet(
         
         if(!addedTable)
         {
-            string tableName = extractTableName(path, dataDir);
+            string tableName = extractTableName(scanDir, dataDir);
             tableSet.push_back(tableName);
+            //cerr << "Table: " << tableName << endl;
             addedTable = true;
         }
         
         candidateSet.push_back(path);
+        //cerr << "Candidate: " << path << endl;
     }
 }
 
-std::string extractFragmentFile(std::string const & fragmentUri)
+std::string extractFragmentFile(std::string const & fragmentUri, std::string const & dataDir)
 {
     Uri u(fragmentUri);
-    return string(u.topScheme().begin(), u.path.end());
+    return fs::resolve(
+        dataDir,
+        string(u.popScheme().begin(), u.path.end())
+        );
 }
 
 void buildActiveSetFromConfig(
     Config const & config,
+    std::string const & dataDir,
     std::vector<std::string> & activeSet)
 {
     Config const & tables = config.getChild("tables");
     for(size_t i = 0; i < tables.numChildren(); ++i)
     {
-        string path = extractFragmentFile(tables.getChild(i).get());
+        string path = extractFragmentFile(tables.getChild(i).get(), dataDir);
         activeSet.push_back(path);
+        //cerr << "Active: " << path << endl;
     }
 }
 
@@ -150,6 +157,7 @@ kdi::ScanPredicate makeMetaScanPredicate(
 
 void buildActiveSetFromMeta(
     kdi::TablePtr const & metaTable,
+    std::string const & dataDir,
     std::string const & serverRestriction,
     std::vector<std::string> const & tableSet,
     std::vector<std::string> & activeSet)
@@ -165,7 +173,7 @@ void buildActiveSetFromMeta(
         if(serverRestriction.empty() ||
            cfg.get("server") == serverRestriction)
         {
-            buildActiveSetFromConfig(cfg, activeSet);
+            buildActiveSetFromConfig(cfg, dataDir, activeSet);
         }
     }
 }
@@ -191,7 +199,9 @@ void buildActiveSetFromState(
             continue;
 
         activeSet.push_back(statePath);
-        buildActiveSetFromConfig(cfg, activeSet);
+        //cerr << "Active: " << statePath << endl;
+
+        buildActiveSetFromConfig(cfg, dataDir, activeSet);
     }
 }
 
@@ -217,7 +227,7 @@ void findTabletGarbage(
     buildCandidateSet(dataDir, dataDir, beforeTime, candidateSet, tableSet);
     
     buildActiveSetFromState(dataDir, tableSet, activeSet);
-    buildActiveSetFromMeta(metaTable, serverRestriction, tableSet, activeSet);
+    buildActiveSetFromMeta(metaTable, dataDir, serverRestriction, tableSet, activeSet);
 
     sortAndUnique(candidateSet);
     sortAndUnique(activeSet);
@@ -324,7 +334,15 @@ int main(int ac, char ** av)
     for(vector<string>::const_iterator i = garbageFiles.begin();
         i != garbageFiles.end(); ++i)
     {
-        if(verbose || dryrun)
-            cerr << *i << endl;
+        if(dryrun)
+        {
+            cout << *i << endl;
+            continue;
+        }
+
+        if(verbose)
+            cerr << "Deleting: " << *i << endl;
+
+        fs::remove(*i);
     }
 }
