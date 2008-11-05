@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
-// Created 2008-05-17
+// Created 2008-11-04
 // 
 // This file is part of KDI.
 // 
@@ -18,55 +18,44 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_TABLET_CONFIGMANAGER_H
-#define KDI_TABLET_CONFIGMANAGER_H
+#ifndef KDI_TABLET_CACHEDLOGLOADER_H
+#define KDI_TABLET_CACHEDLOGLOADER_H
 
-#include <kdi/tablet/forward.h>
-#include <warp/interval.h>
-#include <warp/config.h>
+#include <boost/noncopyable.hpp>
+#include <boost/thread/mutex.hpp>
+#include <boost/shared_ptr.hpp>
 #include <string>
-#include <list>
+#include <map>
 
 namespace kdi {
 namespace tablet {
 
-    class ConfigManager;
-
-    // Forward declarations
-    class TabletConfig;
     class CachedLogLoader;
+
+    // Forward declaration
+    class ConfigManager;
 
 } // namespace tablet
 } // namespace kdi
 
-
 //----------------------------------------------------------------------------
-// ConfigManager
+// CachedLogLoader
 //----------------------------------------------------------------------------
-class kdi::tablet::ConfigManager
+class kdi::tablet::CachedLogLoader
+    : private boost::noncopyable
 {
-    boost::shared_ptr<CachedLogLoader> logLoader;
+    struct LogInfo;
+        
+    std::map<std::string, boost::shared_ptr<LogInfo> > logMap;
+    boost::mutex mutex;
 
 public:
-    ConfigManager();
-    virtual ~ConfigManager() {}
-
-    /// Load all configs for all tablets in the given table that
-    /// belong on this server.
-    virtual std::list<TabletConfig>
-    loadTabletConfigs(std::string const & tableName) = 0;
-
-    /// Write (or overwrite) the tablet config for the named table.
-    virtual void setTabletConfig(std::string const & tableName,
-                                 TabletConfig const & cfg) = 0;
-
-    /// Get a unique path for a new data file in the given table's
-    /// namespace.  If the returned path exists, it will be a file
-    /// that should be overwritten.
-    virtual std::string getDataFile(std::string const & tableName) = 0;
-
-    /// Open a fragment by URI.
-    virtual FragmentPtr openFragment(std::string const & uri);
+    /// Get the disk URI for the given log URI.  If the log hasn't
+    /// been loaded yet, it will be serialized to a disk file.  Future
+    /// requests for the same log will use the result of the first
+    /// serialization.
+    std::string const & getDiskUri(std::string const & logUri,
+                                   ConfigManager * configManager);
 };
 
-#endif // KDI_TABLET_CONFIGMANAGER_H
+#endif // KDI_TABLET_CACHEDLOGLOADER_H
