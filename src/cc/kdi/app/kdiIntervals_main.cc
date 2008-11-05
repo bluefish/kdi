@@ -1,5 +1,5 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// Copyright (C) 2007 Josh Taylor (Kosmix Corporation)
+// Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
 // Created 2008-10-28
 // 
 // This file is part of KDI.
