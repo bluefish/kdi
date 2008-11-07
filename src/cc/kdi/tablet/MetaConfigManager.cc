@@ -91,6 +91,100 @@ namespace
         // Put the table scheme back on and return
         return uriPushScheme(rest, uri.topScheme());
     }
+
+    TabletConfig getConfigFromCell(Cell const & configCell,
+                                   std::string const & rootDir)
+    {
+        // Parse the tablet name from cell row
+        TabletName tabletName(configCell.getRow());
+
+        // Parse config from cell value
+        StringRange val = configCell.getValue();
+        FilePtr fp(new MemFile(val.begin(), val.size()));
+        Config state(fp);
+
+        // Get URI list from state
+        vector<string> uris;
+        if(Config const * n = state.findChild("tables"))
+        {
+            for(size_t i = 0; i < n->numChildren(); ++i)
+            {
+                uris.push_back(
+                    resolveTableUri(rootDir, n->getChild(i).get())
+                    );
+            }
+        }
+
+        // Get the row lower bound
+        IntervalPoint<string> minRow;
+        if(Config const * n = state.findChild("minRow"))
+            minRow = IntervalPoint<string>(n->get(), PT_EXCLUSIVE_LOWER_BOUND);
+        else
+            minRow = IntervalPoint<string>(string(), PT_INFINITE_LOWER_BOUND);
+
+        // Return the TabletConfig
+        return TabletConfig(
+            Interval<string>(minRow, tabletName.getLastRow()),
+            uris,
+            state.get("server", "")
+            );
+    }
+
+    std::string getConfigCellValue(TabletConfig const & config,
+                                   std::string const & rootDir)
+    {
+        // Serialize tablet config using warp::Config
+        warp::Config state;
+
+        // Add URI list
+        vector<string> const & uris = config.getTableUris();
+        size_t idx = 0;
+        for(vector<string>::const_iterator i = uris.begin();
+            i != uris.end(); ++i, ++idx)
+        {
+            state.set(
+                str(format("tables.i%d") % idx),
+                unrootTableUri(rootDir, *i)
+                );
+        }
+    
+        // Set the min row
+        Interval<string> const & rows = config.getTabletRows();
+        switch(rows.getLowerBound().getType())
+        {
+            case PT_INFINITE_LOWER_BOUND:
+                // Set nothing
+                break;
+
+            case PT_EXCLUSIVE_LOWER_BOUND:
+                // Set minRow
+                state.set("minRow", rows.getLowerBound().getValue());
+                break;
+
+            default:
+                raise<ValueError>("config has invalid lower bound");
+        }
+
+        // Set the server
+        state.set("server", config.getServer());
+
+        // Serialize the config
+        ostringstream oss;
+        oss << state;
+        return oss.str();
+    }
+
+    std::string getUniqueTableFile(std::string const & rootDir,
+                                   std::string const & tableName)
+    {
+        string dir = fs::resolve(rootDir, tableName);
+    
+        // XXX: this should be cached -- only need to make the directory
+        // once per table
+        fs::makedirs(dir);
+    
+        return File::openUnique(fs::resolve(dir, "$UNIQUE")).second;
+    }
 }
 
 
@@ -100,18 +194,22 @@ namespace
 class MetaConfigManager::FixedAdapter
     : public ConfigManager
 {
-    MetaConfigManagerPtr base;
+    std::string rootDir;
+    std::string serverName;
 
     string getStatePath(std::string const & tabletName) const
     {
         return fs::resolve(
-            fs::resolve(base->rootDir, tabletName),
+            fs::resolve(rootDir, tabletName),
             "state");
     }
 
 public:
-    explicit FixedAdapter(MetaConfigManagerPtr const & base) :
-        base(base) {}
+    explicit FixedAdapter(MetaConfigManager const & base) :
+        ConfigManager(base),    // Share CachedLogLoader
+        rootDir(base.rootDir),
+        serverName(base.serverName)
+    {}
 
     std::list<TabletConfig> loadTabletConfigs(std::string const & tableName)
     {
@@ -131,7 +229,7 @@ public:
                 TabletConfig(
                     Interval<string>().setInfinite(),
                     vector<string>(),
-                    base->serverName
+                    serverName
                     )
                 );
             return cfgs;
@@ -152,12 +250,13 @@ public:
         // XXX: the common code should be refactored so that this
         // hackery isn't required.
         cfgs.push_back(
-            base->getConfigFromCell(
+            getConfigFromCell(
                 makeCell(
                     name.getEncoded(),
                     "config",
                     0,
-                    val)
+                    val),
+                rootDir
                 )
             );
 
@@ -173,10 +272,10 @@ public:
                               "restricted row range");
 
         // Get a string value for the config
-        string val = base->getConfigCellValue(cfg);
+        string val = getConfigCellValue(cfg, rootDir);
 
         // Create a temp file
-        string dir = fs::resolve(base->rootDir, tableName);
+        string dir = fs::resolve(rootDir, tableName);
         fs::makedirs(dir);
         std::pair<FilePtr, string> tmp = File::openUnique(
             fs::resolve(dir, "$UNIQUE"));
@@ -200,12 +299,7 @@ public:
 
     std::string getDataFile(std::string const & tableName)
     {
-        return base->getDataFile(tableName);
-    }
-
-    FragmentPtr openFragment(std::string const & uri)
-    {
-        return base->openFragment(uri);
+        return getUniqueTableFile(rootDir, tableName);
     }
 };
 
@@ -217,7 +311,8 @@ MetaConfigManager::MetaConfigManager(std::string const & rootDir,
     rootDir(rootDir),
     serverName(serverName)
 {
-    log("MetaConfigManager: root=%s, server=%s", rootDir, serverName);
+    log("MetaConfigManager %p: created root=%s, server=%s",
+        this, rootDir, serverName);
 
     if(serverName.empty())
         raise<ValueError>("empty server name");
@@ -225,7 +320,7 @@ MetaConfigManager::MetaConfigManager(std::string const & rootDir,
 
 MetaConfigManager::~MetaConfigManager()
 {
-    log("MetaConfigManager: destroyed");
+    log("MetaConfigManager %p: destroyed", this);
 }
 
 std::list<TabletConfig>
@@ -262,7 +357,7 @@ MetaConfigManager::loadTabletConfigs(std::string const & tableName)
         if(prev)
             lowerBound = prevRows.getUpperBound().getAdjacentComplement();
 
-        TabletConfig cfg = getConfigFromCell(x);
+        TabletConfig cfg = getConfigFromCell(x, rootDir);
         Interval<string> const & cfgRows = cfg.getTabletRows();
         if(cfgRows.getLowerBound() < lowerBound)
         {
@@ -302,7 +397,7 @@ MetaConfigManager::loadTabletConfigs(std::string const & tableName)
                 cfg.getServer()
                 );
             metaTable->set(x.getRow(), x.getColumn(), x.getTimestamp(),
-                           getConfigCellValue(cfg));
+                           getConfigCellValue(cfg, rootDir));
             changedMeta = true;
         }
 
@@ -349,104 +444,17 @@ void MetaConfigManager::setTabletConfig(std::string const & tableName,
     // Write the tablet config cell
     TablePtr metaTable = getMetaTable();
     metaTable->set(tabletName.getEncoded(), "config", 0,
-                   getConfigCellValue(cfg));
+                   getConfigCellValue(cfg, rootDir));
     metaTable->sync();
 }
 
 std::string MetaConfigManager::getDataFile(std::string const & tableName)
 {
-    string dir = fs::resolve(rootDir, tableName);
-    
-    // XXX: this should be cached -- only need to make the directory
-    // once per table
-    fs::makedirs(dir);
-    
-    return File::openUnique(fs::resolve(dir, "$UNIQUE")).second;
+    return getUniqueTableFile(rootDir, tableName);
 }
-
 
 ConfigManagerPtr MetaConfigManager::getFixedAdapter()
 {
-    ConfigManagerPtr p(new FixedAdapter(shared_from_this()));
+    ConfigManagerPtr p(new FixedAdapter(*this));
     return p;
-}
-
-TabletConfig MetaConfigManager::getConfigFromCell(Cell const & configCell) const
-{
-    // Parse the tablet name from cell row
-    TabletName tabletName(configCell.getRow());
-
-    // Parse config from cell value
-    StringRange val = configCell.getValue();
-    FilePtr fp(new MemFile(val.begin(), val.size()));
-    Config state(fp);
-
-    // Get URI list from state
-    vector<string> uris;
-    if(Config const * n = state.findChild("tables"))
-    {
-        for(size_t i = 0; i < n->numChildren(); ++i)
-        {
-            uris.push_back(
-                resolveTableUri(rootDir, n->getChild(i).get())
-                );
-        }
-    }
-
-    // Get the row lower bound
-    IntervalPoint<string> minRow;
-    if(Config const * n = state.findChild("minRow"))
-        minRow = IntervalPoint<string>(n->get(), PT_EXCLUSIVE_LOWER_BOUND);
-    else
-        minRow = IntervalPoint<string>(string(), PT_INFINITE_LOWER_BOUND);
-
-    // Return the TabletConfig
-    return TabletConfig(
-        Interval<string>(minRow, tabletName.getLastRow()),
-        uris,
-        state.get("server", "")
-        );
-}
-
-std::string MetaConfigManager::getConfigCellValue(TabletConfig const & config) const
-{
-    // Serialize tablet config using warp::Config
-    warp::Config state;
-
-    // Add URI list
-    vector<string> const & uris = config.getTableUris();
-    size_t idx = 0;
-    for(vector<string>::const_iterator i = uris.begin();
-        i != uris.end(); ++i, ++idx)
-    {
-        state.set(
-            str(format("tables.i%d") % idx),
-            unrootTableUri(rootDir, *i)
-            );
-    }
-    
-    // Set the min row
-    Interval<string> const & rows = config.getTabletRows();
-    switch(rows.getLowerBound().getType())
-    {
-        case PT_INFINITE_LOWER_BOUND:
-            // Set nothing
-            break;
-
-        case PT_EXCLUSIVE_LOWER_BOUND:
-            // Set minRow
-            state.set("minRow", rows.getLowerBound().getValue());
-            break;
-
-        default:
-            raise<ValueError>("config has invalid lower bound");
-    }
-
-    // Set the server
-    state.set("server", config.getServer());
-
-    // Serialize the config
-    ostringstream oss;
-    oss << state;
-    return oss.str();
 }

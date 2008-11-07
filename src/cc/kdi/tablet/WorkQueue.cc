@@ -38,30 +38,40 @@ WorkQueue::WorkQueue(size_t nThreads)
             boost::bind(&WorkQueue::workLoop, this)
             );
     }
+
+    log("WorkQueue %p: created, %d thread(s)", this, nThreads);
 }
 
 WorkQueue::~WorkQueue()
 {
     shutdown();
+
+    log("WorkQueue %p: destroyed", this);
 }
 
 void WorkQueue::post(job_t const & job)
 {
+    //log("WorkQueue push");
     jobs.push(job);
 }
 
 void WorkQueue::shutdown()
 {
+    log("WorkQueue shutdown");
     jobs.cancelWaits();
     threads.join_all();
 }
 
 void WorkQueue::workLoop()
 {
+    log("Work thread starting");
     try {
         job_t job;
         while(jobs.pop(job))
+        {
+            //log("WorkQueue pop");
             job();
+        }
     }
     catch(std::exception const & ex) {
         log("WorkQueue error: %s", ex.what());
@@ -71,4 +81,5 @@ void WorkQueue::workLoop()
         log("WorkQueue error: unknown exception");
         ::exit(1);
     }
+    log("Work thread exiting");
 }

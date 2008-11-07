@@ -43,11 +43,15 @@ SharedCompactor::SharedCompactor() :
                 )
             )
         );
+
+    log("SharedCompactor %p: created", this);
 }
     
 SharedCompactor::~SharedCompactor()
 {
     shutdown();
+
+    log("SharedCompactor %p: destroyed", this);
 }
 
 void SharedCompactor::requestCompaction(TabletPtr const & tablet)

@@ -66,6 +66,9 @@ public:
     };
 
 public:
+    FileTracker();
+    ~FileTracker();
+
     /// Track a file for automatic deletion.  Sets the reference count
     /// of the file to 1.  When the reference count drops to 0
     /// (through calls to release()), the file will be deleted unless

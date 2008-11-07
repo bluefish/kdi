@@ -82,13 +82,13 @@ TimeoutLocator::TimeoutLocator(table_maker_t const & makeTable) :
     makeTable(makeTable),
     workQ(1)
 {
-    //log("TimeoutLocator %p: created", this);
+    log("TimeoutLocator %p: created", this);
     workQ.callLater(90, boost::bind(&TimeoutLocator::cleanup, this));
 }
 
 TimeoutLocator::~TimeoutLocator()
 {
-    //log("TimeoutLocator %p: destroyed", this);
+    log("TimeoutLocator %p: destroyed", this);
 }
 
 Ice::ObjectPtr TimeoutLocator::locate(Ice::Current const & cur,

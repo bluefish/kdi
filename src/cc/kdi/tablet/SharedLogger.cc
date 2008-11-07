@@ -349,11 +349,15 @@ SharedLogger::SharedLogger(ConfigManagerPtr const & configMgr,
         boost::bind(&SharedLogger::commitLoop, this));
     threads.create_thread(
         boost::bind(&SharedLogger::serializeLoop, this));
+
+    log("SharedLogger %p: created", this);
 }
 
 SharedLogger::~SharedLogger()
 {
     shutdown();
+
+    log("SharedLogger %p: destroyed", this);
 }
 
 void SharedLogger::set(TabletPtr const & tablet, strref_t row, strref_t column,
@@ -420,6 +424,7 @@ void SharedLogger::shutdown()
         commitBuffer.reset();
         logWriter.reset();
         tableGroup.reset();
+        configMgr.reset();
     }
 }
 

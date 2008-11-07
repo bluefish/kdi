@@ -66,9 +66,6 @@ public:
     /// This will typically be used to load the root META table.
     ConfigManagerPtr getFixedAdapter();
 
-    TabletConfig getConfigFromCell(Cell const & configCell) const;
-    std::string getConfigCellValue(TabletConfig const & config) const;
-
     void setMetaTable(TablePtr const & metaTable) { _metaTable = metaTable; }
     TablePtr const & getMetaTable() const { return _metaTable; }
 

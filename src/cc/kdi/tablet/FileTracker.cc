@@ -30,6 +30,16 @@ using namespace ex;
 //----------------------------------------------------------------------------
 // FileTracker
 //----------------------------------------------------------------------------
+FileTracker::FileTracker()
+{
+    log("FileTracker %p: created", this);
+}
+
+FileTracker::~FileTracker()
+{
+    log("FileTracker %p: destroyed", this);
+}
+
 void FileTracker::track(std::string const & filename)
 {
     log("FileTracker::track: %s", filename);
@@ -57,20 +67,21 @@ void FileTracker::untrack(std::string const & filename)
 
 void FileTracker::addReference(std::string const & filename)
 {
-    log("FileTracker::addReference: %s", filename);
-
     lock_t lock(mutex);
 
     // Add a reference to a file if it is already in the tracked list.
     map_t::iterator i = files.find(filename);
     if(i != files.end())
+    {
         ++i->second;
+        log("FileTracker::addReference: %s (ref=%d)", filename, i->second);
+    }
+    else
+        log("FileTracker::addReference: %s (not tracked)", filename);
 }
 
 void FileTracker::release(std::string const & filename)
 {
-    log("FileTracker::release: %s", filename);
-
     lock_t lock(mutex);
 
     // Find the file
@@ -78,14 +89,20 @@ void FileTracker::release(std::string const & filename)
 
     // If it's not in the map, it's not tracked for deletion
     if(i == files.end())
+    {
+        log("FileTracker::release: %s (not tracked)", filename);
         return;
+    }
         
     // Decrement refCount.  If it still has references, stop.
     if(--i->second)
+    {
+        log("FileTracker::release: %s (ref=%d)", filename, i->second);
         return;
+    }
 
     // Delete the file and remove it from the tracking list.
-    log("FileTracker removing: %s", filename);
+    log("FileTracker::release: %s (ref=0) DELETE", filename);
     fs::remove(filename);
     files.erase(i);
 }
