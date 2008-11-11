@@ -42,12 +42,21 @@ namespace warp
 //----------------------------------------------------------------------------
 class warp::BuilderBlock : boost::noncopyable
 {
-    typedef std::pair<BuilderBlock *, size_t> fixup_t;
-    typedef std::vector<fixup_t> fixup_vec_t;
+    struct BackRef
+    {
+        BuilderBlock * srcBlock;
+        size_t srcPos;
+        size_t dstPos;
+
+        BackRef() {}
+        BackRef(BuilderBlock * srcBlock, size_t srcPos, size_t dstPos) :
+            srcBlock(srcBlock), srcPos(srcPos), dstPos(dstPos) {}
+    };
+    typedef std::vector<BackRef> backref_vec_t;
 
     friend class Builder;
     Builder * builder;
-    fixup_vec_t backRefs;
+    backref_vec_t backRefs;
 
     char * buf;
     size_t bufSz;
@@ -62,16 +71,45 @@ private:
     inline BuilderBlock(Builder * builder);
     inline ~BuilderBlock();
 
+    /// Init/reset the block.  The data size goes back to zero and all
+    /// back-refs are cleared.  No memory is released.
     inline void init(size_t align);
-    inline void addRef(BuilderBlock * block, size_t offset);
 
+    /// Add the given (block,offset) pair to the back-ref list.  The
+    /// address is the location of the reference to this block.  It
+    /// will fixed up later after this block has been given its final
+    /// address.
+    inline void addBackReference(BuilderBlock * srcBlock, size_t srcPos,
+                                 size_t dstPos);
+
+    /// Set the final address for this block.  The given base is the
+    /// earliest position this block can occupy.  If this block has
+    /// alignment requirements, it will advance the base to the
+    /// nearest aligned position and use that.  After the base is
+    /// assigned, the block is "final".
     inline size_t assignBase(size_t base);
+
+    /// Remove the "final" flag from the block so more modifications
+    /// can be made.
     inline void unassignBase();
 
+    /// Go through back-ref list and fixup references to this block to
+    /// point to their final address.
     inline void fixupReferences();
+
+    /// Update the reference at refPos point to the target block at
+    /// targetAddr.  targetAddr should be the base of the destination
+    /// block.  If the original reference had a target offset, it will
+    /// be added within.
     inline void setReference(size_t refPos, size_t targetAddr);
 
+    /// Copy the contents of the block to given destination.  If this
+    /// block has some alignment padding, the padding area before the
+    /// basePtr will be zeroed.
     inline void dumpBlock(char * basePtr);
+
+    /// Grow the block to contain at least minSz bytes.
+    inline void grow(size_t minSz);
 
 public:
     /// Create a floating subblock within the resource that can be
@@ -91,8 +129,11 @@ public:
     template <class T> inline void write(size_t pos, T const & val);
 
     /// Write an offset to another block at the given position.  The
-    /// target block may be null.
-    inline void writeOffset(size_t pos, BuilderBlock * target);
+    /// target block may be null.  If targetOffset is greater than
+    /// zero, the offset will refer to a point within the target
+    /// block, instead of the beginning.
+    inline void writeOffset(size_t pos, BuilderBlock * target,
+                            size_t targetOffset=0);
 
     /// Append some data to the end of the block.
     inline void append(void const * ptr, size_t len);
@@ -100,9 +141,15 @@ public:
     /// Convenience method to append types that can be directly copied.
     template <class T> inline void append(T const & val);
 
-    /// Append an offset to another block at the end of the block.  The
-    /// target block may be null.
-    inline void appendOffset(BuilderBlock * target);
+    /// Append an offset to another block at the end of the block.
+    /// The target block may be null.  If targetOffset is greater than
+    /// zero, the offset will refer to a point within the target
+    /// block, instead of the beginning.
+    inline void appendOffset(BuilderBlock * target, size_t targetOffset=0);
+
+    /// Append padding until the size of the block is an even multiple
+    /// of the given alignment.
+    inline void appendPadding(size_t toAlignment);
 
     /// Get the current size of the data in this block.
     inline size_t size() const;
@@ -156,12 +203,6 @@ public:
 
     /// Clear data in builder and prepare to start a new resource.
     inline void reset();
-
-    /// Convenience method to finalize, export, and reset.  The memory
-    /// for the exported resource is allocated with new and returned
-    /// from this function.  The size of the allocated memory is
-    /// returned via the optional rSize parameter, if non-null.
-    inline void * build(size_t * rSize=0);
 };
 
 
@@ -193,9 +234,10 @@ namespace warp
         backRefs.clear();
     }
             
-    void BuilderBlock::addRef(BuilderBlock * block, size_t offset)
+    void BuilderBlock::addBackReference(BuilderBlock * srcBlock, size_t srcPos,
+                                        size_t dstPos)
     {
-        backRefs.push_back(fixup_t(block, offset));
+        backRefs.push_back(BackRef(srcBlock, srcPos, dstPos));
     }
 
     size_t BuilderBlock::assignBase(size_t base)
@@ -223,19 +265,25 @@ namespace warp
     void BuilderBlock::fixupReferences()
     {
         assert(hasBaseAddr);
-        for(fixup_vec_t::const_iterator ri = backRefs.begin();
+        for(backref_vec_t::const_iterator ri = backRefs.begin();
             ri != backRefs.end(); ++ri)
         {
-            ri->first->setReference(ri->second, baseAddr);
+            assert(ri->dstPos <= bufSz);
+            ri->srcBlock->setReference(ri->srcPos, baseAddr + ri->dstPos);
         }
     }
 
     void BuilderBlock::setReference(size_t refPos, size_t targetAddr)
     {
         assert(hasBaseAddr);
+
+        // Compute offset to target
         off_t offsetValue = targetAddr;
         offsetValue -= refPos + baseAddr;
+
+        // Write offset with final value
         assert(inNumericRange<int32_t>(offsetValue));
+        assert(int32_t(offsetValue) != OffsetBase<int32_t>::NULL_OFFSET);
         write<int32_t>(refPos, offsetValue);
     }
 
@@ -245,6 +293,23 @@ namespace warp
         if(alignPadding)
             memset(&basePtr[baseAddr-alignPadding], 0, alignPadding);
         memcpy(&basePtr[baseAddr], buf, bufSz);
+    }
+
+    void BuilderBlock::grow(size_t minSz)
+    {
+        assert(!isFinalized());
+        if(minSz > bufSz)
+        {
+            if(minSz > bufCap)
+            {
+                bufCap = std::max(minSz, bufCap << 1);
+                char * newBuf = new char[bufCap];
+                memcpy(newBuf, buf, bufSz);
+                std::swap(buf, newBuf);
+                delete[] newBuf;
+            }
+            bufSz = minSz;
+        }
     }
 
     BuilderBlock * BuilderBlock::subblock(size_t align)
@@ -263,21 +328,7 @@ namespace warp
 
     void BuilderBlock::write(size_t pos, void const * ptr, size_t len)
     {
-        assert(!isFinalized());
-
-        size_t end = pos + len;
-        if(end > bufSz)
-        {
-            if(end > bufCap)
-            {
-                bufCap = std::max(end, bufCap << 1);
-                char * newBuf = new char[bufCap];
-                memcpy(newBuf, buf, bufSz);
-                std::swap(buf, newBuf);
-                delete[] newBuf;
-            }
-            bufSz = end;
-        }
+        grow(pos + len);
         memcpy(&buf[pos], ptr, len);
     }
 
@@ -287,25 +338,19 @@ namespace warp
         write(pos, &val, sizeof(T));
     }
 
-    void BuilderBlock::writeOffset(size_t pos, BuilderBlock * target)
+    void BuilderBlock::writeOffset(size_t pos, BuilderBlock * target,
+                                   size_t targetOffset)
     {
-        // Must have same builder (or be a null reference)
-        assert(!target || builder == target->builder);
-
-        if(target == this)
+        // Write null placeholder offset
+        write<int32_t>(pos, OffsetBase<int32_t>::NULL_OFFSET);
+        
+        if(target)
         {
-            // Self-references can be resolved immediately
-            write<int32_t>(pos, -int32_t(pos));
-        }
-        else
-        {
-            // Interblock references must be deferred until
-            // finalization.
-            if(target)
-                target->addRef(this, pos);
+            // Both blocks must have the same builder
+            assert(builder == target->builder);
 
-            // Write null reference.
-            write<int32_t>(pos, OffsetBase<int32_t>::NULL_OFFSET);
+            // Request an address fixup
+            target->addBackReference(this, pos, targetOffset);
         }
     }
 
@@ -320,9 +365,15 @@ namespace warp
         write(bufSz, &val, sizeof(T));
     }
 
-    void BuilderBlock::appendOffset(BuilderBlock * target)
+    void BuilderBlock::appendOffset(BuilderBlock * target,
+                                    size_t targetOffset)
     {
-        writeOffset(bufSz, target);
+        writeOffset(bufSz, target, targetOffset);
+    }
+
+    void BuilderBlock::appendPadding(size_t toAlignment)
+    {
+        grow(alignUp(bufSz, toAlignment));
     }
 
     size_t BuilderBlock::size() const
@@ -444,18 +495,6 @@ namespace warp
         init(1);
         endBlock = 0;
         hasFinalSize = false;
-    }
-
-    void * Builder::build(size_t * rSize)
-    {
-        // Finalize, allocate data, export, and reset
-        finalize();
-        char * dataPtr = new char[finalSize];
-        if(rSize)
-            *rSize = finalSize;
-        exportTo(dataPtr);
-        reset();
-        return dataPtr;
     }
 }
 
