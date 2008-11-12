@@ -21,11 +21,11 @@
 #ifndef KDI_TABLET_LOGWRITER_H
 #define KDI_TABLET_LOGWRITER_H
 
-#include <oort/buildstream.h>
 #include <kdi/cell.h>
-#include <warp/file.h>
 #include <string>
 #include <vector>
+#include <boost/shared_ptr.hpp>
+#include <boost/noncopyable.hpp>
 
 namespace kdi {
 namespace tablet {
@@ -39,10 +39,10 @@ namespace tablet {
 // LogWriter
 //----------------------------------------------------------------------------
 class kdi::tablet::LogWriter
+    : private boost::noncopyable
 {
-    oort::BuildStreamHandle logStream;
-    warp::FilePtr fp;
-    std::string uri;
+    class Impl;
+    boost::shared_ptr<Impl> impl;
 
 public:
     explicit LogWriter(std::string const & fileUri);
@@ -56,7 +56,7 @@ public:
                   std::vector<Cell> const & cells);
 
     /// Get the sharedlog: URI for this log file.
-    std::string const & getUri() const { return uri; }
+    std::string const & getUri() const;
 };
 
 

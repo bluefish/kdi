@@ -23,6 +23,8 @@
 #include <kdi/marshal/cell_block_builder.h>
 #include <oort/recordbuilder.h>
 #include <oort/fileio.h>
+#include <oort/buildstream.h>
+#include <warp/file.h>
 #include <warp/uri.h>
 
 using namespace kdi;
@@ -33,44 +35,88 @@ using namespace warp;
 using namespace std;
 
 //----------------------------------------------------------------------------
+// LogWriter::Impl
+//----------------------------------------------------------------------------
+class LogWriter::Impl
+{
+    FilePtr fp;
+    string uri;
+
+    BuildStreamHandle logStream;
+    RecordBuilder recBuilder;
+    CellBlockBuilder cellBuilder;
+
+public:
+    Impl(string const & fileUri) :
+        fp(File::output(fileUri)),
+        uri(uriPushScheme(fileUri, "sharedlog")),
+        cellBuilder(&recBuilder)
+    {
+        logStream = makeBuildStream<LogEntry>(128<<10);
+        logStream->pipeTo(FileOutput::make(fp));
+    }
+
+    void sync()
+    {
+        // XXX Should have a way to sync the file, not just flush.
+        logStream->flush();
+
+        //fp->flush(); // not necessary after log flush
+    }
+
+    void logCells(string const & tabletName,
+                  vector<Cell> const & cells)
+    {
+        /// XXX the output format should have a checksum so we can recover
+        /// from mid-write crashes.
+
+        BOOST_STATIC_ASSERT(LogEntry::VERSION == 1);
+
+        // Make a RecordBuilder and build the LogEntry.  A LogEntry is a
+        // fixed-size type derived from a CellBlock.  The CellBlockBuilder
+        // will write the base CellBlock, then we'll append the derived
+        // tabletName.
+        recBuilder << (*recBuilder.subblock(4) << StringData::wrap(tabletName));
+
+        // Fill the CellBlock
+        for(vector<Cell>::const_iterator i = cells.begin(); i != cells.end(); ++i)
+            cellBuilder.append(*i);
+
+        // Write the built entry
+        logStream->put(recBuilder);
+
+        // Reset the CellBlockBuilder from the RecordBuilder.  The
+        // RecordBuilder has already been reset.
+        cellBuilder.reset(&recBuilder);
+    }
+
+    string const & getUri() const
+    {
+        return uri;
+    }
+};
+
+
+//----------------------------------------------------------------------------
 // LogWriter
 //----------------------------------------------------------------------------
 LogWriter::LogWriter(string const & fileUri) :
-    fp(File::output(fileUri)),
-    uri(uriPushScheme(fileUri, "sharedlog"))
+    impl(new Impl(fileUri))
 {
-    logStream = makeBuildStream<LogEntry>(128<<10);
-    logStream->pipeTo(FileOutput::make(fp));
 }
 
 void LogWriter::sync()
 {
-    // XXX Should have a way to sync the file, not just flush.
-    logStream->flush();
-
-    //fp->flush(); // not necessary after log flush
+    impl->sync();
 }
 
 void LogWriter::logCells(string const & tabletName,
                          vector<Cell> const & cells)
 {
-    /// XXX the output format should have a checksum so we can recover
-    /// from mid-write crashes.
+    impl->logCells(tabletName, cells);
+}
 
-    BOOST_STATIC_ASSERT(LogEntry::VERSION == 1);
-
-    // Make a RecordBuilder and build the LogEntry.  A LogEntry is a
-    // fixed-size type derived from a CellBlock.  The CellBlockBuilder
-    // will write the base CellBlock, then we'll append the derived
-    // tabletName.
-    RecordBuilder b;
-    CellBlockBuilder cb(&b);
-    b << (*b.subblock(4) << StringData::wrap(tabletName));
-
-    // Fill the CellBlock
-    for(vector<Cell>::const_iterator i = cells.begin(); i != cells.end(); ++i)
-        cb.append(*i);
-
-    // Write the built entry
-    logStream->put(b);
+string const & LogWriter::getUri() const
+{
+    return impl->getUri();
 }
