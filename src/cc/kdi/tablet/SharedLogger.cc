@@ -213,7 +213,8 @@ public:
             std::string fn = configMgr->getDataFile(tableName);
             
             // Write a DiskTable from the fragment
-            DiskTableWriter writer(fn, 64<<10);
+            DiskTableWriter writer(64<<10);
+            writer.open(fn);
             CellStreamPtr cells = info.fragment->scan(ScanPredicate());
             Cell x;
             while(cells->get(x))

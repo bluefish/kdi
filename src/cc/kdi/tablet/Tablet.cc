@@ -684,7 +684,8 @@ void Tablet::doCompaction()
     std::string fn = configMgr->getDataFile(tableName);
             
     // Open a DiskTable for writing
-    DiskTableWriter writer(fn, 64<<10);
+    DiskTableWriter writer(64<<10);
+    writer.open(fn);
 
     // Build compaction merge stream
     CellStreamPtr merge = CellMerge::make(filterErasures);

@@ -42,12 +42,15 @@ class kdi::local::DiskTableWriter
 {
     class Impl;
     boost::scoped_ptr<Impl> impl;
+    bool closed;
 
 public:
-    DiskTableWriter(std::string const & fn, size_t blockSize);
+    explicit DiskTableWriter(size_t blockSize);
     ~DiskTableWriter();
 
+    void open(std::string const & fn);
     void close();
+
     void put(Cell const & x);
 };
 

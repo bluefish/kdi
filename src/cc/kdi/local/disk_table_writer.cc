@@ -107,8 +107,11 @@ class DiskTableWriter::Impl
     void writeBlockIndex();
 
 public:
-    Impl(string const & fn, size_t blockSize);
+    explicit Impl(size_t blockSize);
+
+    void open(string const & fn);
     void close();
+
     void put(Cell const & x);
 };
 
@@ -171,14 +174,21 @@ void DiskTableWriter::Impl::writeBlockIndex()
     index.write(output, &alloc);
 }
 
-DiskTableWriter::Impl::Impl(string const & fn, size_t blockSize) :
-    fp(File::output(fn)),
-    output(FileOutput::make(fp)),
+DiskTableWriter::Impl::Impl(size_t blockSize) :
     alloc(),
     blockSize(blockSize)
 {
     block.builder.setHeader<disk::CellBlock>();
     index.builder.setHeader<disk::BlockIndex>();
+}
+
+void DiskTableWriter::Impl::open(string const & fn)
+{
+    fp = File::output(fn);
+    output = FileOutput::make(fp);
+
+    block.reset();
+    index.reset();
 }
 
 void DiskTableWriter::Impl::close()
@@ -223,29 +233,39 @@ void DiskTableWriter::Impl::put(Cell const & x)
 //----------------------------------------------------------------------------
 // DiskTableWriter
 //----------------------------------------------------------------------------
-DiskTableWriter::DiskTableWriter(std::string const & fn, size_t blockSize) :
-    impl(new Impl(fn, blockSize))
+DiskTableWriter::DiskTableWriter(size_t blockSize) :
+    impl(new Impl(blockSize)), closed(true)
 {
 }
 
 DiskTableWriter::~DiskTableWriter()
 {
-    close();
+    if(!closed)
+        close();
+}
+
+void DiskTableWriter::open(std::string const & fn)
+{
+    if(!closed)
+        raise<RuntimeError>("DiskTableWriter already open");
+
+    impl->open(fn);
+    closed = false;
 }
 
 void DiskTableWriter::close()
 {
-    if(impl)
-    {
-        impl->close();
-        impl.reset();
-    }
+    if(closed)
+        raise<RuntimeError>("DiskTableWriter already closed");
+
+    impl->close();
+    closed = true;
 }
 
 void DiskTableWriter::put(Cell const & x)
 {
-    if(!impl)
-        raise<RuntimeError>("put() to closed writer");
-        
+    if(closed)
+        raise<RuntimeError>("put() to closed DiskTableWriter");
+
     impl->put(x);
 }

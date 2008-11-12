@@ -50,7 +50,8 @@ namespace {
             memTable(MemoryTable::create(false)),
             blockSz(blockSz)
         {
-            DiskTableWriter out("memfs:cheater", 128);
+            DiskTableWriter out(128);
+            out.open("memfs:cheater");
             out.close();
 
             diskTable.reset(new DiskTable("memfs:cheater"));
@@ -81,7 +82,8 @@ namespace {
                 if(diskTable)
                     merge->pipeFrom(diskTable->scan());
 
-                DiskTableWriter out("memfs:cheater.tmp", blockSz);
+                DiskTableWriter out(blockSz);
+                out.open("memfs:cheater.tmp");
                 Cell x;
                 while(merge->get(x))
                     out.put(x);
@@ -103,7 +105,8 @@ BOOST_AUTO_TEST_CASE(empty_test)
 {
     // Make empty table
     {
-        DiskTableWriter out("memfs:empty", 128);
+        DiskTableWriter out(128);
+        out.open("memfs:empty");
         out.close();
     }
 
@@ -119,7 +122,8 @@ BOOST_AUTO_TEST_CASE(basic_test)
 {
     // Write some cells
     {
-        DiskTableWriter out("memfs:simple", 128);
+        DiskTableWriter out(128);
+        out.open("memfs:simple");
         out.put(makeCell("row1", "col1", 42, "val1"));
         out.put(makeCell("row1", "col2", 42, "val2"));
         out.put(makeCell("row1", "col2", 23, "val3"));
@@ -142,6 +146,49 @@ BOOST_AUTO_TEST_CASE(basic_test)
                         "(row2,col1,42,val4)"
                         "(row2,col3,42,val5)"
                         "(row3,col2,23,val6)"
+                        )
+            );
+    }
+}
+
+BOOST_AUTO_TEST_CASE(rewrite_test)
+{
+    DiskTableWriter out(128);
+
+    // Write some cells
+    {
+        out.open("memfs:one");
+        out.put(makeCell("row1", "col1", 42, "one1"));
+        out.put(makeCell("row1", "col2", 42, "one2"));
+        out.close();
+    }
+
+    // Write some more cells
+    {
+        out.open("memfs:two");
+        out.put(makeCell("row1", "col1", 42, "two1"));
+        out.put(makeCell("row1", "col3", 42, "two2"));
+        out.close();
+    }
+
+    // Make sure the cells are in the first table
+    {
+        DiskTable t("memfs:one");
+        test_out_t s;
+        BOOST_CHECK((s << t).is_equal(
+                        "(row1,col1,42,one1)"
+                        "(row1,col2,42,one2)"
+                        )
+            );
+    }
+
+    // Make sure the cells are in the second table
+    {
+        DiskTable t("memfs:two");
+        test_out_t s;
+        BOOST_CHECK((s << t).is_equal(
+                        "(row1,col1,42,two1)"
+                        "(row1,col3,42,two2)"
                         )
             );
     }
@@ -190,7 +237,8 @@ BOOST_AUTO_TEST_CASE(coarse_test)
     // Write it to a file
     size_t nWritten = 0;
     {
-        DiskTableWriter diskOut("memfs:table", 1<<10);
+        DiskTableWriter diskOut(1<<10);
+        diskOut.open("memfs:table");
 
         Cell x;
         CellStreamPtr scan = t->scan();

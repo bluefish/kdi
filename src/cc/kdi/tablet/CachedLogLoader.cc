@@ -93,7 +93,8 @@ void CachedLogLoader::LogInfo::serializeLog(std::string const & logUri,
     {
         log("CachedLogLoader: writing new table %s", diskFn);
 
-        DiskTableWriter writer(diskFn, 64<<10);
+        DiskTableWriter writer(64<<10);
+        writer.open(diskFn);
         for(; first != cells.end(); ++first)
             writer.put(*first);
         writer.close();
