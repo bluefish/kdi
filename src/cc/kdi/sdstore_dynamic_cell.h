@@ -24,7 +24,6 @@
 #include <kdi/sdstore_cell.h>
 #include <warp/atomic.h>
 #include <warp/string_range.h>
-#include <boost/scoped_array.hpp>
 
 namespace sdstore {
 
@@ -40,29 +39,27 @@ namespace sdstore {
 //----------------------------------------------------------------------------
 // DynamicCell
 //----------------------------------------------------------------------------
-class sdstore::DynamicCell : private boost::noncopyable
+class sdstore::DynamicCell
 {
-    mutable warp::AtomicCounter refCount;
-    boost::scoped_array<char> buf;
-    char * colBegin;
-    char * valBegin;
+    enum {
+        BASE_SIZE = 3*sizeof(char *) + sizeof(int64_t) +
+                    sizeof(warp::AtomicCounter)
+    };
+
+    char * col;
+    char * val;
     char * end;
     int64_t timestamp;
+    mutable warp::AtomicCounter refCount;
+    char row[1];
 
     class Interpreter;
 
-    DynamicCell(warp::strref_t row, warp::strref_t column,
-                int64_t timestamp, warp::strref_t value) :
-        buf(new char[row.size() + column.size() + value.size()]),
-        colBegin(buf.get() + row.size()),
-        valBegin(colBegin + column.size()),
-        end(valBegin + value.size()),
-        timestamp(timestamp)
-    {
-        memcpy(buf.get(), row.begin(), row.size());
-        memcpy(colBegin, column.begin(), column.size());
-        memcpy(valBegin, value.begin(), value.size());
-    }
+    DynamicCell() {}
+
+    // Unimplemented
+    DynamicCell(DynamicCell const & o);
+    DynamicCell const & operator=(DynamicCell const & o);
 
 public:
     /// Make a dynamic Cell
@@ -71,7 +68,7 @@ public:
 
     size_t size() const
     {
-        return sizeof(*this) + (end - buf.get());
+        return end - reinterpret_cast<char const *>(this);
     }
 };
 
@@ -79,26 +76,26 @@ public:
 //----------------------------------------------------------------------------
 // DynamicCellErasure
 //----------------------------------------------------------------------------
-class sdstore::DynamicCellErasure : private boost::noncopyable
+class sdstore::DynamicCellErasure
 {
-    mutable warp::AtomicCounter refCount;
-    boost::scoped_array<char> buf;
-    char * colBegin;
+    enum {
+        BASE_SIZE = 2*sizeof(char *) + sizeof(int64_t) +
+                    sizeof(warp::AtomicCounter)
+    };
+
+    char * col;
     char * end;
     int64_t timestamp;
+    mutable warp::AtomicCounter refCount;
+    char row[1];
 
     class Interpreter;
 
-    DynamicCellErasure(warp::strref_t row, warp::strref_t column,
-                       int64_t timestamp) :
-        buf(new char[row.size() + column.size()]),
-        colBegin(buf.get() + row.size()),
-        end(colBegin + column.size()),
-        timestamp(timestamp)
-    {
-        memcpy(buf.get(), row.begin(), row.size());
-        memcpy(colBegin, column.begin(), column.size());
-    }
+    DynamicCellErasure() {}
+
+    // Unimplemented
+    DynamicCellErasure(DynamicCellErasure const & o);
+    DynamicCellErasure const & operator=(DynamicCellErasure const & o);
 
 public:
     /// Make a dynamic Cell erasure
@@ -107,7 +104,7 @@ public:
 
     size_t size() const
     {
-        return sizeof(*this) + (end - buf.get());
+        return end - reinterpret_cast<char const *>(this);
     }
 };
 

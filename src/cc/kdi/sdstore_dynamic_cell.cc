@@ -111,19 +111,19 @@ public:
     StringRange getRow(void const * data) const
     {
         DynamicCell const * c = cast(data);
-        return StringRange(c->buf.get(), c->colBegin);
+        return StringRange(c->row, c->col);
     }
 
     StringRange getColumn(void const * data) const
     {
         DynamicCell const * c = cast(data);
-        return StringRange(c->colBegin, c->valBegin);
+        return StringRange(c->col, c->val);
     }
 
     StringRange getValue(void const * data) const
     {
         DynamicCell const * c = cast(data);
-        return StringRange(c->valBegin, c->end);
+        return StringRange(c->val, c->end);
     }
 
     int64_t getTimestamp(void const * data) const
@@ -144,7 +144,8 @@ public:
 #ifdef REPORT_CELL_STATISTICS
             MProf::get().remove(cell);
 #endif
-            delete cell;
+            char const * buf = reinterpret_cast<char const *>(data);
+            delete[] buf;
         }
     }
 };
@@ -156,13 +157,26 @@ Cell DynamicCell::make(strref_t row, strref_t column, int64_t timestamp,
                        strref_t value)
 {
     static Interpreter interp;
-    DynamicCell * data = new DynamicCell(row, column, timestamp, value);
+
+    size_t cellSz = BASE_SIZE + row.size() + column.size() + value.size();
+    char * buf = new char[cellSz];
+    DynamicCell * cell = reinterpret_cast<DynamicCell *>(buf);
+
+    cell->col = cell->row + row.size();
+    cell->val = cell->col + column.size();
+    cell->end = cell->val + value.size();
+    cell->timestamp = timestamp;
+    new (&cell->refCount) warp::AtomicCounter;
+
+    memcpy(cell->row, row.begin(),    row.size());
+    memcpy(cell->col, column.begin(), column.size());
+    memcpy(cell->val, value.begin(),  value.size());
 
 #ifdef REPORT_CELL_STATISTICS
-    MProf::get().add(data);
+    MProf::get().add(cell);
 #endif
 
-    return Cell(&interp, data);
+    return Cell(&interp, cell);
 }
 
 //----------------------------------------------------------------------------
@@ -180,13 +194,13 @@ public:
     StringRange getRow(void const * data) const
     {
         DynamicCellErasure const * c = cast(data);
-        return StringRange(c->buf.get(), c->colBegin);
+        return StringRange(c->row, c->col);
     }
 
     StringRange getColumn(void const * data) const
     {
         DynamicCellErasure const * c = cast(data);
-        return StringRange(c->colBegin, c->end);
+        return StringRange(c->col, c->end);
     }
 
     StringRange getValue(void const * data) const
@@ -217,7 +231,8 @@ public:
 #ifdef REPORT_CELL_STATISTICS
             MProf::get().remove(cell);
 #endif
-            delete cell;
+            char const * buf = reinterpret_cast<char const *>(data);
+            delete[] buf;
         }
     }
 };
@@ -229,11 +244,22 @@ Cell DynamicCellErasure::make(strref_t row, strref_t column,
                               int64_t timestamp)
 {
     static Interpreter interp;
-    DynamicCellErasure * data = new DynamicCellErasure(row, column, timestamp);
+
+    size_t cellSz = BASE_SIZE + row.size() + column.size();
+    char * buf = new char[cellSz];
+    DynamicCellErasure * cell = reinterpret_cast<DynamicCellErasure *>(buf);
+
+    cell->col = cell->row + row.size();
+    cell->end = cell->col + column.size();
+    cell->timestamp = timestamp;
+    new (&cell->refCount) warp::AtomicCounter;
+
+    memcpy(cell->row, row.begin(),    row.size());
+    memcpy(cell->col, column.begin(), column.size());
 
 #ifdef REPORT_CELL_STATISTICS
-    MProf::get().add(data);
+    MProf::get().add(cell);
 #endif
 
-    return Cell(&interp, data);
+    return Cell(&interp, cell);
 }
