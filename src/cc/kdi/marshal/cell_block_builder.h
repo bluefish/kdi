@@ -47,26 +47,22 @@ class kdi::marshal::CellBlockBuilder
     size_t basePos;
     uint32_t nCells;
 
-    warp::BuilderBlock * getString(strref_t s)
-    {
-        return pool.get(s);
-
-        // warp::BuilderBlock * b = base->subblock(4);
-        // *b << warp::StringData::wrap(s);
-        // return b;
-    }
-
-    void append(warp::BuilderBlock * row,
-                warp::BuilderBlock * column,
+    void append(size_t rowOffset,
+                size_t columnOffset,
                 int64_t timestamp,
-                warp::BuilderBlock * value)
+                size_t valueOffset)
     {
+        warp::BuilderBlock * b = pool.getStringBlock();
+
         // Append CellData to array
-        arr->appendOffset(row);         // key.row
-        arr->appendOffset(column);      // key.column
-        arr->append(timestamp);         // key.timestamp
-        arr->appendOffset(value);       // value
-        arr->append<uint32_t>(0);       // __pad
+        arr->appendOffset(b, rowOffset);         // key.row
+        arr->appendOffset(b, columnOffset);      // key.column
+        arr->append(timestamp);                  // key.timestamp
+        if(valueOffset != size_t(-1))
+            arr->appendOffset(b, valueOffset);   // value
+        else
+            arr->appendOffset(0);                // value
+        arr->append<uint32_t>(0);                // __pad
 
         // Update cells.length in main block
         ++nCells;
@@ -108,28 +104,29 @@ public:
     void appendCell(strref_t row, strref_t column, int64_t timestamp,
                     strref_t value)
     {
-        append(getString(row),
-               getString(column),
+        append(pool.getStringOffset(row),
+               pool.getStringOffset(column),
                timestamp,
-               getString(value));
+               pool.getStringOffset(value));
     }
 
     /// Append an erasure Cell to the current CellBlock.
     void appendErasure(strref_t row, strref_t column, int64_t timestamp)
     {
-        append(getString(row),
-               getString(column),
+        append(pool.getStringOffset(row),
+               pool.getStringOffset(column),
                timestamp,
-               0);
+               size_t(-1));
     }
 
     /// Append a erasure Cell to the current CellBlock.
     void append(Cell const & x)
     {
-        append(getString(x.getRow()),
-               getString(x.getColumn()),
+        append(pool.getStringOffset(x.getRow()),
+               pool.getStringOffset(x.getColumn()),
                x.getTimestamp(),
-               x.isErasure() ? 0 : getString(x.getValue()));
+               x.isErasure() ? size_t(-1)
+               : pool.getStringOffset(x.getValue()));
     }
 
     /// Get approximate data size of current CellBlock.

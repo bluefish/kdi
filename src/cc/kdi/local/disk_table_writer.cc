@@ -61,7 +61,7 @@ namespace
         void reset()
         {
             builder.reset();
-            pool.reset();
+            pool.reset(&builder);
             arr = builder.subblock(8);
             nItems = 0;
         }
@@ -120,14 +120,15 @@ void DiskTableWriter::Impl::addIndexEntry(Cell const & x)
     BOOST_STATIC_ASSERT(disk::BlockIndex::VERSION == 0);
 
     // Get string offsets for cell key
-    BuilderBlock * r = index.pool.get(x.getRow());
-    BuilderBlock * c = index.pool.get(x.getColumn());
+    BuilderBlock * b = index.pool.getStringBlock();
+    size_t         r = index.pool.getStringOffset(x.getRow());
+    size_t         c = index.pool.getStringOffset(x.getColumn());
     int64_t        t = x.getTimestamp();
     uint64_t       o = fp->tell();
             
     // Append IndexEntry to array
-    index.arr->appendOffset(r);     // startKey.row
-    index.arr->appendOffset(c);     // startKey.column
+    index.arr->appendOffset(b, r);  // startKey.row
+    index.arr->appendOffset(b, c);  // startKey.column
     index.arr->append(t);           // startKey.timestamp
     index.arr->append(o);           // blockOffset
     ++index.nItems;
@@ -138,16 +139,24 @@ void DiskTableWriter::Impl::addCell(Cell const & x)
     BOOST_STATIC_ASSERT(disk::CellBlock::VERSION == 0);
 
     // Get string offsets for cell data (null value for erasures)
-    BuilderBlock * r = block.pool.get(x.getRow());
-    BuilderBlock * c = block.pool.get(x.getColumn());
+    BuilderBlock * b = block.pool.getStringBlock();
+    size_t         r = block.pool.getStringOffset(x.getRow());
+    size_t         c = block.pool.getStringOffset(x.getColumn());
     int64_t        t = x.getTimestamp();
-    BuilderBlock * v = x.isErasure() ? 0 : block.pool.get(x.getValue());
 
     // Append CellData to array
-    block.arr->appendOffset(r);            // key.row
-    block.arr->appendOffset(c);            // key.column
+    block.arr->appendOffset(b, r);         // key.row
+    block.arr->appendOffset(b, c);         // key.column
     block.arr->append(t);                  // key.timestamp
-    block.arr->appendOffset(v);            // value
+    if(!x.isErasure())
+    {
+        size_t v = block.pool.getStringOffset(x.getValue());
+        block.arr->appendOffset(b, v);     // value
+    }
+    else
+    {
+        block.arr->appendOffset(0);        // value
+    }
     block.arr->append<uint32_t>(0);        // __pad
     ++block.nItems;
 }

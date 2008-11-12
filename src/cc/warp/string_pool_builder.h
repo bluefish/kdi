@@ -46,28 +46,44 @@ class warp::StringPoolBuilder
     // StringBlockHash
     struct StringBlockHash : public warp::HsiehHash
     {
+        BuilderBlock ** data;
+        explicit StringBlockHash(BuilderBlock ** data) : data(data) {}
+
         using HsiehHash::operator();
 
         result_t operator()(StringData const * s) const {
             return operator()(s->begin(), s->end());
         }
 
-        result_t operator()(BuilderBlock const * b) const {
-            return operator()(reinterpret_cast<StringData const *>(b->begin()));
+        result_t operator()(size_t pos) const {
+            return operator()(
+                reinterpret_cast<StringData const *>(
+                    (*data)->begin() + pos
+                    )
+                );
         }
     };
 
     // StringBlockEq
     struct StringBlockEq
     {
-        static strref_t getStr(strref_t s) {
+        BuilderBlock ** data;
+        explicit StringBlockEq(BuilderBlock ** data) : data(data) {}
+
+        strref_t getStr(strref_t s) const {
             return s;
         }
-        static StringRange getStr(StringData const * s) {
+
+        StringRange getStr(StringData const * s) const {
             return StringRange(s->begin(), s->end());
         }
-        static StringRange getStr(BuilderBlock const * b) {
-            return getStr(reinterpret_cast<StringData const *>(b->begin()));
+
+        StringRange getStr(size_t pos) const {
+            return getStr(
+                reinterpret_cast<StringData const *>(
+                    (*data)->begin() + pos
+                    )
+                );
         }
 
         template <class A, class B>
@@ -76,38 +92,47 @@ class warp::StringPoolBuilder
         }
     };
 
-    typedef HashTable<BuilderBlock *, StringBlockHash,
+    typedef HashTable<size_t, StringBlockHash,
                       StringBlockHash::result_t,
                       StringBlockEq> table_t;
 
     table_t pool;
-    BuilderBlock * builder;
-    size_t dataSz;
+    BuilderBlock * block;
 
 public:
     /// Construct a StringPoolBuilder over the given BuilderBlock.
-    explicit StringPoolBuilder(BuilderBlock * builder) { reset(builder); }
-
-    /// Get a block containing StringData for the given string.  If
-    /// the string already exists in the pool, the previous instance
-    /// is returned.  Otherwise, a new string is added.
-    BuilderBlock * get(strref_t s)
+    explicit StringPoolBuilder(BuilderBlock * builder) :
+        pool(0.75, StringBlockHash(&block), StringBlockEq(&block))
     {
-        // Look in the existing pool, and return the match if we find one
+        reset(builder);
+    }
+
+    /// Get the block containing the pooled string data.
+    BuilderBlock * getStringBlock()
+    {
+        return block;
+    }
+
+    /// Get the offset into the string block for the given string.  If
+    /// the string already exists in the pool, the offset of the
+    /// previous instance is returned.  Otherwise, a new StringData is
+    /// added to the string block and its offset is returned.
+    size_t getStringOffset(strref_t s)
+    {
+        // Look in the existing pool, and return the match if we find
+        // one
         table_t::const_iterator i = pool.find(s);
         if(i != pool.end())
             return *i;
  
         // Make a new StringData block
-        BuilderBlock * b = builder->subblock(4);
-        *b << StringData::wrap(s);
+        block->appendPadding(4);
+        size_t pos = block->size();
+        *block << StringData::wrap(s);
     
-        // Update data size -- align up to account for possible padding
-        dataSz += 4 + alignUp(s.size(), 4);
-
         // Add it to the pool, and return the new block
-        pool.insert(b);
-        return b;
+        pool.insert(pos);
+        return pos;
     }
 
     /// Clear out the pool and reset with a new builder.
@@ -115,19 +140,12 @@ public:
     {
         EX_CHECK_NULL(builder);
 
-        this->builder = builder;
+        block = builder->subblock(4);
         pool.clear();
-        dataSz = 0;
     }
     
-    /// Clear out the pool and reuse the same builder.
-    void reset() { reset(builder); }
-
-    /// Get the BuilderBlock backing this pool.
-    BuilderBlock * getBuilder() const { return builder; }
-
     /// Get approximate data size of pool.
-    size_t getDataSize() const { return dataSz; }
+    size_t getDataSize() const { return block->size(); }
 };
 
 
