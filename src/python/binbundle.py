@@ -26,6 +26,7 @@
 
 import os
 import sys
+import re
 
 class MissingDependency(Exception):
     def __init__(self, binFile, missingDep):
@@ -34,45 +35,46 @@ class MissingDependency(Exception):
 
     def __str__(self):
         return 'unresolved dependency in %r: %r' % (self.binFile, self.missingDep)
+        
 
+_ldd_rel_fail = re.compile(r'([^ ]+) => not found')
+_ldd_rel =      re.compile(r'([^ /]+) => ([^ ]*) \((0x[0-9A-Fa-f]+)\)')
+_ldd_abs =      re.compile(r'(/[^ ]+) \((0x[0-9A-Fa-f]+)\)')
 
-def getDeps(fn, includeAbsolute=False):
+def iterLdd(fn):
     #print 'ldd "%s"' % fn
-    deps = []
     for l in os.popen('ldd "%s" 2>/dev/null'%fn):
-        l = l.strip();
-        #print '   ',l
+        l = l.strip()
+        if l == 'not a dynamic executable':
+            return
 
-        i = l.rfind(' (0x')
-        if i != -1:
-            l = l[:i]
-
-        if ' => ' in l:
-            a,b = l.split(' => ')
-            if not os.path.isfile(b):
-                b = None
+        m = _ldd_rel_fail.match(l)
+        if m:
+            yield (m.group(1), None, None)
         else:
-            if not includeAbsolute:
-                continue
-            if not os.path.isfile(l):
-                continue
-            a,b = l,l
-
-        deps.append((a,b))
-        #print '   ','%r : %r' % (a,b)
-
-    return deps
+            m = _ldd_rel.match(l)
+            if m:
+                yield m.group(1,2,3)
+            else:
+                m = _ldd_abs.match(l)
+                if m:
+                    yield m.group(1,1,2)
+                else:
+                    raise RuntimeError('unexpected output from '
+                                       'ldd %r: %r' % (fn, l))
 
 def getDependentFiles(fn, _cache={}):
     if fn in _cache:
         return _cache[fn]
 
     targets = set()
-    for sym,target in getDeps(fn):
-        if not target:
+    for sym,file,addr in iterLdd(fn):
+        if not addr:
             raise MissingDependency(fn, sym)
-        targets.add(target)
-        targets.update(getDependentFiles(target))
+        if not os.path.isfile(file) or os.path.isabs(sym):
+            continue
+        targets.add(file)
+        targets.update(getDependentFiles(file))
 
     _cache[fn] = targets
     return targets
