@@ -57,13 +57,20 @@ done
 #----------------------------------------------------------------------------
 case $1 in
     patch)
-	if [[ ! -r $2 ]]; then
-	    echo "Couldn't read tarball: $2"
-	    exit 1
+	TARBALL=$2
+	if [[ ! -r "$TARBALL" ]] ; then
+	    TMP_TARBALL=$(mktemp)
+	    trap "{ rm -f '$TMP_TARBALL' ; }" EXIT
+	    if scp "$TARBALL" "$TMP_TARBALL"; then
+		TARBALL=$TMP_TARBALL
+	    else
+		echo "Couldn't read tarball: $TARBALL"
+		exit 1
+	    fi
 	fi
 	rm -rf $BASE/bin
 	mkdir -p $BASE/bin
-	tar -xzf $2 -C $BASE/bin
+	tar -xzf "$TARBALL" -C $BASE/bin
 	;;
 	
     start)
