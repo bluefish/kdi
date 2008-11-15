@@ -29,6 +29,61 @@ using namespace warp;
 using namespace ex;
 using namespace std;
 
+//----------------------------------------------------------------------------
+// PipeFile
+//----------------------------------------------------------------------------
+namespace {
+
+    class PipeFile
+        : public StdFile
+    {
+        off_t pos;
+
+    public:
+        PipeFile(int fd, string const & name, char const * mode) :
+            StdFile(fd, name, mode),
+            pos(0)
+        {
+        }
+
+        size_t read(void * dst, size_t elemSz, size_t nElem)
+        {
+            size_t sz = StdFile::read(dst, elemSz, nElem);
+            pos += sz;
+            return sz;
+        }
+
+        size_t readline(char * dst, size_t sz, char delim)
+        {
+            sz = StdFile::readline(dst, sz, delim);
+            pos += sz;
+            return sz;
+        }
+        
+        size_t write(void const * src, size_t elemSz, size_t nElem)
+        {
+            size_t sz = StdFile::write(src, elemSz, nElem);
+            pos += sz;
+            return sz;
+        }
+
+        off_t tell() const
+        {
+            return pos;
+        }
+
+        void seek(off_t offset, int whence)
+        {
+            if(whence == SEEK_SET && offset == pos)
+                return;
+            if(whence == SEEK_CUR && offset == 0)
+                return;
+            raise<RuntimeError>("illegal seek on pipe");
+        }
+    };
+
+}
+
 
 //----------------------------------------------------------------------------
 // StdFile
@@ -190,11 +245,11 @@ namespace
             switch(flags & O_ACCMODE)
             {
                 case O_WRONLY:
-                    r.reset(new StdFile(STDOUT_FILENO, "<stdout>", mode));
+                    r.reset(new PipeFile(STDOUT_FILENO, "<stdout>", mode));
                     break;
                     
                 case O_RDONLY:
-                    r.reset(new StdFile(STDIN_FILENO, "<stdin>", mode));
+                    r.reset(new PipeFile(STDIN_FILENO, "<stdin>", mode));
                     break;
 
                 default:
