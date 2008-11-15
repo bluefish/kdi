@@ -143,6 +143,7 @@ public:
             
             buf.position(info.stop);
             buf.compact();
+            buf.reserve(1);
         }
 
         buf.flip();
@@ -150,7 +151,9 @@ public:
         {
             raise<IOError>("parse failed at: %s#%d %s", fp->getName(),
                            fp->tell() - buf.remaining(),
-                           reprString(buf.position(), buf.remaining()));
+                           reprString(buf.position(),
+                                      std::min(buf.remaining(),
+                                               size_t(100))));
         }
     }
     
