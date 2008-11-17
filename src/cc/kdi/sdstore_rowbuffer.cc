@@ -19,7 +19,9 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/sdstore_rowbuffer.h>
+#include <kdi/CellField.h>
 #include <warp/strutil.h>
+#include <algorithm>
 
 using namespace sdstore;
 using namespace warp;
@@ -64,7 +66,8 @@ bool RowBuffer::insert(Cell const & c)
     else if(getRow() == c.getRow())
     {
         // Cell is in right row -- insert it
-        vector<Cell>::iterator i = lower_bound(buf.begin(), buf.end(), c);
+        vector<Cell>::iterator i =
+            std::lower_bound(buf.begin(), buf.end(), c);
         if(i != buf.end() && *i == c)
         {
             // Already exists: overwrite
@@ -94,23 +97,13 @@ StringRange RowBuffer::getRow() const
 
 Cell const * RowBuffer::getCell(strref_t column) const
 {
-    if(empty())
-        return 0;
+    vector<Cell>::const_iterator i =
+        std::lower_bound(buf.begin(), buf.end(), kdi::CellColumn(column));
 
-    Cell const * lo = &*begin();
-    Cell const * hi = lo + size();
-    while(lo < hi)
-    {
-        Cell const * mid = lo + (hi-lo) / 2;
-        StringRange midColumn = mid->getColumn();
-        if(column < midColumn)
-            hi = mid;
-        else if(column == midColumn)
-            return mid;
-        else
-            lo = mid + 1;
-    }
-    return 0;
+    if(i != end() && i->getColumn() == column)
+        return &*i;
+    else
+        return 0;
 }
 
 StringRange RowBuffer::getValue(strref_t column) const
