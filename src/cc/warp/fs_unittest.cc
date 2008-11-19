@@ -42,7 +42,7 @@ BOOST_AUTO_TEST_CASE(test_parse)
     BOOST_CHECK_EQUAL(fs::extension(p), ".ext");
 }
 
-BOOST_AUTO_TEST_CASE(test_resolve)
+BOOST_AUTO_TEST_CASE(test_resolve1)
 {
     // Test Unix path resolution
     BOOST_CHECK_EQUAL(fs::resolve("",    ""), "");
@@ -62,7 +62,10 @@ BOOST_AUTO_TEST_CASE(test_resolve)
     BOOST_CHECK_EQUAL(fs::resolve("./",  "./"), "");
     BOOST_CHECK_EQUAL(fs::resolve("..",  "./"), "../");
     BOOST_CHECK_EQUAL(fs::resolve("../", "./"), "../");
+}
 
+BOOST_AUTO_TEST_CASE(test_resolve2)
+{
     BOOST_CHECK_EQUAL(fs::resolve("/",    ""), "/");
     BOOST_CHECK_EQUAL(fs::resolve("/.",   ""), "/");
     BOOST_CHECK_EQUAL(fs::resolve("/./",  ""), "/");
@@ -80,7 +83,10 @@ BOOST_AUTO_TEST_CASE(test_resolve)
     BOOST_CHECK_EQUAL(fs::resolve("/./",  "foo"), "/foo");
     BOOST_CHECK_EQUAL(fs::resolve("/..",  "foo"), "/foo");
     BOOST_CHECK_EQUAL(fs::resolve("/../", "foo"), "/foo");
+}
 
+BOOST_AUTO_TEST_CASE(test_resolve3)
+{
     BOOST_CHECK_EQUAL(fs::resolve("",    ".foo"), ".foo");
     BOOST_CHECK_EQUAL(fs::resolve(".",   ".foo"), ".foo");
     BOOST_CHECK_EQUAL(fs::resolve("./",  ".foo"), ".foo");
@@ -92,7 +98,10 @@ BOOST_AUTO_TEST_CASE(test_resolve)
     BOOST_CHECK_EQUAL(fs::resolve("/./",  ".foo"), "/.foo");
     BOOST_CHECK_EQUAL(fs::resolve("/..",  ".foo"), "/.foo");
     BOOST_CHECK_EQUAL(fs::resolve("/../", ".foo"), "/.foo");
+}
 
+BOOST_AUTO_TEST_CASE(test_resolve4)
+{
     BOOST_CHECK_EQUAL(fs::resolve("a", "b"), "a/b");
     BOOST_CHECK_EQUAL(fs::resolve("a/", "b"), "a/b");
     BOOST_CHECK_EQUAL(fs::resolve("a", "b/"), "a/b/");
@@ -105,15 +114,21 @@ BOOST_AUTO_TEST_CASE(test_resolve)
     BOOST_CHECK_EQUAL(fs::resolve("/a/b", "../c"), "/a/c");
     BOOST_CHECK_EQUAL(fs::resolve("/a/b", "../../c"), "/c");
     BOOST_CHECK_EQUAL(fs::resolve("/a/b", "../../../c"), "/c");
+}
 
+BOOST_AUTO_TEST_CASE(test_resolve5)
+{
     BOOST_CHECK_EQUAL(fs::resolve("s:",  ""  ), "s:");
     BOOST_CHECK_EQUAL(fs::resolve("s:",  "p" ), "s:p");
     BOOST_CHECK_EQUAL(fs::resolve("s:",  "/p"), "s:/p");
     BOOST_CHECK_EQUAL(fs::resolve("//a", ""  ), "//a");
     BOOST_CHECK_EQUAL(fs::resolve("//a", "p" ), "//a/p");
     BOOST_CHECK_EQUAL(fs::resolve("//a", "/p"), "//a/p");
-    
-    // Test URI path resolution
+}
+
+BOOST_AUTO_TEST_CASE(test_resolve6)
+{
+   // Test URI path resolution
     BOOST_CHECK_EQUAL(fs::resolve("x:a", "b"), "x:a/b");
     BOOST_CHECK_EQUAL(fs::resolve("x:a", "y:b"), "y:b");
     BOOST_CHECK_EQUAL(fs::resolve("x:a", "/b"), "x:/b");
@@ -136,6 +151,10 @@ BOOST_AUTO_TEST_CASE(test_basename)
     BOOST_CHECK_EQUAL(fs::basename("foo/"), "");
     BOOST_CHECK_EQUAL(fs::basename("foo.ext"), "foo.ext");
     BOOST_CHECK_EQUAL(fs::basename("/foo.ext"), "foo.ext");
+}
+
+BOOST_AUTO_TEST_CASE(test_basename2)
+{
     BOOST_CHECK_EQUAL(fs::basename("bar/foo.ext"), "foo.ext");
     BOOST_CHECK_EQUAL(fs::basename("bar/foo.ext/"), "");
     BOOST_CHECK_EQUAL(fs::basename("/bar/foo.ext"), "foo.ext");
@@ -217,8 +236,10 @@ BOOST_AUTO_TEST_CASE(test_replacePath)
 
     BOOST_CHECK_EQUAL(fs::replacePath("//h/x.a/y?q#f", "z/w"), "//h/z/w?q#f");
     BOOST_CHECK_EQUAL(fs::replacePath("//h/x.a/y?q#f", "/z/w"), "//h/z/w?q#f");
+}
 
-
+BOOST_AUTO_TEST_CASE(test_replacePath2)
+{
     BOOST_CHECK_EQUAL(fs::replacePath("s://h/x.a/y?q#f", ""), "s://h/?q#f");
     BOOST_CHECK_EQUAL(fs::replacePath("s://h/x.a/y?q#f", "/"), "s://h/?q#f");
 

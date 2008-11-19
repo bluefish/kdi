@@ -36,6 +36,11 @@ BOOST_AUTO_UNIT_TEST(field_comparison_test)
     BOOST_CHECK(CellColumnQualifier("qual-x")        == x);
     BOOST_CHECK(CellTimestamp      (0)               == x);
     BOOST_CHECK(CellValue          ("val-x")         == x);
+}
+
+BOOST_AUTO_UNIT_TEST(field_comparison_test2)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
 
     // !(Field == Cell)
     BOOST_CHECK(!(CellRow            ("row-y")         == x));
@@ -45,6 +50,12 @@ BOOST_AUTO_UNIT_TEST(field_comparison_test)
     BOOST_CHECK(!(CellTimestamp      (1)               == x));
     BOOST_CHECK(!(CellValue          ("val-y")         == x));
 
+}
+
+BOOST_AUTO_UNIT_TEST(field_comparison_test3)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
+
     // Field < Cell
     BOOST_CHECK(CellRow            ("row-w")         < x);
     BOOST_CHECK(CellColumn         ("fam-x:qual-w")  < x);
@@ -52,6 +63,12 @@ BOOST_AUTO_UNIT_TEST(field_comparison_test)
     BOOST_CHECK(CellColumnQualifier("qual-w")        < x);
     BOOST_CHECK(CellTimestamp      (-1)              < x);
     BOOST_CHECK(CellValue          ("val-w")         < x);
+
+}
+
+BOOST_AUTO_UNIT_TEST(field_comparison_test4)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
 
     // !(Field < Cell) [equal]
     BOOST_CHECK(!(CellRow            ("row-x")         < x));
@@ -61,6 +78,12 @@ BOOST_AUTO_UNIT_TEST(field_comparison_test)
     BOOST_CHECK(!(CellTimestamp      (0)               < x));
     BOOST_CHECK(!(CellValue          ("val-x")         < x));
 
+}
+
+BOOST_AUTO_UNIT_TEST(field_comparison_test5)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
+
     // !(Field < Cell) [greater]
     BOOST_CHECK(!(CellRow            ("row-y")         < x));
     BOOST_CHECK(!(CellColumn         ("fam-x:qual-y")  < x));
@@ -68,7 +91,11 @@ BOOST_AUTO_UNIT_TEST(field_comparison_test)
     BOOST_CHECK(!(CellColumnQualifier("qual-y")        < x));
     BOOST_CHECK(!(CellTimestamp      (1)               < x));
     BOOST_CHECK(!(CellValue          ("val-y")         < x));
+}
 
+BOOST_AUTO_UNIT_TEST(field_comparison_test6)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
 
     // Cell == Field
     BOOST_CHECK(x == CellRow            ("row-x")       );
@@ -78,6 +105,12 @@ BOOST_AUTO_UNIT_TEST(field_comparison_test)
     BOOST_CHECK(x == CellTimestamp      (0)             );
     BOOST_CHECK(x == CellValue          ("val-x")       );
 
+}
+
+BOOST_AUTO_UNIT_TEST(field_comparison_test7)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
+
     // !(Cell == Field)
     BOOST_CHECK(!(x == CellRow            ("row-y")       ));
     BOOST_CHECK(!(x == CellColumn         ("fam-x:qual-y")));
@@ -85,6 +118,12 @@ BOOST_AUTO_UNIT_TEST(field_comparison_test)
     BOOST_CHECK(!(x == CellColumnQualifier("qual-y")      ));
     BOOST_CHECK(!(x == CellTimestamp      (1)             ));
     BOOST_CHECK(!(x == CellValue          ("val-y")       ));
+
+}
+
+BOOST_AUTO_UNIT_TEST(field_comparison_test8)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
 
     // Cell < Field
     BOOST_CHECK(x < CellRow            ("row-y")       );
@@ -94,6 +133,12 @@ BOOST_AUTO_UNIT_TEST(field_comparison_test)
     BOOST_CHECK(x < CellTimestamp      (1)             );
     BOOST_CHECK(x < CellValue          ("val-y")       );
 
+}
+
+BOOST_AUTO_UNIT_TEST(field_comparison_test9)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
+
     // !(Cell < Field) [equal]
     BOOST_CHECK(!(x < CellRow            ("row-x")       ));
     BOOST_CHECK(!(x < CellColumn         ("fam-x:qual-x")));
@@ -101,6 +146,12 @@ BOOST_AUTO_UNIT_TEST(field_comparison_test)
     BOOST_CHECK(!(x < CellColumnQualifier("qual-x")      ));
     BOOST_CHECK(!(x < CellTimestamp      (0)             ));
     BOOST_CHECK(!(x < CellValue          ("val-x")       ));
+
+}
+
+BOOST_AUTO_UNIT_TEST(field_comparison_test10)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
 
     // !(Cell < Field) [greater]
     BOOST_CHECK(!(x < CellRow            ("row-w")       ));
@@ -126,6 +177,11 @@ BOOST_AUTO_UNIT_TEST(prefix_limits_test)
     BOOST_CHECK(!(CellRowPrefix("row-y")  == x));
     BOOST_CHECK(!(CellRowPrefix("row=x")  == x));
     BOOST_CHECK(!(CellRowPrefix("row=")   == x));
+}
+
+BOOST_AUTO_UNIT_TEST(prefix_limits_test2)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
 
     // Check limits: Cell == Prefix
     BOOST_CHECK(x == CellRowPrefix("")        );
@@ -138,7 +194,12 @@ BOOST_AUTO_UNIT_TEST(prefix_limits_test)
     BOOST_CHECK(!(x == CellRowPrefix("row-y") ));
     BOOST_CHECK(!(x == CellRowPrefix("row=x") ));
     BOOST_CHECK(!(x == CellRowPrefix("row=")  ));
-    
+}
+
+BOOST_AUTO_UNIT_TEST(prefix_limits_test3)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
+
     // Check limits: Prefix < Cell
     BOOST_CHECK(!(CellRowPrefix("")         < x));
     BOOST_CHECK(!(CellRowPrefix("r")        < x));
@@ -155,6 +216,11 @@ BOOST_AUTO_UNIT_TEST(prefix_limits_test)
     BOOST_CHECK(CellRowPrefix("rov")        < x);
     BOOST_CHECK(CellRowPrefix("rn")         < x);
     BOOST_CHECK(CellRowPrefix("q")          < x);
+}
+
+BOOST_AUTO_UNIT_TEST(prefix_limits_test4)
+{
+    Cell x = makeCell("row-x", "fam-x:qual-x", 0, "val-x");
 
     // Check limits: Cell < Prefix
     BOOST_CHECK(!(x < CellRowPrefix("")      ));
