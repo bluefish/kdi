@@ -67,13 +67,16 @@ void CachedLogLoader::LogInfo::serializeLog(std::string const & logUri,
 
     // Read the log cells into a vector
     vector<Cell> cells;
-    {
+    try {
         LogReader reader(
             uriPushScheme(uriPopScheme(logUri), "cache"),
             tableName);
         Cell x;
         while(reader.get(x))
             cells.push_back(x);
+    }
+    catch(std::exception const & ex) {
+        log("ERROR: failed to load log %s: %s", logUri, ex.what());
     }
 
     // Sort the cells (use a stable sort since ordering between
