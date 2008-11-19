@@ -22,6 +22,7 @@
 #include <warp/string_range.h>
 #include <ex/exception.h>
 #include <unittest/main.h>
+#include <stdlib.h>
 #include <sstream>
 #include <string>
 
@@ -44,6 +45,9 @@ namespace {
 
 BOOST_AUTO_UNIT_TEST(parse_test)
 {
+    // Set TZ to UTC so the Timestamps print in a consistent way
+    setenv("TZ", "UTC", 1);
+
     // Empty predicates
     BOOST_CHECK_EQUAL(p(""), "");
     BOOST_CHECK_EQUAL(p("   "), "");
