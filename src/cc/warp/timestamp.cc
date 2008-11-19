@@ -18,16 +18,67 @@
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
+#define _BSD_SOURCE
+#include <time.h>
+#include <sys/time.h>
 
 #include <warp/timestamp.h>
 #include <warp/parsing/timestamp.h>
 #include <warp/strutil.h>
 #include <ex/exception.h>
-#include <sys/time.h>
 
 using namespace warp;
 using namespace warp::parsing;
 using namespace ex;
+
+namespace
+{
+    inline size_t fmt_gmtoff(char * buf, size_t bufsz, int32_t gmtoff,
+                             bool extended)
+    {
+        int s;
+        char sign;
+        if(gmtoff < 0)
+        {
+            s = -gmtoff;
+            sign = '-';
+        }
+        else
+        {
+            s = gmtoff;
+            sign = '+';
+        }
+
+        int m = s / 60;
+        s -= m * 60;
+        
+        int h = (m / 60) % 24;
+        m -= h * 60;
+
+        int sz;
+        if(extended)
+        {
+            if(s)
+                sz = snprintf(buf, bufsz, "%c%02d:%02d:%02d", sign, h, m, s);
+            else if(m)
+                sz = snprintf(buf, bufsz, "%c%02d:%02d", sign, h, m);
+            else
+                sz = snprintf(buf, bufsz, "%c%02d", sign, h);
+        }
+        else
+        {
+            if(m)
+                sz = snprintf(buf, bufsz, "%c%02d%02d", sign, h, m);
+            else
+                sz = snprintf(buf, bufsz, "%c%02d", sign, h);
+        }
+
+        if(sz > 0)
+            return size_t(sz);
+        else
+            return 0;
+    }
+}
 
 Timestamp::Timestamp(strref_t s)
 {
@@ -35,7 +86,7 @@ Timestamp::Timestamp(strref_t s)
     
     try {
         if(!parse(s.begin(), s.end(),
-                  timestamp_p[assign_a(usec)],
+                  timestamp_p[assign_a(*this)],
                   space_p).full)
         {
             raise<ValueError>("malformed input");
@@ -46,6 +97,81 @@ Timestamp::Timestamp(strref_t s)
                           ex.what(), reprString(s));
     }
 }
+
+void Timestamp::set(int year, int month, int day,
+                    int hour, int min, int sec,
+                    int32_t usec, int32_t gmtoff)
+{
+    struct tm t;
+
+    t.tm_sec    = sec;
+    t.tm_min    = min;
+    t.tm_hour   = hour;
+    t.tm_mday   = day;
+    t.tm_mon    = month - 1;
+    t.tm_year   = year - 1900;
+    t.tm_isdst  = 0;
+
+    char tzBuf[64] = "UTC";
+    if(gmtoff)
+        fmt_gmtoff(tzBuf+3, sizeof(tzBuf)-3, -gmtoff, true);
+
+    // Race condition: mktime() uses the TZ environment variable.  We
+    // set and restore here, but we have no way to guarantee another
+    // thread won't change it before we manage to call mktime().
+    {
+        std::string oldTzBuf;
+        char const * oldTz = 0;
+        if(char const * tz = getenv("TZ"))
+        {
+            oldTzBuf = tz;
+            oldTz = oldTzBuf.c_str();
+        }
+
+        setenv("TZ", tzBuf, 1);
+
+        this->usec = mktime(&t);
+
+        if(oldTz)
+            setenv("TZ", oldTz, 1);
+        else
+            unsetenv("TZ");
+    }
+    // End race
+
+    this->usec  = this->usec * 1000000 + usec;
+}
+
+void Timestamp::setLocal(int year, int month, int day,
+                         int hour, int min, int sec,
+                         int32_t usec)
+{
+    struct tm t;
+
+    t.tm_sec    = sec;
+    t.tm_min    = min;
+    t.tm_hour   = hour;
+    t.tm_mday   = day;
+    t.tm_mon    = month - 1;
+    t.tm_year   = year - 1900;
+    t.tm_isdst  = -1;
+
+    // Race condition: mktime() uses whatever the current timezone
+    // happens to be, which may have changed in another thread since
+    // this method was called.
+    this->usec  = mktime(&t);
+    this->usec  = this->usec * 1000000 + usec;
+}
+
+void Timestamp::setUtc(int year, int month, int day,
+                       int hour, int min, int sec,
+                       int32_t usec)
+{
+    set(year, month, day,
+        hour, min, sec,
+        usec, 0);
+}
+
 
 Timestamp Timestamp::now()
 {
@@ -66,19 +192,53 @@ std::ostream & warp::operator<<(std::ostream & o, Timestamp const & t)
         --sec;
         frac += 1000000;
     }
-    struct tm gmt;
-    gmtime_r(&sec, &gmt);
-    char buf[256];
+
+    struct tm lt;
+
+    // Race condition: localtime_r() uses the last call to tzset(),
+    // which uses the TZ environment variable.  If TZ has changed
+    // since the last call to tzset(), localtime_r() won't catch that.
+    // We always call tzset() to try to get the latest value for the
+    // TZ variable.  There's no guarantee another thread won't change
+    // it and call tzset() before we manage to call localtime_r().
     {
-        size_t sz = strftime(buf, sizeof(buf), "%FT%T.", &gmt);
+        tzset();
+        localtime_r(&sec, &lt);
+    }
+    // End race
+
+    if(lt.tm_gmtoff % 60)
+    {
+        // TZ has a sub-minute offset from GMT, which we can't
+        // represent.  Just print as UTC.
+        gmtime_r(&sec, &lt);
+    }
+    
+    char buf[256];
+
+    // Write <DATE>T<TIME>.
+    {
+        size_t sz = strftime(buf, sizeof(buf), "%FT%T.", &lt);
         o.write(buf, sz);
     }
+
+    // Append <MICROSEC>
     {
-        int sz = snprintf(buf, sizeof(buf), "%06ldZ", frac);
-        if(sz == 7)
+        int sz = snprintf(buf, sizeof(buf), "%06ld", frac);
+        if(sz == 6)
             o.write(buf, sz);
         else
-            o.write("000000Z", 7);
+            o.write("000000", 6);
+    }
+    
+    // Append <TZ>
+    if(lt.tm_gmtoff == 0)
+        o << 'Z';
+    else
+    {
+        char buf[64];
+        size_t sz = fmt_gmtoff(buf, sizeof(buf), lt.tm_gmtoff, false);
+        o.write(buf, sz);
     }
 
     return o;

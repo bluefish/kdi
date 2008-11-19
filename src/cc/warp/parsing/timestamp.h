@@ -22,100 +22,84 @@
 #ifndef WARP_PARSING_TIMESTAMP_H
 #define WARP_PARSING_TIMESTAMP_H
 
+#include <warp/timestamp.h>
 #include <warp/parsing/numeric.h>
-#include <time.h>
 #include <string.h>
 #include <boost/spirit.hpp>
+
+//#define WARP_PARSING_TIMESTAMP_DEBUG
+#ifdef WARP_PARSING_TIMESTAMP_DEBUG
+#include <iostream>
+#endif
 
 namespace warp {
 namespace parsing {
 
-    /// Parse a timestamp and convert it into an integer
-    /// representing the number of microseconds since
-    /// 1970-01-01T00:00:00Z.  The timestamp may either be an ISO8601
-    /// date time string or an integer literal prefixed by an '@'.
+    /// Parse a timestamp and convert it into a warp::Timestamp.  The
+    /// timestamp may either be an ISO8601 date time string or an
+    /// integer literal prefixed by an '@'.
     class TimestampParser
     {
-        int localTimezone;
-        int isDst;
-
     public:
-        typedef int64_t result_t;
+        typedef warp::Timestamp result_t;
     
-        TimestampParser()
-        {
-            // Get timezone information from globals in <time.h>
-            //  'timezone' is the difference in seconds between UTC and
-            //  local time.  It is only defined after calling tzset().
-            //  There's also a 'daylight' variable, but it only says
-            //  whether the local timezone has a daylight savings, not
-            //  whether we're currently in it.  Bah.
-            //  For whatever reason, the 'timezone' variable is opposite
-            //  the usual convention of being the difference between local
-            //  and UTC.  We want the normal convention, so we invert it
-            //  here.
-            tzset();
-            localTimezone = -timezone;
-
-            // Get local daylight savings setting
-            time_t currentTime = time(0);
-            struct tm currentTm;
-            localtime_r(&currentTime, &currentTm);
-            isDst = currentTm.tm_isdst;
-        }
-
         template <typename ScannerT>
         std::ptrdiff_t
         operator()(ScannerT const & scan, result_t & result) const
         {
             using namespace boost::spirit;
 
-            struct tm t;
-            memset(&t, 0, sizeof(t));
-            t.tm_mday = 1;
-            t.tm_isdst = isDst;
-            uint64_t usec = 0;
-    
-            int parsedTimezone = localTimezone;
+            int year = 1970;
+            int month = 1;
+            int day = 1;
+            int hour = 0;
+            int min = 0;
+            int sec = 0;
+            int32_t usec = 0;
+            int32_t gmtoff = 0;
+            bool hasTimezone = false;
     
             bool tzIsNegative = false;
             int tzHour = 0;
             int tzMin = 0;
-    
+
             return
                 (
                     ( // Integer literal
-                        ch_p('@') >> int64_p[assign_a(result)]
+                        ch_p('@') >> int64_p[AssignLiteral(result)]
                     ) |
                     ( // ISO8601 date time
                         // Year
-                        uint4_p[assign_a(t.tm_year)] >> 
+                        uint4_p[assign_a(year)] >> 
                         // Optional month
-                        !( !ch_p('-') >> uint2_p[assign_a(t.tm_mon)] >>
+                        !( !ch_p('-') >> uint2_p[assign_a(month)] >>
                            // Optional day
-                           !( !ch_p('-') >> uint2_p[assign_a(t.tm_mday)] )
+                           !( !ch_p('-') >> uint2_p[assign_a(day)] )
                          ) >>
                         // Optional time value
                         !( (ch_p('T') | ch_p('t')) >>
                            // Hour
-                           uint2_p[assign_a(t.tm_hour)] >>
+                           uint2_p[assign_a(hour)] >>
                            // Optional minute
-                           !( !ch_p(':') >> uint2_p[assign_a(t.tm_min)] >>
+                           !( !ch_p(':') >> uint2_p[assign_a(min)] >>
                               // Optional second
-                              !( !ch_p(':') >> uint2_p[assign_a(t.tm_sec)] >>
+                              !( !ch_p(':') >> uint2_p[assign_a(sec)] >>
                                  // Optional microsecond
                                  !( ch_p('.') >> (+digit_p)[AssignMicroseconds(usec)] )
                                )
                             )
                          ) >>
                         // Optional time zone
-                        !( (ch_p('Z') | ch_p('z'))[assign_a(parsedTimezone, 0)][assign_a(t.tm_isdst, 0)] |
+                        !( (ch_p('Z') | ch_p('z'))[assign_a(gmtoff, 0)] |
                            ( sign_p[assign_a(tzIsNegative)] >> 
                              uint2_p[assign_a(tzHour)] >>
                              !( !ch_p(':') >> uint2_p[assign_a(tzMin)] )
-                           )[AssignTimezone(parsedTimezone, tzIsNegative, tzHour, tzMin)][assign_a(t.tm_isdst, 0)]
-                         )
-                    )[AssignDate(result, t, usec, parsedTimezone, localTimezone)]
+                           )[AssignTimezone(gmtoff, tzIsNegative, tzHour, tzMin)]
+                         )[assign_a(hasTimezone, true)]
+                     )[AssignTimestamp(result,
+                                       year, month, day,
+                                       hour, min, sec,
+                                       usec, gmtoff, hasTimezone)]
                 )
                 .parse(scan)
                 .length();
@@ -124,9 +108,9 @@ namespace parsing {
     private:
         struct AssignMicroseconds
         {
-            uint64_t & usec;
+            int32_t & usec;
 
-            AssignMicroseconds(uint64_t & usec) : usec(usec) {}
+            AssignMicroseconds(int32_t & usec) : usec(usec) {}
             
             template <class Iter>
             void operator()(Iter a, Iter b) const
@@ -149,12 +133,12 @@ namespace parsing {
 
         struct AssignTimezone
         {
-            int & tzOffset;
+            int32_t & tzOffset;
             bool const & tzIsNegative;
             int const & tzHour;
             int const & tzMin;
     
-            AssignTimezone(int & tzOffset,
+            AssignTimezone(int32_t & tzOffset,
                            bool const & tzIsNegative,
                            int const & tzHour,
                            int const & tzMin) :
@@ -169,56 +153,94 @@ namespace parsing {
                 tzOffset = (tzHour * 60 + tzMin) * 60;
                 if(tzIsNegative)
                     tzOffset = -tzOffset;
-    
-                //cout << "tzN " << tzIsNegative << endl
-                //     << "tzH " << tzHour << endl
-                //     << "tzM " << tzMin << endl
-                //     << "tzO " << tzOffset << endl;
+
+#ifdef WARP_PARSING_TIMESTAMP_DEBUG    
+                using namespace std;
+                cout << "tzN " << tzIsNegative << endl
+                     << "tzH " << tzHour << endl
+                     << "tzM " << tzMin << endl
+                     << "tzO " << tzOffset << endl;
+#endif
             }
         };
     
-        struct AssignDate
+        struct AssignTimestamp
         {
-            int64_t & r;
-            struct tm const & t;
-            uint64_t const & usec;
-            int const & parsedTimezone;
-            int const & localTimezone;
-            
-            AssignDate(int64_t & r, struct tm const & t, uint64_t const & usec,
-                       int const & parsedTimezone, int const & localTimezone) :
-                r(r), t(t), usec(usec),
-                parsedTimezone(parsedTimezone),
-                localTimezone(localTimezone)
+            result_t & r;
+            int const & year;
+            int const & month;
+            int const & day;
+            int const & hour;
+            int const & min;
+            int const & sec;
+            int32_t const & usec;
+            int32_t const & gmtoff;
+            bool const & hasTimezone;
+
+            AssignTimestamp(result_t & r,
+                            int const & year,
+                            int const & month,
+                            int const & day,
+                            int const & hour,
+                            int const & min,
+                            int const & sec,
+                            int32_t const & usec,
+                            int32_t const & gmtoff,
+                            bool const & hasTimezone) :
+                r(r),
+                year(year),
+                month(month),
+                day(day),
+                hour(hour),
+                min(min),
+                sec(sec),
+                usec(usec),
+                gmtoff(gmtoff),
+                hasTimezone(hasTimezone)
             {
             }
             
             template <class Iter>
             void operator()(Iter, Iter) const
             {
-                //cout << "Y   " << t.tm_year << endl
-                //     << "M   " << t.tm_mon << endl
-                //     << "D   " << t.tm_mday << endl
-                //     << "h   " << t.tm_hour << endl
-                //     << "m   " << t.tm_min << endl
-                //     << "s   " << t.tm_sec << endl
-                //     << "us  " << usec << endl
-                //     << "dst " << t.tm_isdst << endl
-                //     << "PTZ " << parsedTimezone << endl
-                //     << "LTZ " << localTimezone << endl;
-    
-                // Adjust tm struct
-                struct tm t2 = t;
-    
-                // Year is offset from 1900
-                t2.tm_year -= 1900;
+#ifdef WARP_PARSING_TIMESTAMP_DEBUG
+                using namespace std;
+                cout << "Y   " << year << endl
+                     << "M   " << month << endl
+                     << "D   " << day << endl
+                     << "h   " << hour << endl
+                     << "m   " << min << endl
+                     << "s   " << sec << endl
+                     << "us  " << usec << endl
+                     << "off " << gmtoff << endl
+                     << "tz? " << (hasTimezone ? "true" : "false") << endl;
+#endif
                 
-                // Months is 0-11
-                if(t2.tm_mon > 0)
-                    t2.tm_mon -= 1;
-    
-                time_t utc = mktime(&t2) + (localTimezone - parsedTimezone);
-                r = int64_t(utc) * 1000000 + usec;
+                if(hasTimezone)
+                    r.set(year, month, day,
+                          hour, min, sec,
+                          usec, gmtoff);
+                else
+                    r.setLocal(year, month, day,
+                               hour, min, sec,
+                               usec);
+
+#ifdef WARP_PARSING_TIMESTAMP_DEBUG
+#endif
+            }
+        };
+
+        class AssignLiteral
+        {
+            result_t & r;
+
+        public:
+            explicit AssignLiteral(result_t & r) : 
+                r(r) {}
+
+            void operator()(int64_t literal) const
+            {
+                r = warp::Timestamp::fromMicroseconds(literal);
             }
         };
     };

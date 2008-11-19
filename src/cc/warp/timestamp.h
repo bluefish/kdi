@@ -56,6 +56,25 @@ public:
     /// with an '@'.
     explicit Timestamp(strref_t s);
 
+    /// Set the timestamp from broken down parts.  The values passed
+    /// in should correspond to printable values in the ISO8601
+    /// representation.  The timezone parameter, gmtoff, should be
+    /// given as the second offset from GMT to the input timezone.
+    void set(int year, int month, int day,
+             int hour, int min, int sec,
+             int32_t usec, int32_t gmtoff);
+
+    /// Set the timestamp from broken down parts in the local
+    /// timezone.
+    void setLocal(int year, int month, int day,
+                  int hour, int min, int sec,
+                  int32_t usec);
+
+    /// Set the timestamp from broken down parts in the UTC timezone.
+    void setUtc(int year, int month, int day,
+                int hour, int min, int sec,
+                int32_t usec);
+
     operator int64_t() const { return usec; }
 
     bool operator< (Timestamp const & o) const { return usec <  o.usec; }
