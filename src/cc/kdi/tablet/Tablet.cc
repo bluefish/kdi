@@ -306,25 +306,34 @@ TabletPtr Tablet::splitTablet()
         return TabletPtr();
     }
 
-    // Save new tablet configs -- write the high first because it is
-    // somewhat less expensive to recover from a missing low tablet
-    // than a missing high tablet.
-    vector<string> uris = getFragmentUris(lock);
-    TabletConfig highCfg(high, uris, server);
-    TabletConfig lowCfg(low, uris, server);
-    configMgr->setTabletConfig(tableName, highCfg); // XXX should unlock
-    configMgr->setTabletConfig(tableName, lowCfg);
-
-    // Clone this tablet with new row bounds and change bounds on this
-    // tablet
+    // Make a clone of this tablet and assign it the lower row bounds.
     TabletPtr lowTablet(new Tablet(*this, low));
+
+    // Shrink this tablet to the upper row bounds.
     this->rows = high;
+
+    // Post config changes.  Queue the upper tablet first because it
+    // is somewhat less expensive to recover from a missing low tablet
+    // than a missing high tablet.  Note that we're using this
+    // tablet's lock when we're posting the config change on the
+    // lowTablet.  It's wrong-headed, but since no one else knows
+    // about lowTablet yet, no one else is going to be calling it.
+    // Our mutex is as good as theirs.  The concurrency design for
+    // this code needs a major overhaul.
+    postConfigChange(lock);
+    lowTablet->postConfigChange(lock); // <-- weird, see comment above
 
     // Set cloned log chain if necessary
     if(!fragments.back()->isImmutable())
         clonedLogTablet = lowTablet;
     else
         assert(!clonedLogTablet);
+
+    // Post config changes for each tablet.  Queue the high first
+    // because it is somewhat less expensive to recover from a missing
+    // low tablet than a missing high tablet.
+    postConfigChange(lock);
+    lowTablet->postConfigChange(lock);
 
     log("Tablet split complete: low=%s high=%s",
         lowTablet->getPrettyName(),
