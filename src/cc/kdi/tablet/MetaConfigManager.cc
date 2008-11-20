@@ -185,6 +185,25 @@ namespace
     
         return File::openUnique(fs::resolve(dir, "$UNIQUE")).second;
     }
+
+
+    /// Make a printable name for the TabletConfig
+    std::string makePrettyName(std::string const & tableName,
+                               TabletConfig const & cfg)
+    {
+        IntervalPoint<string> const & last =
+            cfg.getTabletRows().getUpperBound();
+
+        ostringstream oss;
+        oss << tableName << '(';
+        if(last.isFinite())
+            oss << reprString(last.getValue());
+        else
+            oss << "END";
+        oss << ')';
+        return oss.str();
+    }
+
 }
 
 
@@ -265,7 +284,7 @@ public:
 
     void setTabletConfig(std::string const & tableName, TabletConfig const & cfg)
     {
-        log("Save fixed config: %s", tableName);
+        log("Save fixed config: %s", makePrettyName(tableName, cfg));
 
         if(!cfg.getTabletRows().isInfinite())
             raise<ValueError>("fixed tablet config shouldn't have a "
@@ -429,7 +448,7 @@ MetaConfigManager::loadTabletConfigs(std::string const & tableName)
 void MetaConfigManager::setTabletConfig(std::string const & tableName,
                                         TabletConfig const & cfg)
 {
-    log("Save META config: %s", tableName);
+    log("Save META config: %s", makePrettyName(tableName, cfg));
 
     // Sanity checking
     if(cfg.getServer() != serverName)
