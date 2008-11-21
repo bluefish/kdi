@@ -24,6 +24,7 @@
 #include <kdi/tablet/TabletConfig.h>
 #include <kdi/tablet/WorkQueue.h>
 #include <kdi/tablet/SuperScanner.h>
+#include <kdi/tablet/SharedCompactor.h>
 #include <kdi/cell_filter.h>
 #include <kdi/scan_predicate.h>
 #include <warp/interval.h>
@@ -161,6 +162,9 @@ SuperTablet::SuperTablet(std::string const & name,
                 )
             );
         tablets.push_back(p);
+
+        // XXX hack
+        compactor->requestCompaction(p);
     }
 }
 

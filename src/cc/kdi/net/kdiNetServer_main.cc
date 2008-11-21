@@ -87,7 +87,8 @@ namespace {
                 if(cfgs.size() != 1)
                     raise<RuntimeError>("loaded %d configs for META table",
                                         cfgs.size());
-                metaTable.reset(
+
+                tablet::TabletPtr p(
                     new tablet::Tablet(
                         "META",
                         fixedMgr,
@@ -98,6 +99,10 @@ namespace {
                         cfgs.front()
                         )
                     );
+                metaTable = p;
+
+                // XXX hack
+                compactor->requestCompaction(p);
             }
             else
             {
