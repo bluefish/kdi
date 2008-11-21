@@ -104,7 +104,10 @@ void buildCandidateSet(
 
         Timestamp mtime = Timestamp::fromSeconds(fs::modificationTime(path));
         if(mtime >= beforeTime)
+        {
+            //cerr << "Ignoring: " << path << "   " << mtime << endl;
             continue;
+        }
         
         if(!addedTable)
         {
@@ -115,7 +118,7 @@ void buildCandidateSet(
         }
         
         candidateSet.push_back(path);
-        //cerr << "Candidate: " << path << endl;
+        //cerr << "Candidate: " << path << "   " << mtime << endl;
     }
 }
 
@@ -160,8 +163,8 @@ kdi::ScanPredicate makeMetaScanPredicate(
     {
         rows.add(
             Interval<string>()
-            .setLowerBound(kdi::meta::encodeMetaRow(*ti, ""))
-            .setUpperBound(kdi::meta::encodeLastMetaRow(*ti))
+            .setLowerBound(kdi::meta::encodeMetaRow(*ti, ""), BT_INCLUSIVE)
+            .setUpperBound(kdi::meta::encodeLastMetaRow(*ti), BT_INCLUSIVE)
             );
     }
 
