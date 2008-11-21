@@ -654,10 +654,10 @@ void Tablet::doCompaction()
     
     // Choose the sequence of tables to compact
     {
-        // Just compact the last K static tables -- maybe do something
-        // fancy later
+        // Use a sliding window of size K to pick the set of adjacent
+        // fragments with the minimum disk size.
 
-        int const K = 8;
+        int const K = 20;
 
         lock_t lock(mutex);
        
@@ -671,16 +671,39 @@ void Tablet::doCompaction()
                 break;
             }
         }
-        // Get the beginning of the trailing range.  We want to filter
-        // erasures if our compaction includes the first table.
-        fragments_t::const_iterator first = fragments.begin();
-        if(distance(first, last) > K)
-            advance(first, distance(first, last) - K);
-        else
-            filterErasures = true;
+
+        // Extend initial window from beginning up to K fragments.
+        fragments_t::const_iterator windowBegin = fragments.begin();
+        fragments_t::const_iterator windowEnd = windowBegin;
+        size_t windowSize = 0;
+        for(int k = 0; k < K && windowEnd != last; ++k, ++windowEnd)
+        {
+            windowSize += (*windowEnd)->getDiskSize(rows);
+        } 
+
+        // Find the minimum by sliding the window until it reaches the
+        // last statick fragment.
+        fragments_t::const_iterator minBegin = windowBegin;
+        fragments_t::const_iterator minEnd = windowEnd;
+        size_t minSize = windowSize;
+        for(; windowEnd != last; ++windowEnd, ++windowBegin)
+        {
+            windowSize -= (*windowBegin)->getDiskSize(rows);
+            windowSize += (*windowEnd)->getDiskSize(rows);
+            if(windowSize < minSize)
+            {
+                minBegin = windowBegin;
+                minEnd = windowEnd;
+                minSize = windowSize;
+            }
+        }
+        
+        // We filter erasures if the window includes the beginning
+        // fragment
+        filterErasures = (minBegin == fragments.begin());
 
         // Make a copy of the fragment pointers to be compacted
-        compactionFragments.insert(compactionFragments.end(), first, last);
+        compactionFragments.insert(compactionFragments.end(), minBegin, minEnd);
 
         // Set the compaction predicate to look at the full row range
         // (and only the row range) for this Tablet
