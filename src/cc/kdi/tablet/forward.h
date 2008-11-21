@@ -63,6 +63,7 @@ namespace tablet {
     typedef boost::weak_ptr<Tablet> TabletWeakPtr;
     typedef boost::weak_ptr<Scanner> ScannerWeakPtr;
     typedef boost::weak_ptr<SuperScanner> SuperScannerWeakPtr;
+    typedef boost::weak_ptr<Fragment> FragmentWeakPtr;
 
 } // namespace tablet
 } // namespace kdi

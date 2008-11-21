@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
-// Created 2008-08-07
+// Created 2008-11-20
 // 
 // This file is part of KDI.
 // 
@@ -18,44 +18,42 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include <kdi/tablet/ConfigManager.h>
-#include <kdi/tablet/CachedLogLoader.h>
-#include <kdi/tablet/DiskFragmentCache.h>
-#include <warp/uri.h>
-#include <warp/log.h>
-#include <ex/exception.h>
+#ifndef KDI_TABLET_DISKFRAGMENTCACHE_H
+#define KDI_TABLET_DISKFRAGMENTCACHE_H
 
-using namespace kdi;
-using namespace kdi::tablet;
-using namespace warp;
-using namespace ex;
+#include <kdi/tablet/forward.h>
+#include <map>
+#include <boost/noncopyable.hpp>
+#include <boost/thread/mutex.hpp>
+
+namespace kdi {
+namespace tablet {
+
+    /// A cache for loading disk fragments.  If a fragment has already
+    /// been loaded, it should be reused.
+    class DiskFragmentCache;
+
+} // namespace tablet
+} // namespace kdi
 
 //----------------------------------------------------------------------------
-// ConfigManager
+// DiskFragmentCache
 //----------------------------------------------------------------------------
-ConfigManager::ConfigManager() :
-    logLoader(new CachedLogLoader),
-    diskCache(new DiskFragmentCache)
+class kdi::tablet::DiskFragmentCache
+    : private boost::noncopyable
 {
-}
+    typedef std::map<std::string, FragmentWeakPtr> map_t;
 
-FragmentPtr ConfigManager::openFragment(std::string const & uri)
-{
-    log("ConfigManager: openFragment %s", uri);
+    map_t fragmentMap;
+    size_t nextPurgeSize;
+    boost::mutex mutex;
 
-    std::string scheme = uriTopScheme(uri);
-    if(scheme == "disk")
-    {
-        // Disk table: open from cache and return
-        return diskCache->getDiskFragment(uri);
-    }
-    else if(scheme == "sharedlog")
-    {
-        // Log table: serialize to a disk table and return that.
-        std::string diskUri = logLoader->getDiskUri(uri, this);
-        return openFragment(diskUri);
-    }
+public:
+    DiskFragmentCache();
+    FragmentPtr getDiskFragment(std::string const & uri);
 
-    // Unknown scheme
-    raise<RuntimeError>("unknown fragment scheme %s: %s", scheme, uri);
-}
+private:
+    void purgeStaleEntries();
+};
+
+#endif // KDI_TABLET_DISKFRAGMENTCACHE_H

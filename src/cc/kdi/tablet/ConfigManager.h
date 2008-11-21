@@ -35,6 +35,7 @@ namespace tablet {
     // Forward declarations
     class TabletConfig;
     class CachedLogLoader;
+    class DiskFragmentCache;
 
 } // namespace tablet
 } // namespace kdi
@@ -46,6 +47,7 @@ namespace tablet {
 class kdi::tablet::ConfigManager
 {
     boost::shared_ptr<CachedLogLoader> logLoader;
+    boost::shared_ptr<DiskFragmentCache> diskCache;
 
 public:
     ConfigManager();
