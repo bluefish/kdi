@@ -1,0 +1,75 @@
+#----------------------------------------------------------------------------
+# Migration
+#----------------------------------------------------------------------------
+
+We want to move a tablet from one server to another.  This may involve
+copying a significant amount of data.  We'd like the tablet to have
+minimal downtime during the migration.  At some point clients will
+need to switch over to the new server.
+
+Option 1:
+
+   (Requires that source server be running)
+
+   Master:
+     Server1->migrateTablet(Server2)
+
+   Server1:
+     t = chooseTabletToOffload()   # cannot be compacting
+     t.disableCompactions()
+     loader = Server2->uploadTablet(t.name())
+
+     nextFile = 0
+     while nextFile < t.numFiles():
+        localFile = t.getFile(nextFile)
+        loader.uploadFile(localFile)
+        nextFile += 1
+
+     t.disableMutations()  # what do mutations do now?  fail or block?
+     flushMutableTables()
+
+     while nextFile < t.numFiles():
+        localFile = t.getFile(nextFile)
+        loader.uploadFile(localFile)
+        nextFile += 1
+
+     t.stopServing()           # all requests for this file now fail
+     uploader.startServing()   # new server has the data and updates the meta table
+
+
+   Server2::uploadTablet(name):
+     t = makeOfflineTablet(name)
+     return loader(t)
+
+   Server2::loader::uploadFile(file):
+     tablet.receiveTempFile(...)
+     addTempFileToTablet()
+
+   Server2::loader::startServing():
+     tablet.renameTempFilesToPermanentFiles()
+     addTabletToServer(tablet)
+
+
+Option 2:
+
+   Master:
+      t = Server1->chooseTabletToOffload()  # returned tablet should have compactions disabled?
+      Server2->preloadTablet(t)
+      Server1->stopServing(t)
+      Server2->startServing(t)
+
+
+
+
+Option 1 is probably more efficient, with less client down-time in the
+worst case.  Option 2 probably has more code reuse.  We'll need a way
+to explicitly load tablets anyway when a server comes online.
+
+It would be nice to have migration be stateless.  Disabling
+compactions is a bit worrisome.  Suppose something breaks during the
+migration (like the target server dies), and the migration doesn't
+complete.  Then we'd need to remember to reenable compactions.  Not
+such a big deal, but it's always nice to be stateless if we can.
+
+Another issue is how to make sure the data in the old server's mutable
+buffer makes it to the new server.

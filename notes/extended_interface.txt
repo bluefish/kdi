@@ -1,0 +1,25 @@
+#----------------------------------------------------------------------------
+# More interfaces
+#----------------------------------------------------------------------------
+
+  Basic Table:
+      void set(string row, string column, int64_t time, string value);
+      void erase(string row, string column, int64_t time);
+      CellStreamPtr scan();
+      void sync();
+
+  Extended Table:
+      void put(Cell x);
+      void erase(ScanPredicate p);
+      CellStreamPtr scan(ScanPredicate p);
+
+
+
+  Basic Index:
+
+
+
+  index.query(userQuery, maxResults, resultOffset, rankByFunction, functionParameters)
+    ==>  result count: (beginIdx, endIdx, maxIdx)
+    ==>  for each result in descending rankScore order:
+           row, rankScore, optionalData?

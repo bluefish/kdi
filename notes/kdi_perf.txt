@@ -1,0 +1,46 @@
+#----------------------------------------------------------------------------
+# Performance numbers
+#----------------------------------------------------------------------------
+
+2007-12-14
+
+Local table:
+
+   [josh@dev107 meh3]$ LD_PRELOAD=libkdi_local.so ~/cosmix.main/build/cc/release/kdi/performance_test local://dev107:10000/home/josh/tmp/local1 -n10m
+   Generating test set
+   Writing to local://dev107:10000/home/josh/tmp/local1: 10485760 cells in 46.4105s (225935.313 cells/s)
+   Scanning from local://dev107:10000/home/josh/tmp/local1: 10485760 cells in 9.75815s (1074564.889 cells/s)
+   [josh@dev107 meh3]$ LD_PRELOAD=libkdi_local.so ~/cosmix.main/build/cc/release/kdi/performance_test local://dev107:10000/home/josh/tmp/local1 -n10m
+   Generating test set
+   Writing to local://dev107:10000/home/josh/tmp/local1: 10485760 cells in 51.3027s (204390.154 cells/s)
+   Scanning from local://dev107:10000/home/josh/tmp/local1: 20971520 cells in 21.4149s (979295.998 cells/s)
+   [josh@dev107 meh3]$ LD_PRELOAD=libkdi_local.so ~/cosmix.main/build/cc/release/kdi/performance_test local://dev107:10000/home/josh/tmp/local1 -n10m
+   Generating test set
+   Writing to local://dev107:10000/home/josh/tmp/local1: 10485760 cells in 50.3808s (208130.094 cells/s)
+   Scanning from local://dev107:10000/home/josh/tmp/local1: 31457280 cells in 36.2876s (866888.364 cells/s)
+
+ICE table: (pre-populated with 600k cells)
+
+   [josh@dev107 meh3]$ LD_PRELOAD=libkdi_net.so ~/cosmix.main/build/cc/release/kdi/performance_test kdi://dev107:10000/home/josh/tmp/net1 -n10k
+   Generating test set
+   Writing to kdi://dev107:10000/home/josh/tmp/net1: 10240 cells in 0.555968s (18418.326 cells/s)
+   Scanning from kdi://dev107:10000/home/josh/tmp/net1: 624640 cells in 33.0976s (18872.668 cells/s)
+
+ICE bulk table: (pre-populated with 500k cells)
+
+   [josh@dev107 tmp]$ LD_PRELOAD=libkdi_net.so ~/cosmix.main/build/cc/release/kdi/performance_test kdi://dev107:10000/home/josh/tmp/net1 -n500k
+   Generating test set
+   Writing to kdi://dev107:10000/home/josh/tmp/net1: 512000 cells in 2.22408s (230207.132 cells/s)
+   Scanning from kdi://dev107:10000/home/josh/tmp/net1: 1024000 cells in 2.03635s (502860.263 cells/s)
+   [josh@dev107 tmp]$ LD_PRELOAD=libkdi_net.so ~/cosmix.main/build/cc/release/kdi/performance_test kdi://dev107:10000/home/josh/tmp/net1 -n1m
+   Generating test set
+   Writing to kdi://dev107:10000/home/josh/tmp/net1: 1048576 cells in 4.78383s (219191.781 cells/s)
+   Scanning from kdi://dev107:10000/home/josh/tmp/net1: 2072576 cells in 4.3844s (472716.424 cells/s)
+   [josh@dev107 tmp]$ LD_PRELOAD=libkdi_net.so ~/cosmix.main/build/cc/release/kdi/performance_test kdi://dev107:10000/home/josh/tmp/net1 -n1m
+   Generating test set
+   Writing to kdi://dev107:10000/home/josh/tmp/net1: 1048576 cells in 4.97643s (210708.395 cells/s)
+   Scanning from kdi://dev107:10000/home/josh/tmp/net1: 3121152 cells in 7.30811s (427080.775 cells/s)
+   [josh@dev107 tmp]$ LD_PRELOAD=libkdi_net.so ~/cosmix.main/build/cc/release/kdi/performance_test kdi://dev107:10000/home/josh/tmp/net1 -n1m
+   Generating test set
+   Writing to kdi://dev107:10000/home/josh/tmp/net1: 1048576 cells in 5.00758s (209397.962 cells/s)
+   Scanning from kdi://dev107:10000/home/josh/tmp/net1: 4169728 cells in 10.3678s (402180.559 cells/s)

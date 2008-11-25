@@ -1,0 +1,78 @@
+#----------------------------------------------------------------------------
+# Resuming scans
+#----------------------------------------------------------------------------
+
+ResumableScan (stolen from kdi/tablet/Scanner)
+
+    bool get(Cell & x)
+    {
+        // Are we in catchUp mode?  This happens after reopening the
+        // cell stream.
+        if(catchUp)
+        {
+            // Catch up mode.  Keep reading cells until we find one
+            // after the last cell we returned.  Return that one.
+            catchUp = false;
+            while(cells->get(x))
+            {
+                if(lastCell < x)
+                {
+                    // Found the next cell.  Remember it and return.
+                    lastCell = x;
+                    return true;
+                }
+            }
+
+            // There were no cells after our last cell.  This is the
+            // end of the stream.
+            return false;
+        }
+        // Normal mode
+        else if(cells->get(x))
+        {
+            // Remember and return the next cell
+            lastCell = x;
+            return true;
+        }
+        else
+        {
+            // No more cells: end of stream
+            return false;
+        }
+    }
+
+    void reopen()
+    {
+        // Clip our scan predicate to last seen cell
+        ScanPredicate p;
+        if(lastCell)
+        {
+            // We've already returned some cells.  We'll need to clip
+            // to predicate and then play catchup on the next get()
+            // call.
+            p = pred.clipRows(makeLowerBound(str(lastCell.getRow())));
+            catchUp = true;
+        }
+        else
+        {
+            // We haven't started yet -- just use normal predicate
+            p = pred;
+        }
+
+        // Reopen cell stream
+        cells = table->scan(p);
+    }
+
+Does this work with history predicates?  In general, no.  We can do a
+fair approximation by clipping history=+N queries to return no more
+than N.  In certain cases, we'll return less than N when there are
+actually more, but so it goes.  For the -N case, just let anything go.
+We can still wind up with weirdness where we return some, skip a few,
+then return more, but clients with -N predicates have to expect any
+number of results anyway.  +N clients may have code that depends on
+having no more than N results per key.
+
+If clients really care about accurate history scanning, we need to
+restrict the scanner to work in key-at-once mode.  Maybe this mode
+will fall out as a generalization of transactional scanners, whenever
+that happens, since they have to operate in row-at-once mode.

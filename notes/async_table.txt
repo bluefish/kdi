@@ -1,0 +1,157 @@
+#----------------------------------------------------------------------------
+# Asynchronous table strategy
+#----------------------------------------------------------------------------
+
+Provide a wrapper:
+
+
+MutationBuffer:
+   vector<Cell> cells;
+
+   MutationBuffer(sz) : cells(sz)
+
+   full():
+      return cells.size() == cells.capacity()
+
+   set(...):
+      cells.push_back(makeCell(...));
+
+   erase(...):
+      cells.push_back(makeErasureCell(...));
+
+
+
+ScanBuffer:
+   queue<Cell> cells;
+
+   empty():
+      return cells.empty();
+
+   get():
+      Cell x = cells.front();
+      cells.pop_front();
+      return x;
+
+
+WorkerTask:
+   execute():
+      pass
+
+MutationTask: WorkerTask
+   MutationBuffer buffer;
+   TablePtr table;
+
+   execute():
+      for cell in buffer:
+         table->applyMutation(cell);
+
+ScanTask: WorkerTask
+   ScanBuffer buffer;
+   CellStreamPtr scan;
+
+   execute():
+      Cell x;
+      while(true):
+         if(buffer.full()):
+            buffer.endOfScan = false;
+            break;
+         if(!scan->get(x)):
+            buffer.endOfScan = true;
+            break;
+         buffer.put(x);
+
+workerLoop():
+   while(true):
+      WorkerTask task;
+      if(!workerQueue.get(task))
+         break;
+      task.execute();
+
+
+
+NonBlockingTable:
+
+   setNonBlocking(...):
+      if(buffer.full() && !submit())
+         return WOULD_BLOCK;
+
+      buffer.set(...);
+
+      // optional
+      if(buffer.full())
+         submit();
+
+      return OK;
+
+   eraseNonBlocking(...):
+      if(buffer.full() && !submit())
+         return WOULD_BLOCK;
+
+      buffer.erase(...);
+
+      // optional
+      if(buffer.full())
+         submit();
+
+      return OK;
+
+   scanNonBlocking(...):
+      return NonBlockingScanner(...);
+
+
+
+ScanBuffer:
+   vector<Cell> cells;
+   bool isEndOfStream;
+
+   init(sz):
+      cells(sz)
+
+   push(Cell x):
+      cells.
+
+NonBlockingScanner:
+
+   // worker members
+   CellStreamPtr scan;
+
+   // client members
+   WorkerPoolPtr workerPool;
+   ScanBufferPtr currentBuffer;
+
+   // shared members
+   SyncQueue<ScanBufferPtr> readyQueue;
+
+
+
+   SyncQueue<BufferPtr> readyQueue;
+   SyncQueue<
+   Buffer buffer;
+   bool eos;
+
+
+   fetch():
+      while(true):
+         if(eos):
+            return END_OF_STREAM;
+
+         if(!scanQueue.get(buffer, false))
+            return WOULD_BLOCK;
+
+         eos = buffer.isTerminal();
+         if(!buffer.empty()):
+            return OK
+
+   getNonBlocking(Cell & x):
+      if(buffer.empty()):
+         Status s = fetch();
+         if(s != OK):
+            return s;
+
+      buffer.get(x);
+
+      // optional
+      if(buffer.empty())
+         fetch();
+
+      return OK;

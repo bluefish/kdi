@@ -1,0 +1,96 @@
+#----------------------------------------------------------------------------
+# Multi-threading strategy
+#----------------------------------------------------------------------------
+
+Write most Table implementations assuming single-threaded execution.
+Provide a generic SynchronizedTable for concurrency handling.  Also,
+make a BufferedTable so that multiple operations can be batched to
+avoid excessive locking.  Note that BufferedTable and BufferedScanner
+are NOT thread-safe!  However, multiple Buffered wrappers may be used
+with a single SynchronizedTable in a thread-safe manner.
+
+
+SynchronizedScanner:
+   TablePtr table;
+   mutex & tMutex;
+   CellStreamPtr scan;
+
+   get(Cell x):
+      lock(mutex);
+      return scan->get(x);
+
+
+SynchronizedTable:
+   friend BufferedTable;
+   friend BufferedScanner;
+
+   TablePtr table;
+   mutex tMutex;
+
+   set(...):
+      lock(tMutex);
+      table->set(...);
+
+   erase(...):
+      lock(tMutex);
+      table->erase(...);
+
+   scan(...):
+      lock(tMutex);
+      return LockedScanner(shared_from_this(), tMutex, table->scan(...))
+
+   sync():
+      # Errors are not segregated by originating thread
+      lock(tMutex);
+      table->sync();
+
+
+BufferedScanner:
+   SynchronizedTablePtr table;
+   CellStreamPtr scan;
+   queue<Cell> buffer;
+
+   fillBuffer():
+      lock(table->tMutex);
+      Cell x;
+      while(!buffer.full() && scan->get(x)):
+         buffer.push(x);
+      return !buffer.empty();
+
+   get(Cell x):
+      if(buffer.empty() && !fillBuffer())
+         return false;
+      x = buffer.pop();
+      return true;
+
+
+BufferedTable:
+   SynchronizedTablePtr table;
+   queue<Cell> buffer;
+
+   flush():
+      lock(table->tMutex);
+      while(!buffer.empty())
+         Cell x = buffer.pop();
+         if(x.isErasure())
+            table->table->erase(...);
+         else
+            table->table->set(...);
+
+   set(...):
+      buffer.put(...);
+      if(buffer.full())
+          flush();
+
+   erase(...):
+      buffer.put(...);
+      if(buffer.full())
+          flush();
+
+   scan(...):
+      lock(table->tMutex);
+      return BufferedScanner(table, table->table->scan(...));
+
+   sync():
+      flush();
+      table->sync();

@@ -71,7 +71,7 @@ TabletServer:
 
 
    LOCAL main():
-       
+
        LockServer lockServer(serviceName);
        LockHandle serverLock = lockServer->open(
           "/kdi/servers/"+myaddr,
@@ -86,13 +86,13 @@ TabletServer:
 
 
    RPC serveTablet(tabletName):      # tabletName == metaTableRow == (tableName, lastRow)
- 
+
        LockHandle tabletLock = lockServer->open(
           "
-      
+
 
 TabletMaster:
 
    LOCAL main():
-   
+
        LockHandle masterLock = lockServer->open("/kdi/master")

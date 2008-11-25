@@ -1,0 +1,57 @@
+LockServer:
+
+  Keep a map of named locks/values in memory.
+
+  MetaData:
+    int64_t instanceNumber;
+    int64_t lockGeneration;
+    int64_t aclGeneration;
+
+    // For files
+    int64_t contentGeneration;
+    int64_t contentChecksum;
+
+  OpenInfo:
+    string name;
+    int mode;
+    int events;
+
+  ClientHandle:
+    OpenInfo openInfo;
+    int64_t masterGeneration;
+    char checkData[CHECK_SZ]; // HMAC of identity, provided by master
+        // -- master should generate a secret key, then use that to
+        // supply check data in authenticated handles.  Masters should
+        // verify check data on operations.  After fail-over, the new
+        // master must re-authenticate.  Not really sure how the whole
+        // authentication thing works.  Have to check RPC/ICE docs.
+
+    static ClientHandle open(uri, eventMask, mode);
+    void close();
+
+    // File-like nodes
+    void setContents(strref_t data, int64_t casGeneration=-1);
+    void getContents(vector<char> & data);
+    void getContentsAndStat(vector<char> & data, MetaData & stat);
+
+    // Dir-like nodes
+    void readDirectory(vector< pair<string,MetaData> > & children);
+
+    // All nodes
+    void getStat(MetaData & stat);
+    void delete();
+
+
+    // Wrap these in RAII helper
+    enum LockType { EXCLUSIVE, SHARED };
+    void lock(lockType);
+    bool tryLock(lockType);
+    void unlock();
+    void getSequencer(vector<char> & seq); // must be locked
+
+    // Sequencer helpers -- not sure how useful this stuff is.  I was
+    // thinking that the set sequencer would be from another handle
+    // somewhere else.
+
+    void setSequencer(strref_t seq); // how useful is this?  what if the handle depends on multiple sequencers?
+    bool checkSequencer(strref_t seq);

@@ -1,0 +1,27 @@
+#----------------------------------------------------------------------------
+# Error handling strategy
+#----------------------------------------------------------------------------
+
+Operations on Tables may fail immediately by throwing an exception, or
+fail much later somewhere in the system.  For performance reasons, we
+don't want to wait for each mutation to propagate all the way through
+the system before returning from the Table call.  Instead, we'll add a
+sync() method that will block until all mutations submitted so far
+propagate through the system.
+
+Table:
+   sync():
+      waitForMutations();
+      if(errors)
+          throw errors;
+
+Additionally, we'll add a special TableError type to contain the error
+information.  It is not the only exception that may be thrown, but
+when it is, it may contain enough information to allow for recovery,
+or at least an informative error report.  For example, if some cells
+mutations failed, the error may contain the specific cells that failed
+and why.
+
+This strategy allows applications to make their own
+performance/consistency trade-offs.  It is not entirely clear how the
+implementation of this strategy will play out yet.
