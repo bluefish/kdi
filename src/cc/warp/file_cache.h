@@ -43,8 +43,6 @@ class warp::FileCache
     : public boost::enable_shared_from_this<FileCache>,
       private boost::noncopyable
 {
-    enum { BLOCK_SIZE = 256 << 10 };
-
     class FilePool;
     class BlockCache;
     class Block;
