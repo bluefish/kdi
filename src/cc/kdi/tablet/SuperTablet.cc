@@ -225,8 +225,7 @@ void SuperTablet::sync()
     for(vector<TabletPtr>::const_iterator i = tablets.begin();
         i != tablets.end(); ++i)
     {
-        log("SuperTablet::sync(): %s", (*i)->getPrettyName());
-
+        //log("SuperTablet::sync(): %s", (*i)->getPrettyName());
         (*i)->sync();
     }
 }
