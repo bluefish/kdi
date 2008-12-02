@@ -29,6 +29,7 @@ using namespace kdi::net;
 using namespace warp;
 using namespace std;
 
+
 //----------------------------------------------------------------------------
 // TimeoutLocator
 //----------------------------------------------------------------------------
@@ -46,6 +47,13 @@ void TimeoutLocator::cleanup()
         if(!cur->second)
         {
             // Pointer is null, it's in mid creation
+            continue;
+        }
+
+        if(cur->second->isBroken())
+        {
+            // This object failed to load.  Keep it so we don't try to
+            // load again.
             continue;
         }
 
@@ -145,25 +153,27 @@ Ice::ObjectPtr TimeoutLocator::locate(Ice::Current const & cur,
             using namespace kdi::net::details;
             TableIPtr obj = new TableI(tbl, this);
             item.reset(new Item<TableI>(obj, 600));
+            log("Locator: created table %s", cur.id.name);
+        }
+        catch(std::exception const & ex) {
+            // Something broke -- make a placeholder broken item
+            log("Locator: failed to create %s: %s", cur.id.name, ex.what());
+            item.reset(new BrokenItem);
         }
         catch(...) {
-            // Something broke -- lock and clean up before bailing
-            log("Locator: creation failed: %s", cur.id.name);
-            lock.lock();
-            objMap.erase(it);
-            objectCreated.notify_all();
-            throw;
+            // Something broke -- make a placeholder broken item
+            log("Locator: failed to create %s: unknown exception", cur.id.name);
+            item.reset(new BrokenItem);
         }
 
         // Lock and update object map entry
         lock.lock();
-        log("Locator: created table: %s", cur.id.name);
         it->second = item;
 
         // Notify others that we're done
         objectCreated.notify_all();
 
-        // Return new object 
+        // Return new object (or null if the item is broken)
         ++(it->second->refCount);
         return it->second->getObject();
     }

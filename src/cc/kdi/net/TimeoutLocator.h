@@ -59,6 +59,7 @@ class kdi::net::TimeoutLocator
         virtual ~ItemBase() {}
         virtual Ice::ObjectPtr getObject() const = 0;
         virtual kdi::Timestamp getLastAccess() const = 0;
+        virtual bool isBroken() const = 0;
     };
     typedef boost::shared_ptr<ItemBase> ItemPtr;
 
@@ -73,6 +74,16 @@ class kdi::net::TimeoutLocator
         virtual kdi::Timestamp getLastAccess() const {
             return ptr->getLastAccess();
         }
+        virtual bool isBroken() const { return false; }
+    };
+
+    class BrokenItem : public ItemBase
+    {
+    public:
+        BrokenItem() : ItemBase(0) {}
+        virtual Ice::ObjectPtr getObject() const { return 0; }
+        virtual kdi::Timestamp getLastAccess() const { return kdi::Timestamp(); }
+        virtual bool isBroken() const { return true; }
     };
 
     typedef boost::mutex mutex_t;
