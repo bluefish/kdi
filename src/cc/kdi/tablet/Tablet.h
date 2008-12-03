@@ -35,6 +35,7 @@
 #include <vector>
 #include <list>
 #include <map>
+#include <set>
 
 namespace kdi {
 namespace tablet {
@@ -80,12 +81,13 @@ private:
     warp::Interval<std::string>  rows;
     fragments_t                  fragments;
     std::vector<std::string>     deadFiles;
-    TabletPtr                    clonedLogTablet;
     bool                         mutationsPending;
     bool                         configChanged;
     bool                         splitPending;
     bool                         isCompacting;
-    bool                         ignoreNextLogReplacement;
+
+    std::map<FragmentPtr, TabletPtr> clonedLogs;
+    std::set<FragmentPtr>            duplicatedLogs;
 
     mutable mutex_t mutex;
     mutable warp::Synchronized<scanner_vec_t> syncScanners;

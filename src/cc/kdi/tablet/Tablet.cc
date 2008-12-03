@@ -119,8 +119,7 @@ Tablet::Tablet(std::string const & tableName,
     mutationsPending(false),
     configChanged(false),
     splitPending(false),
-    isCompacting(false),
-    ignoreNextLogReplacement(false)
+    isCompacting(false)
 {
     log("Tablet %p %s: created", this, getPrettyName());
 
@@ -324,10 +323,14 @@ TabletPtr Tablet::splitTablet()
     lowTablet->postConfigChange(lock); // <-- weird, see comment above
 
     // Set cloned log chain if necessary
-    if(!fragments.back()->isImmutable())
-        clonedLogTablet = lowTablet;
-    else
-        assert(!clonedLogTablet);
+    for(fragments_t::const_reverse_iterator i = fragments.rbegin();
+        i != fragments.rend(); ++i)
+    {
+        if((*i)->isImmutable())
+            break;
+
+        clonedLogs[*i] = lowTablet;
+    }
 
     log("Tablet split complete: low=%s high=%s",
         lowTablet->getPrettyName(),
@@ -352,12 +355,11 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
     prettyName(makePrettyName(tableName, rows.getUpperBound())),
     rows(rows),
     fragments(o.fragments),
-    clonedLogTablet(o.clonedLogTablet),
     mutationsPending(false),
     configChanged(false),
     splitPending(false),
     isCompacting(false),
-    ignoreNextLogReplacement(false)
+    clonedLogs(o.clonedLogs)
 {
     // Add references to cloned fragment files
     for(fragments_t::const_iterator i = this->fragments.begin();
@@ -452,17 +454,29 @@ void Tablet::addFragment(FragmentPtr const & fragment)
         // Lock tables
         lock_t lock(mutex);
 
-        // Log hackery
-        if(!fragments.empty() && fragments.back() == fragment)
+        // Log hackery -- search to see if we already have a mutable
+        // log matching this one
+        for(fragments_t::const_reverse_iterator i = fragments.rbegin();
+            i != fragments.rend(); ++i)
         {
-            // Duplicate add.  We cloned this log, so expect two
-            // serialization notices.
-            ignoreNextLogReplacement = true;
-            lock.unlock();
-            
-            log("Tablet %s: detected cloned log %s", getPrettyName(),
-                fragment->getFragmentUri());
-            return;
+            if((*i)->isImmutable())
+            {
+                // No sense in searching further -- everything past
+                // here should be immutable.
+                break;
+            }
+
+            if(*i == fragment)
+            {
+                // Duplicate add.  We cloned this log, so expect two
+                // serialization notices.
+                duplicatedLogs.insert(fragment);
+                lock.unlock();
+                
+                log("Tablet %s: detected cloned log %s", getPrettyName(),
+                    fragment->getFragmentUri());
+                return;
+            }
         }
 
         // Add to table list
@@ -500,28 +514,32 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
     // Log hackery
     if(oldFragments.size() == 1 && !oldFragments[0]->isImmutable())
     {
-        // Lock clonedLogTablet and ignoreNextLogReplacement
+        // Lock clonedLogs and duplicatedLogs
         lock_t lock(mutex);
 
         // We're replacing the in-memory log table with a serialized
         // version.  We'll forward this update to anyone who has
         // cloned this fragment.
-        if(clonedLogTablet)
+        std::map<FragmentPtr, TabletPtr>::iterator i =
+            clonedLogs.find(oldFragments[0]);
+        if(i != clonedLogs.end())
         {
             log("Tablet %s: forwarding update to clone", getPrettyName());
-
-            clonedLogTablet->replaceFragments(oldFragments, newFragment);
-            clonedLogTablet.reset();
+            
+            i->second->replaceFragments(oldFragments, newFragment);
+            clonedLogs.erase(i);
         }
 
         // If we're in one of these clone forwarding chains, we may
         // get two of these messages.  If we're expecting two, ignore
         // the first one.
-        if(ignoreNextLogReplacement)
+        std::set<FragmentPtr>::iterator j =
+            duplicatedLogs.find(oldFragments[0]);
+        if(j != duplicatedLogs.end())
         {
             log("Tablet %s: ignoring clone update", getPrettyName());
 
-            ignoreNextLogReplacement = false;
+            duplicatedLogs.erase(j);
             return;
         }
     }
