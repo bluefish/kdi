@@ -57,6 +57,7 @@ class kdi::tablet::SuperTablet
 
     std::vector<TabletPtr> tablets;
     mutable std::vector<SuperScannerWeakPtr> scanners;
+    mutable mutex_t scannerMutex;
 
     bool mutationsBlocked;
     size_t mutationsPending;
@@ -92,14 +93,19 @@ public:
     /// the Table API threads or we'll get deadlocked.
     void performSplit(Tablet * tablet);
 
-    /// Get the Tablet containing the given row point
-    TabletPtr const & getTablet(warp::IntervalPoint<std::string> const & row) const;
+    /// Scan the first tablet matching the row predicate.  The scan on
+    /// the tablet will be clipped to the tablet's row range.  The
+    /// tablet row range will be storted in tabletRows, if non-null.
+    CellStreamPtr scanFirstTablet(ScanPredicate const & pred,
+                                  warp::Interval<std::string> * tabletRows) const;
 
+private:
     /// Get the Tablet containing the given row
     TabletPtr const & getTablet(strref_t row) const;
 
-private:
-    void updateScanners() const;
+    /// Call reopen() on all Scanners.  Expired scanners will be
+    /// filtered out of list as well.
+    void updateScanners();
 };
 
 

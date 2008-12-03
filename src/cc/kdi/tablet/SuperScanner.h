@@ -61,8 +61,14 @@ public:
     void reopen();
 
 private:
+    /// Clip remainingRows
     void setMinRow(warp::IntervalPoint<std::string> const & minRow);
+
+    /// Remove currentRows from remainingRows and try openScanner()
     bool openNextScanner();
+
+    /// Try to open scanner on the remainingRows
+    bool openScanner();
 };
 
 

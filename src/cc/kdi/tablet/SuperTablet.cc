@@ -72,6 +72,38 @@ namespace {
         }
     };
 
+    template <class It, class T>
+    TabletPtr const & getTabletInternal(It begin, It end, T const & row)
+    {
+        // Find tablet such that its upper bound contains the row
+        TabletLt tlt;
+        It i = std::lower_bound(begin, end, row, tlt);
+
+        // If the tablet lower bound also contains the row, we have a
+        // match
+        if(i != end && !tlt.lt(row, (*i)->getRows().getLowerBound()))
+            return *i;
+        else
+            raise<ValueError>("row not on this server: %s", row);
+    }
+
+    struct ReopenSuperScannerOrRemove
+    {
+        /// Reopen the scanner if the handle is still valid.  If not,
+        /// return true, as it should be removed from the list.
+        bool operator()(SuperScannerWeakPtr const & weakScanner) const
+        {
+            SuperScannerPtr scanner = weakScanner.lock();
+            if(scanner)
+            {
+                scanner->reopen();
+                return false;   // don't remove scanner
+            }
+            else
+                return true;    // remove expired scanner
+        }
+    };
+
 }
 
 //----------------------------------------------------------------------------
@@ -212,7 +244,7 @@ CellStreamPtr SuperTablet::scan(ScanPredicate const & pred) const
     }
 
     {
-        lock_t lock(mutex);
+        lock_t lock(scannerMutex);
         scanners.push_back(scanner);
     }
 
@@ -246,6 +278,14 @@ void SuperTablet::performSplit(Tablet * tablet)
     // Stop mutations for this duration of this call
     MutationLull lull(*this);
 
+    // We want to make sure access to tablet vector is safe.  There
+    // could be scanners trying to open through scanFirstTablet(), so
+    // we need to lock.  The call to splitTablet() will shrink the
+    // tablet's row range.  This will leave a gap until the new tablet
+    // is returned and put into the vector.  It's not safe to allow
+    // access in that time.
+    lock_t lock(mutex);
+
     // Split the tablet at the given row
     TabletPtr lowTablet = tablet->splitTablet();
     
@@ -258,63 +298,40 @@ void SuperTablet::performSplit(Tablet * tablet)
         tablets.begin(), tablets.end(), lowTablet, TabletLt());
     tablets.insert(it, lowTablet);
 
+    // Done with tablets
+    lock.unlock();
+
     // Reopen scanners
     updateScanners();
 }
 
-TabletPtr const & SuperTablet::getTablet(warp::IntervalPoint<std::string> const & row) const
+CellStreamPtr SuperTablet::scanFirstTablet(
+    ScanPredicate const & pred,
+    warp::Interval<std::string> * tabletRows) const
 {
-    // Find tablet such that its upper bound contains the row
-    TabletLt tlt;
-    vector<TabletPtr>::const_iterator i = std::lower_bound(
-        tablets.begin(), tablets.end(), row, tlt);
+    assert(pred.getRowPredicate() && !pred.getRowPredicate()->isEmpty());
 
-    // If the tablet lower bound also contains the row, we have a
-    // match
-    if(i != tablets.end() && !tlt.lt(row, (*i)->getRows().getLowerBound()))
-        return *i;
-    else
-        raise<ValueError>("row not on this server: %s", reprString(row.getValue()));
+    lock_t lock(mutex);
+
+    TabletPtr tablet = getTabletInternal(tablets.begin(), tablets.end(),
+                                         *pred.getRowPredicate()->begin());
+
+    Interval<string> rows = tablet->getRows();
+    if(tabletRows)
+        *tabletRows = rows;
+
+    return tablet->scan(pred.clipRows(rows));
 }
 
 TabletPtr const & SuperTablet::getTablet(strref_t row) const
 {
-    // Find tablet such that its upper bound contains the row
-    TabletLt tlt;
-    vector<TabletPtr>::const_iterator i = std::lower_bound(
-        tablets.begin(), tablets.end(), row, tlt);
-
-    // If the tablet lower bound also contains the row, we have a
-    // match
-    if(i != tablets.end() && !tlt.lt(row, (*i)->getRows().getLowerBound()))
-        return *i;
-    else
-        raise<ValueError>("row not on this server: %s", reprString(row));
-}
-
-namespace
-{
-    struct ReopenSuperScannerOrRemove
-    {
-        /// Reopen the scanner if the handle is still valid.  If not,
-        /// return true, as it should be removed from the list.
-        bool operator()(SuperScannerWeakPtr const & weakScanner) const
-        {
-            SuperScannerPtr scanner = weakScanner.lock();
-            if(scanner)
-            {
-                scanner->reopen();
-                return false;   // don't remove scanner
-            }
-            else
-                return true;    // remove expired scanner
-        }
-    };
-}
-
-void SuperTablet::updateScanners() const
-{
     lock_t lock(mutex);
+    return getTabletInternal(tablets.begin(), tablets.end(), row);
+}
+
+void SuperTablet::updateScanners()
+{
+    lock_t lock(scannerMutex);
 
     // Reopen all valid scanners, remove all null scanners.
     scanners.erase(

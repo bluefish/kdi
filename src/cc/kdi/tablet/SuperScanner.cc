@@ -60,14 +60,9 @@ bool SuperScanner::get(Cell & x)
                 );
         }
 
-        // Anything left?
-        if(remainingRows.isEmpty())
+        // Try to open
+        if(!openScanner())
             return false;
-
-        // Reopen scanner
-        TabletPtr tablet = superTablet->getTablet(*remainingRows.begin());
-        currentRows = tablet->getRows();
-        scanner = tablet->scan(pred.clipRows(currentRows));
 
         // Advance scan until it is past our last seen cell
         if(lastCell)
@@ -101,12 +96,8 @@ bool SuperScanner::get(Cell & x)
 
 void SuperScanner::reopen()
 {
-    boost::mutex::scoped_lock lock(mutex);
-
-    if(!scanner)
-        return;
-
     // Release scanner -- we'll reopen it on the next call to get()
+    boost::mutex::scoped_lock lock(mutex);
     scanner.reset();
 }
 
@@ -119,9 +110,6 @@ void SuperScanner::setMinRow(IntervalPoint<string> const & minRow)
             IntervalPoint<string>(string(), PT_INFINITE_UPPER_BOUND)
             )
         );
-
-    // Update scan predicate
-    pred.setRowPredicate(remainingRows);
 }
 
 bool SuperScanner::openNextScanner()
@@ -133,14 +121,19 @@ bool SuperScanner::openNextScanner()
     // Clip what what we've already scanned from what's left
     setMinRow(currentRows.getUpperBound().getAdjacentComplement());
 
+    // Try to open the scanner
+    return openScanner();
+}
+
+bool SuperScanner::openScanner()
+{
     // Anything left in the predicate?
     if(remainingRows.isEmpty())
         return false;
 
     // Get the next tablet
-    TabletPtr tablet = superTablet->getTablet(*remainingRows.begin());
-    currentRows = tablet->getRows();
-    scanner = tablet->scan(pred.clipRows(currentRows));
+    pred.setRowPredicate(remainingRows);
+    scanner = superTablet->scanFirstTablet(pred, &currentRows);
 
     return true;
 }
