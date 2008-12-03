@@ -329,12 +329,6 @@ TabletPtr Tablet::splitTablet()
     else
         assert(!clonedLogTablet);
 
-    // Post config changes for each tablet.  Queue the high first
-    // because it is somewhat less expensive to recover from a missing
-    // low tablet than a missing high tablet.
-    postConfigChange(lock);
-    lowTablet->postConfigChange(lock);
-
     log("Tablet split complete: low=%s high=%s",
         lowTablet->getPrettyName(),
         this->getPrettyName());
