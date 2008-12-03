@@ -801,7 +801,7 @@ std::string Tablet::chooseSplitRow(lock_t & lock) const
     return x.first;
 }
 
-void Tablet::updateScanners() const
+void Tablet::updateScanners()
 {
     LockedPtr<scanner_vec_t> scanners(syncScanners);
 

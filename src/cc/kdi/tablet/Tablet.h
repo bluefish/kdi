@@ -175,7 +175,7 @@ private:
 
     /// Call reopen() on all Scanners.  Expired scanners will be
     /// filtered out of list as well.
-    void updateScanners() const;
+    void updateScanners();
 
     /// Make sure row is in tablet range or raise a
     /// RowNotInTabletError
