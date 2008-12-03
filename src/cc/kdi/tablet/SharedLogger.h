@@ -52,9 +52,6 @@ class kdi::tablet::SharedLogger
     typedef boost::shared_ptr<TableGroup> TableGroupPtr;
     typedef boost::shared_ptr<TableGroup const> TableGroupCPtr;
 
-    class ErrorState;
-    typedef boost::shared_ptr<ErrorState> ErrorStatePtr;
-
     typedef boost::mutex mutex_t;
     typedef mutex_t::scoped_lock lock_t;
 
@@ -65,7 +62,6 @@ class kdi::tablet::SharedLogger
     LogWriterPtr logWriter;
     TableGroupPtr tableGroup;
     boost::thread_group threads;
-    ErrorStatePtr errorState;
 
     warp::SyncQueue<CommitBufferCPtr> commitQueue;
     warp::SyncQueue<TableGroupCPtr> serializeQueue;
@@ -102,9 +98,6 @@ private:
 
     /// Thread loop for serializing memory tables to disk tables.
     void serializeLoop();
-
-    /// This is called when something breaks that we can't handle.
-    void fail(char const * who, char const * what);
 };
 
 #endif // KDI_TABLET_SHAREDLOGGER_H

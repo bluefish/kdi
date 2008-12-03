@@ -21,6 +21,7 @@
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/Tablet.h>
 #include <warp/log.h>
+#include <warp/call_or_die.h>
 #include <boost/bind.hpp>
 #include <iostream>
 
@@ -37,9 +38,12 @@ SharedCompactor::SharedCompactor() :
 {
     thread.reset(
         new boost::thread(
-            boost::bind(
-                &SharedCompactor::compactLoop,
-                this
+            callOrDie(
+                boost::bind(
+                    &SharedCompactor::compactLoop,
+                    this
+                    ),
+                "Compact thread", true
                 )
             )
         );
@@ -143,22 +147,12 @@ void SharedCompactor::compactLoop()
 {
     // XXX what should we do when this thread crashes?
 
-    log("Compact thread starting");
+    // This is wrapped by callOrDir()
 
-    try {
-        for(TabletPtr tablet;
-            getTabletForCompaction(tablet);
-            tablet.reset())
-        {
-            tablet->doCompaction();
-        }
+    for(TabletPtr tablet;
+        getTabletForCompaction(tablet);
+        tablet.reset())
+    {
+        tablet->doCompaction();
     }
-    catch(std::exception const & ex) {
-        log("SharedCompactor error: %s", ex.what());
-    }
-    catch(...) {
-        log("SharedCompactor error: unknown exception");
-    }
-
-    log("Compact thread exiting");
 }

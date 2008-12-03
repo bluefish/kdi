@@ -29,6 +29,7 @@
 #include <warp/fs.h>
 #include <warp/file.h>
 #include <warp/uri.h>
+#include <warp/call_or_die.h>
 #include <warp/log.h>
 #include <ex/exception.h>
 #include <boost/bind.hpp>
@@ -310,30 +311,6 @@ public:
 
 
 //----------------------------------------------------------------------------
-// ErrorState
-//----------------------------------------------------------------------------
-class SharedLogger::ErrorState
-{
-public:
-    size_t nFailures;
-    ostringstream log;
-    mutable boost::mutex mutex;
-    
-    ErrorState() : nFailures(0) {}
-    
-    void raise() const
-    {
-        boost::mutex::scoped_lock sync(mutex);
-        
-        if(nFailures)
-            ex::raise<RuntimeError>("%s", log.str());
-        else
-            ex::raise<RuntimeError>("unknown error");
-    }
-};
-
-
-//----------------------------------------------------------------------------
 // SharedLogger
 //----------------------------------------------------------------------------
 SharedLogger::SharedLogger(ConfigManagerPtr const & configMgr,
@@ -342,14 +319,19 @@ SharedLogger::SharedLogger(ConfigManagerPtr const & configMgr,
     tracker(tracker),
     commitBuffer(new CommitBuffer),
     tableGroup(new TableGroup),
-    errorState(new ErrorState),
     commitQueue(4),
     serializeQueue(2)
 {
     threads.create_thread(
-        boost::bind(&SharedLogger::commitLoop, this));
+        callOrDie(
+            boost::bind(&SharedLogger::commitLoop, this),
+            "Commit thread", true)
+        );
     threads.create_thread(
-        boost::bind(&SharedLogger::serializeLoop, this));
+        callOrDie(
+            boost::bind(&SharedLogger::serializeLoop, this),
+            "Serialize thread", true)
+        );
 
     log("SharedLogger %p: created", this);
 }
@@ -396,16 +378,7 @@ void SharedLogger::sync()
 
     lock.unlock();
     if(!commitQueue.waitForCompletion())
-    {
-        lock.lock();
-
-        // If the wait return false, then something canceled the wait
-        // before all the work could be done.  This is likely because
-        // the Commit or Serialize thread hit an exception.  It's also
-        // possible that the SharedLogger got destroyed.  Throw an
-        // exception.
-        errorState->raise();
-    }
+        raise<RuntimeError>("wait on commit queue failed");
 }
 
 void SharedLogger::shutdown()
@@ -441,79 +414,69 @@ void SharedLogger::flush(lock_t & lock)
     // because the queue is full and waits have been canceled due to
     // an error.
     if(!commitQueue.push(commitBuffer))
-        errorState->raise();
+        raise<RuntimeError>("push to commit queue failed");
 
     // Make a new commit buffer.
     commitBuffer.reset(new CommitBuffer);
-
 }
 
 void SharedLogger::commitLoop()
 {
     // XXX not too happy with the error handling strategy
 
-    log("Commit thread starting");
+    // This call is wrapped by callOrDie().  If something breaks,
+    // we're going down.  (Hopefully.)
 
-    try {
-    
-        for(CommitBufferCPtr buffer;
-            commitQueue.pop(buffer);
-            buffer.reset())
+    for(CommitBufferCPtr buffer;
+        commitQueue.pop(buffer);
+        buffer.reset())
+    {
+        //log("Commit thread got work");
+
+        // Create a new log file if we need it
+        if(!logWriter)
         {
-            //log("Commit thread got work");
+            string fn = configMgr->getDataFile("LOGS");
+            log("Starting new log: %s", fn);
 
-            // Create a new log file if we need it
-            if(!logWriter)
-            {
-                string fn = configMgr->getDataFile("LOGS");
-                log("Starting new log: %s", fn);
+            // Track file for automatic deletion
+            tracker->track(fn);
 
-                // Track file for automatic deletion
-                tracker->track(fn);
-
-                // Create new log writer
-                logWriter.reset(new LogWriter(fn));
-                tableGroup->setLogUri(logWriter->getUri());
-            }
-
-            // Commit to log
-            buffer->writeLog(logWriter);
-        
-            // Commit to tables
-            buffer->replayToTables(tableGroup);
-
-            // Schedule the mutable tables for serialization if they're
-            // too big.
-            if(tableGroup->full())
-            {
-                log("Pushing table group for serialization");
-
-                // Push the group to the Serialize thread.  If this
-                // fails, it's because the queue is full and waits
-                // have been canceled due to an error.
-                if(!serializeQueue.push(tableGroup))
-                    errorState->raise();
-
-                // Make a new group
-                tableGroup.reset(new TableGroup);
-
-                // Clear the log -- we'll make a new one when we have
-                // some data to write
-                logWriter.reset();
-            }
-
-            // Notify queue that we're done with this work
-            commitQueue.taskComplete();
+            // Create new log writer
+            logWriter.reset(new LogWriter(fn));
+            tableGroup->setLogUri(logWriter->getUri());
         }
-    }
-    catch(std::exception const & ex) {
-        fail("commit", ex.what());
-    }
-    catch(...) {
-        fail("commit", "unknown exception");
-    }
 
-    log("Commit thread exiting");
+        // Commit to log
+        buffer->writeLog(logWriter);
+        
+        // Commit to tables
+        buffer->replayToTables(tableGroup);
+
+        // Schedule the mutable tables for serialization if they're
+        // too big.
+        if(tableGroup->full())
+        {
+            log("Pushing table group for serialization");
+
+            // Push the group to the Serialize thread.  If this
+            // fails, it's because the queue is full and waits
+            // have been canceled due to an error.  However, the
+            // program should terminate before we hit this.
+            if(!serializeQueue.push(tableGroup))
+                raise<RuntimeError>("push to serialize queue failed");
+
+            // Make a new group
+            tableGroup.reset(new TableGroup);
+
+            // Clear the log -- we'll make a new one when we have
+            // some data to write
+            logWriter.reset();
+        }
+
+        // Notify queue that we're done with this work
+        commitQueue.taskComplete();
+    }
 }
 
 void SharedLogger::serializeLoop()
@@ -527,37 +490,13 @@ void SharedLogger::serializeLoop()
     // eventually clients will start backing up and getting timeout
     // errors.
 
-    log("Serialize thread starting");
+    // This call is wrapped by callOrDie().  If something breaks,
+    // we're going down.  (Hopefully.)
 
-    try {
-        for(TableGroupCPtr group;
-            serializeQueue.pop(group);
-            group.reset())
-        {
-            group->serialize(configMgr, tracker);
-        }
+    for(TableGroupCPtr group;
+        serializeQueue.pop(group);
+        group.reset())
+    {
+        group->serialize(configMgr, tracker);
     }
-    catch(std::exception const & ex) {
-        fail("Serialize", ex.what());
-    }
-    catch(...) {
-        fail("Serialize", "unknown exception");
-    }
-
-    log("Serialize thread exiting");
-}
-
-void SharedLogger::fail(char const * who, char const * what)
-{
-    log("%s thread error: %s", who, what);
-
-    boost::mutex::scoped_lock sync(errorState->mutex);
-
-    if(++errorState->nFailures > 1)
-        errorState->log << endl;
-    errorState->log << "SharedLogger " << who << " thread failed: "
-                    << what;
-
-    serializeQueue.cancelWaits();
-    commitQueue.cancelWaits();
 }

@@ -20,6 +20,7 @@
 
 #include <kdi/tablet/WorkQueue.h>
 #include <warp/log.h>
+#include <warp/call_or_die.h>
 #include <ex/exception.h>
 #include <boost/bind.hpp>
 
@@ -35,7 +36,10 @@ WorkQueue::WorkQueue(size_t nThreads)
     for(size_t i = 0; i < nThreads; ++i)
     {
         threads.create_thread(
-            boost::bind(&WorkQueue::workLoop, this)
+            callOrDie(
+                boost::bind(&WorkQueue::workLoop, this),
+                "Work thread", true
+                )
             );
     }
 
@@ -64,22 +68,12 @@ void WorkQueue::shutdown()
 
 void WorkQueue::workLoop()
 {
-    log("Work thread starting");
-    try {
-        job_t job;
-        while(jobs.pop(job))
-        {
-            //log("WorkQueue pop");
-            job();
-        }
+    // Wrapped by callOrDie
+
+    job_t job;
+    while(jobs.pop(job))
+    {
+        //log("WorkQueue pop");
+        job();
     }
-    catch(std::exception const & ex) {
-        log("WorkQueue error: %s", ex.what());
-        ::exit(1);
-    }
-    catch(...) {
-        log("WorkQueue error: unknown exception");
-        ::exit(1);
-    }
-    log("Work thread exiting");
 }
