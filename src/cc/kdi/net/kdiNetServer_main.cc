@@ -116,8 +116,8 @@ namespace {
         ~SuperTabletMaker()
         {
             compactor->shutdown();
-            logger->shutdown();
             workQueue->shutdown();
+            logger->shutdown();
 
             log("SuperTabletMaker %p: destroyed", this);
         }
