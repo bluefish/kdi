@@ -34,47 +34,78 @@ using namespace std;
 //----------------------------------------------------------------------------
 Scanner::Scanner(TabletCPtr const & tablet, ScanPredicate const & pred) :
     tablet(tablet),
-    pred(pred),
-    catchUp(false)
+    pred(pred)
 {
-    log("Scanner %p: created", this);
+    //log("Scanner %p: created", this);
 
     EX_CHECK_NULL(tablet);
     if(pred.getMaxHistory())
         raise<ValueError>("unsupported history predicate: %s", pred);
-
-    // Open the scan
-    reopen();
 }
 
 Scanner::~Scanner()
 {
-    log("Scanner %p: destroyed", this);
+    //log("Scanner %p: destroyed", this);
+}
+
+bool Scanner::get(Cell & x)
+{
+    // Synchronize with reopen() thread
+    lock_t sync(mutex);
+
+    // Check to see if we need to open the scanner
+    if(!cells)
+    {
+        log("Scanner: reopening scan on table %s: %s", tablet->getPrettyName(), pred);
+
+        // If we have a last cell, we need to clip our scan predicate
+        // to last row, then fast forward the scan to the last cell.
+        if(lastCell)
+        {
+            // Reopen the scan using a clipped predicate.
+            cells = tablet->getMergedScan(
+                pred.clipRows(
+                    makeLowerBound(lastCell.getRow().toString())));
+
+            // Fast forward the scan.  Keep reading cells until we
+            // find one after the last cell we returned.  Return that
+            // one.
+            while(cells->get(x))
+            {
+                if(lastCell < x)
+                {
+                    // Found a cell after the last cell.  Remember it
+                    // and return.
+                    lastCell = x;
+                    return true;
+                }
+            }
+
+            // There were no cells after our last cell.  This is the
+            // end of the stream.
+            return false;
+        }
+
+        // Otherwise we haven't returned any cells yet.  Use normal
+        // predicate and open the scan.
+        cells = tablet->getMergedScan(pred);
+    }
+
+    // Continue with normal scan
+    if(!cells->get(x))
+    {
+        // No more cells: end of stream
+        return false;
+    }
+
+    // Remember last cell so we can reopen if necessary
+    lastCell = x;
+    return true;
 }
 
 void Scanner::reopen()
 {
-    log("Scanner: reopening scan on table %s: %s", tablet->getPrettyName(), pred);
-
-    // Synchronize with get() thread
+    // Release scanner -- we'll reopen it on the next call to get()
     lock_t sync(mutex);
-
-    // Clip our scan predicate to last seen cell
-    ScanPredicate p;
-    if(lastCell)
-    {
-        // We've already returned some cells.  We'll need to clip
-        // to predicate and then play catchup on the next get()
-        // call.
-        p = pred.clipRows(makeLowerBound(str(lastCell.getRow())));
-        catchUp = true;
-    }
-    else
-    {
-        // We haven't started yet -- just use normal predicate
-        p = pred;
-    }
-
-    // Reopen cell stream
-    cells = tablet->getMergedScan(p);
+    cells.reset();
 }

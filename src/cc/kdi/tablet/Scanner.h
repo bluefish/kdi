@@ -46,7 +46,6 @@ class kdi::tablet::Scanner
     
     CellStreamPtr cells;
     Cell lastCell;
-    bool catchUp;
 
     // We need locking to coordinate the get() thread and the reopen()
     // thread.  It would be nice if the get() function didn't need to
@@ -59,45 +58,7 @@ public:
     Scanner(TabletCPtr const & tablet, ScanPredicate const & pred);
     ~Scanner();
 
-    bool get(Cell & x)
-    {
-        // Synchronize with reopen() thread
-        lock_t sync(mutex);
-
-        // Are we in catchUp mode?  This happens after reopening the
-        // cell stream.
-        if(catchUp)
-        {
-            // Catch up mode.  Keep reading cells until we find one
-            // after the last cell we returned.  Return that one.
-            catchUp = false;
-            while(cells->get(x))
-            {
-                if(lastCell < x)
-                {
-                    // Found the next cell.  Remember it and return.
-                    lastCell = x;
-                    return true;
-                }
-            }
-
-            // There were no cells after our last cell.  This is the
-            // end of the stream.
-            return false;
-        }
-        // Normal mode
-        else if(cells->get(x))
-        {
-            // Remember and return the next cell
-            lastCell = x;
-            return true;
-        }
-        else
-        {
-            // No more cells: end of stream
-            return false;
-        }
-    }
+    bool get(Cell & x);
 
     /// Reopen the scan from our Tablet.  This can be called when the
     /// Tablet's table set has changed.  The scan will resume after
