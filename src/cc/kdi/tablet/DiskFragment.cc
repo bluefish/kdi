@@ -34,7 +34,6 @@ DiskFragment::DiskFragment(std::string const & uri) :
 {
 }
 
-
 CellStreamPtr DiskFragment::scan(ScanPredicate const & pred) const
 {
     return table.scan(pred);
@@ -48,6 +47,11 @@ bool DiskFragment::isImmutable() const
 std::string DiskFragment::getFragmentUri() const
 {
     return uri;
+}
+
+std::string DiskFragment::getDiskUri() const
+{
+    return uriPopScheme(uri);
 }
 
 size_t DiskFragment::getDiskSize(warp::Interval<std::string> const & rows) const

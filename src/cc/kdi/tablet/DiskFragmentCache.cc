@@ -21,6 +21,7 @@
 #include <kdi/tablet/DiskFragmentCache.h>
 #include <kdi/tablet/DiskFragment.h>
 #include <warp/log.h>
+#include <warp/uri.h>
 #include <algorithm>
 
 using namespace kdi::tablet;
@@ -59,6 +60,11 @@ namespace
         std::string getFragmentUri() const
         {
             return uri;
+        }
+
+        std::string getDiskUri() const
+        {
+            return uriPopScheme(uri);
         }
 
         size_t getDiskSize(warp::Interval<std::string> const & rows) const

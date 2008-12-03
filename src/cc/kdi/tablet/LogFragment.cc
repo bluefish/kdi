@@ -21,9 +21,11 @@
 #include <kdi/tablet/LogFragment.h>
 #include <kdi/memory_table.h>
 #include <kdi/synchronized_table.h>
+#include <warp/uri.h>
 
 using namespace kdi;
 using namespace kdi::tablet;
+using namespace warp;
 
 namespace
 {
@@ -61,6 +63,13 @@ bool LogFragment::isImmutable() const
 std::string LogFragment::getFragmentUri() const
 {
     return uri;
+}
+
+std::string LogFragment::getDiskUri() const
+{
+    return uriEraseParameter(
+        uriPopScheme(uri),
+        "table");
 }
 
 size_t LogFragment::getDiskSize(warp::Interval<std::string> const & rows) const

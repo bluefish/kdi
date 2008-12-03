@@ -132,12 +132,13 @@ Tablet::Tablet(std::string const & tableName,
     // Load our fragments
     bool uriChanged = false;
     vector<string> const & uris = cfg.getTableUris();
+    log("Tablet %s: loading %d fragment(s)", getPrettyName(), uris.size());
     for(vector<string>::const_iterator i = uris.begin();
         i != uris.end(); ++i)
     {
         // Load the fragment from the config manager
         FragmentPtr frag = configMgr->openFragment(*i);
-        log("Tablet %s: load fragment %s", getPrettyName(), frag->getFragmentUri());
+        tracker->addReference(frag->getDiskUri());
         fragments.push_back(frag);
 
         // Check to see if the fragment URI changed on load.
@@ -160,14 +161,12 @@ Tablet::~Tablet()
     // Untrack files that we're still referencing -- once a Tablet is
     // destroyed, another process may load it.  We have to assume the
     // file names have been exported.
+    log("Tablet %s: untracking %d fragment(s)", getPrettyName(), fragments.size());
     for(fragments_t::const_iterator i = fragments.begin();
         i != fragments.end(); ++i)
     {
-        log("Tablet %s: untrack fragment %s", getPrettyName(), (*i)->getFragmentUri());
-        tracker->untrack(
-            uriPopScheme(
-                (*i)->getFragmentUri()));
-    }    
+        tracker->untrack((*i)->getDiskUri());
+    }
 
     log("Tablet %p %s: destroyed", this, getPrettyName());
 }
@@ -362,13 +361,11 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
     clonedLogs(o.clonedLogs)
 {
     // Add references to cloned fragment files
+    log("Tablet %s: cloning %d fragment(s)", getPrettyName(), this->fragments.size());
     for(fragments_t::const_iterator i = this->fragments.begin();
         i != this->fragments.end(); ++i)
     {
-        log("Tablet %s: clone fragment %s", getPrettyName(), (*i)->getFragmentUri());
-        tracker->addReference(
-            uriPopScheme(
-                (*i)->getFragmentUri()));
+        tracker->addReference((*i)->getDiskUri());
     }
 }
 
@@ -483,9 +480,7 @@ void Tablet::addFragment(FragmentPtr const & fragment)
         fragments.push_back(fragment);
 
         // Add a reference to the new file
-        tracker->addReference(
-            uriPopScheme(
-                fragment->getFragmentUri()));
+        tracker->addReference(fragment->getDiskUri());
 
         // Let's just say we want a compaction if we have more than 5
         // tables (or more than 4 static tables)
@@ -508,7 +503,7 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
         raise<ValueError>("replaceFragments with empty fragment sequence");
     EX_CHECK_NULL(newFragment);
 
-    log("Tablet %s: replace %d fragments with %s", getPrettyName(),
+    log("Tablet %s: replace %d fragment(s) with %s", getPrettyName(),
         oldFragments.size(), newFragment->getFragmentUri());
 
     // Log hackery
@@ -562,9 +557,7 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             fragments.erase(i + 1, i + oldFragments.size());
 
             // Add a reference to the new file
-            tracker->addReference(
-                uriPopScheme(
-                    newFragment->getFragmentUri()));
+            tracker->addReference(newFragment->getDiskUri());
         }
         else
         {
@@ -584,9 +577,7 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             i != oldFragments.end(); ++i)
         {
             log("Tablet %s: ... drop fragment %s", getPrettyName(), (*i)->getFragmentUri());
-            deadFiles.push_back(
-                uriPopScheme(
-                    (*i)->getFragmentUri()));
+            deadFiles.push_back((*i)->getDiskUri());
         }
 
         // Queue a config rewrite to save changes

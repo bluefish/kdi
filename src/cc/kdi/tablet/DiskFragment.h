@@ -49,6 +49,7 @@ public:
 
     virtual bool isImmutable() const;
     virtual std::string getFragmentUri() const;
+    virtual std::string getDiskUri() const;
     virtual size_t getDiskSize(warp::Interval<std::string> const & rows) const;
 
     virtual flux::Stream< std::pair<std::string, size_t> >::handle_t

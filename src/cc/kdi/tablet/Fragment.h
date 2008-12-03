@@ -57,6 +57,9 @@ public:
     /// ConfigManager.
     virtual std::string getFragmentUri() const = 0;
 
+    /// Get the URI of the file backing this Fragment.
+    virtual std::string getDiskUri() const = 0;
+
     /// Get the approximate disk space used by the cells in the given
     /// row range.
     virtual size_t getDiskSize(warp::Interval<std::string> const & rows) const = 0;
