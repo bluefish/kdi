@@ -74,7 +74,8 @@ namespace
     public:
         explicit MetaIntervalScanner(CellStreamPtr const & metaScan) :
             metaRows(metaScan),
-            lowerBound("", PT_INCLUSIVE_LOWER_BOUND)
+            lowerBound("", PT_INCLUSIVE_LOWER_BOUND),
+            returnedAtLeastOne(false)
         {
         }
 
