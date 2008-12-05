@@ -1,0 +1,213 @@
+#----------------------------------------------------------------------------
+# Come back to this...
+#----------------------------------------------------------------------------
+    // Questions:
+    //   - 
+
+    // How are compactions / splits / joins triggered?
+    //   - could register for events from FragmentGraph
+
+
+
+    // --- Fragment operations from Tablet.cc ---
+
+    // load fragments from config: Tablet()
+
+    // untrack fragments: ~Tablet()
+
+    // -- Move to Scanner
+    // build a merged scan: getMergedScan(pred)
+
+
+    // -- Move to ConfigWriter
+    // build a list of fragment URIs for config save: getFragmentUris()
+
+
+    // make clone forwarding chain: splitTablet() (should not be
+    //    necessary with fragment graph)
+
+    // clone all fragments and add references: Tablet(Tablet const &)
+    
+
+    // add a new fragment to merge list: addFragment()
+
+    // add up disk space used by tablet: getDiskSize()
+
+    // find a median split row: chooseSplitRow()
+
+    // --- Move to compactor
+    // choose a compaction sequence, make a new frag, replace: doCompaction()
+    // replace old fragments, dropping references: replaceFragments()
+    // count number of fragments: getCompactionPriority()
+
+
+
+    // Maybe need FragmentLoader:
+    //   virtual auto_ptr<Fragment> loadFragment(string const & uri) = 0;
+    //
+    // This interface means that caching will have to be done above
+    // the loader since it passes ownership.
+
+    // How should config changes be handled?
+    // Serialized tablet config contains:
+    //   - Tablet range information
+    //   - Per-tablet fragment lists  (serialized form of FragmentGraph)
+    //   - Server designation  (broken, should be separate column)
+    //
+    // Fragment graph:
+    //
+    //   Two classes of nodes:  Tablet (T) and Fragment (F)
+    //
+    //   Serialized, we have a list of Tablets, each with an ordered
+    //   list of Fragments:
+    //
+    //      T_i : [ F_x, F_y, F_z ]
+    //      T_j : [ F_w, F_z ]
+    //
+    //
+    //  Graph form:
+    //
+    //      T_i  -->  F_x  -->  F_y  --> F_z
+    //      T_j  -->  F_w  ---------------^
+    //
+    //  Alternatively: (allows Fragments to determine their Tablet set
+    //  quickly, could also be done with an index)
+    //
+    //      T_i -------v---------v--------v
+    //                F_x  -->  F_y  --> F_z
+    //                F_w  ---------------^
+    //      T_j -------^------------------^
+
+    // We seem to have a RangeMap, which owns all the Tablets and maps
+    // row ranges to the appropriate one, and we have a FragmentGraph,
+    // which owns all the Fragments tracks the relationships between
+    // them.
+    
+    // Many operations need only lock the FragmentGraph:
+    //   - compaction
+    //   - adding a log
+    //   - serializing/replacing a log
+
+    // Some need to lock both the RangeMap and the FragmentGraph:
+    //   - splitting
+    //   - writing configs
+    
+    // Where does scanning fit in?
+
+    // Starting a scan requires locking the RangeMap and FragmentGraph:
+    //   - get the approprate tablet
+    //   - start a merge on all fragments
+    
+    // Scanners operate one tablet at time.  They need to know when
+    // some tablet events happen:
+    //   - the fragment list changes (replacement or add, often ignore add)
+    //   - the tablet is involved in a split and the row range shrinks
+    //   - the tablet is involved in a join and is invalidated
+
+    // Expected TabletListeners: Scanner, ConfigWriter, TabletGc
+    // Expected Providers: Tablet, FragmentGraph?, RangeMap?
+    //   provider dispatch: buffer events when locks are held, release
+    //   locks, dispatch events?
+
+    class TabletEventDispatcher
+    {
+        typedef std::tr1::unordered_multimap<Tablet*, TabletListener*> mmap_t;
+
+        mmap_t listeners;
+        boost::thread::id dispatchId;
+        
+        boost::mutex mapMutex;
+        boost::mutex dispatchMutex;
+
+        vector<TabletListener*> getListeners(Tablet* tablet) const
+        {
+            vector<TabletListener*> r;
+
+            typedef mmap_t::const_iterator citer;
+            typedef std::pair<citer,citer> range_t;
+
+            {
+                boost::mutex::scoped_lock lock(mapMutex);
+                
+                range_t specific = listeners.equal_range(tablet);
+                range_t general = listeners.equal_range(0);
+                
+                r.insert(r.end(), specific.begin(), specific.end());
+                r.insert(r.end(), general.begin(), general.end());
+            }
+
+            std::sort(r.begin(), r.end());
+            r.erase(std::unique(r.begin(), r.end()), r.end());
+            
+            return r;
+        }
+
+    protected:
+        void dispatchFragmentListUpdate(
+            Tablet* tablet, size_t beginPos, size_t endPos) const
+        {
+            vector<TabletListener*> l = getListeners(tablet);
+            
+            boost::mutex::scoped_lock lock(dispatchMutex);
+            dispatchId = boost::this_thread::get_id();
+
+            for(vector<TabletListener*>::const_iterator i = l.begin();
+                i != l.end(); ++i)
+            {
+                // No throw guarantee
+                (*i)->onFragmentListUpdate(tablet, beginPos, endPos);
+            }
+
+            dispatchId = boost::thread::id();
+        }
+
+        void dispatchRowRangeUpdate(
+            Tablet* tablet, Interval<string> const & newRange) const
+        {
+            boost::mutex::scoped_lock lock(dispatchMutex);
+
+        }
+        
+    public:
+        /// Add a listener to notification list the given tablet.  If
+        /// tablet is null, listen for events on ALL tablets.  Each
+        /// call must be balanced by an equivalent call to
+        /// removeTabletListener().  This may be called from a
+        /// TabletListener callback, but it will not go into effect
+        /// until the current dispatch is done.
+        void addTabletListener(TabletListener* l, Tablet* tablet);
+
+
+        /// Remove a listener from the notification list for the given
+        /// tablet.  If tablet is null, remove the listener from
+        /// all-tablet notification list.  The listener must have been
+        /// added previously.  This may be called from a
+        /// TabletListener callback, but it will not go into effect
+        /// until the current dispatch is done.
+        void removeTabletListener(TabletListener* l, Tablet* tablet);
+    };
+
+
+    class TabletListener
+    {
+    public:
+        virtual ~TabletListener() {}
+
+        /// This event is triggered when the tablet has replaced
+        /// fragments in the range [beginPos,endPos) with a new
+        /// fragment.  For an insertion without replacement, the range
+        /// may be empty.
+        virtual void
+        onFragmentListUpdate(
+            Tablet * tablet, size_t beginPos, size_t endPos) throws() {}
+
+        /// This event is triggered when the tablet's row range has
+        /// changed due to a split or join event.  If the tablet has
+        /// been split, the new range will be smaller than the old
+        /// range (but not empty).  If the tablet has been joined,
+        /// either the new range will be larger than before, or the
+        /// new range will be empty.
+        virtual void
+        onRowRangeUpdate(
+            Tablet * tablet, Interval<string> const & newRange) throws() {}
+    };
