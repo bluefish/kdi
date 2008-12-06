@@ -113,6 +113,8 @@ public:
     void close();
 
     void put(Cell const & x);
+
+    size_t size() const;
 };
 
 //----------------------------------------------------------------------------
@@ -229,6 +231,11 @@ void DiskTableWriter::Impl::put(Cell const & x)
         writeCellBlock();
 }
 
+size_t DiskTableWriter::Impl::size() const
+{
+    return fp->tell() + block.getDataSize() + index.getDataSize();
+}
+
 
 //----------------------------------------------------------------------------
 // DiskTableWriter
@@ -268,4 +275,12 @@ void DiskTableWriter::put(Cell const & x)
         raise<RuntimeError>("put() to closed DiskTableWriter");
 
     impl->put(x);
+}
+
+size_t DiskTableWriter::size() const
+{
+    if(closed)
+        raise<RuntimeError>("size() to closed DiskTableWriter");
+
+    return impl->size();
 }

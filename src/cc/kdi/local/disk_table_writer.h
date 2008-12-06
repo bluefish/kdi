@@ -52,6 +52,10 @@ public:
     void close();
 
     void put(Cell const & x);
+
+    // Estimate of size of output were close() called without adding
+    // anything else.
+    size_t size() const;
 };
 
 #endif // KDI_LOCAL_DISK_TABLE_WRITER_H
