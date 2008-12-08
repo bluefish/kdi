@@ -211,3 +211,273 @@
         onRowRangeUpdate(
             Tablet * tablet, Interval<string> const & newRange) throws() {}
     };
+
+
+
+#----------------------------------------------------------------------------
+# Server RPC 
+#----------------------------------------------------------------------------
+
+TabletServer:
+
+    Table open(table)
+
+    ... load(table, rangeSpec)
+    ... drop(table, rangeSpec)
+
+
+Table:
+
+    apply(packedCells, commitMaxTxn, waitForSync, out commitTxn)
+    sync(syncAtLeastTxn, out syncTxn)
+
+    Scanner scan(pred)
+
+    ... stat(table, pred, out cellStats)
+
+    close()
+
+
+Scanner:
+
+    get(maxResponse, out packedCells, out scanTxn, out endOfScan)
+    close()
+
+
+#----------------------------------------------------------------------------
+# Object Layout
+#----------------------------------------------------------------------------
+
+TabletServer:
+    fragmentGraph  -- track connections 
+    tableMap       -- map table name to RangeMap
+    
+RangeMap:
+    tabletMap : lastRow --> Tablet
+
+
+
+Server.main():
+
+    RangeMap         rangeMap;        // maps rows and row ranges to tablets
+    FragmentGraph    fragmentGraph;   // tracks connections between fragments and tablets
+
+    MyFragmentLoader fragmentLoader;
+    FragmentCache    fragmentCache;
+    MyFragmentWriter fragmentWriter;
+    MyLogWriter      logWriter;
+
+
+    TabletServer server(
+       &rangeMap, &fragmentGraph,
+       
+
+    Tablet meta
+
+
+   
+#----------------------------------------------------------------------------
+# Actions
+#----------------------------------------------------------------------------
+
+RPC: TabletServer.open(name)
+
+  - map name to Table, create if necessary
+  - return table proxy
+
+RPC: Table.apply(packedCells, commitMaxTxn, waitForSync, out commitTxn)
+
+  - sanity: check packedCells for integrity, order
+    - else throw error
+  - gather list of affected rows
+  - Atomic:
+    - verify: all rows map to loaded, active tablets
+      - else throw error
+    - verify: latest txn on each modified row is <= commitMaxTxn
+      - else throw row transaction conflict
+    - throttle: if logger.queuedSz > MAX_QUEUE_SIZE:
+      - unlock, block on logger.queuedSz, retry Atomic:
+    - commitTxn = sequencer.nextTxn++
+    - update txn for all affected rows
+    - append the packedCells to log queue
+      - logger.queuedSz += packedBuffer.size()
+  - if waitForSync:
+    -- also need to wait until tablet confis have been committed
+    - defer until sequencer.committedTxn >= commitTxn
+  - else:
+    - return commitTxn
+
+RPC: Table.sync(syncAtLeastTxn, out syncTxn)
+
+  -- also need to wait until tablet configs have been committed
+  - if sequencer.committedTxn >= syncAtLeastTxn:
+    - return syncTxn = sequencer.committedTxn
+  - else:
+    - defer until sequencer.committedTxn >= syncAtLeastTxn
+
+RPC: Table.scan(pred)
+
+RPC: Table.close()
+
+  - no op
+
+RPC: Scanner.get(maxResponse, out packedCells, out scanTxn, out endOfScan)
+
+RPC: Scanner.close()
+
+Callback: Tablet.onFragmentListUpdate()
+
+  - 
+
+Callback: Scanner.onFragmentListUpdate()
+
+Callback: Scanner.onRowRangeUpdate()
+
+Worker: Log
+
+  - loop on queue:
+    - get packed cell buffer
+    - throttle: block until logger.committedBufferSz < MAX_BUFFER_SIZE
+    - opt: while queue is not empty, gather more buffers
+    - if there is no log file, make a new one
+    - organize buffer(s) by table
+      - for each table, if there is no log fragment, create one
+      - make compacted buffer for each table
+      - track all modified rows in each table
+    - prepare log entry with checksum
+    - write log entry to log file
+    - sync log file
+    - Atomic:
+      - sequencer.committedTxn += (number of committed buffers)
+      - for each table in commit:
+        - append compacted buffer to log fragment
+          - logger.committedBufferSz += buffer.size()
+        - for each tablet overlapping affected rows
+          - if tablet doesn't end with table log fragment
+            - append table log fragment to tablet
+              - call onFragmentListUpdate (w/ seq.committedTxn)
+    - signal sleepers on committedTxn
+    - release unused buffers
+      - logger.queuedBufferSz -= sum(b.size() for b in unused buffers)
+    - Atomic:
+      - if active size > MAX_ACTIVE_SIZE
+        - queue all log fragments for serialization
+        - reset active log:
+          - close log file
+          - forget all fragments
+
+Worker: Compact
+
+  - compact.hasWork = false
+  - until shutdown:
+    - Atomic:
+      - while not compact.hasWork:
+        - wait on compact.wakeup
+      - find compaction set
+      - if compaction set is too puny:
+        - compact.hasWork = false
+        - continue
+    - compact the compaction set
+      - open all fragments in a merge
+      - write multiple compacted outputs
+      - each output is complete
+        - Atomic:
+          - replace old fragments with new on active tablets
+            - call TabletListener.onFragmentListUpdate
+
+Worker: Serialize
+
+  - loop on queue:
+    - get log fragment to serialize
+    - compact fragment to new fragment file
+    - finalize and sync new fragment
+    - load new fragment
+    - Atomic:
+      - replace log fragment with new fragment
+      - logger.committedBufferSz -= logFragment.size()
+    - release log fragment
+    - signal sleepers on logger.committedBufferSz
+
+Worker: WriteConfigs
+
+Worker: FileGc
+
+Worker: CommitWait
+
+
+#----------------------------------------------------------------------------
+# Sequencing
+#----------------------------------------------------------------------------
+
+sequencer.nextTxn                 -- next txn to apply
+sequencer.committedTxn            -- 
+
+
+Commit stages:
+
+  - Staged: txn allocated, queued for logger
+  - Committed: cells logged
+
+Sequencer:
+
+  - nextTxn = 0
+  - committedTxn = 0
+  
+  - futures = {}
+  
+  - atomic allocateTxn(): return nextTxn++
+  - atomic commitTxn(): ++committedTxn; dispatch callbacks
+  - atomic addCommitCallback(commitTargetTxn, callback)
+  - atomic addFutureDeps(txn, nFutures):
+    - txn (and anything after it) cannot be considered stable until
+      another N future dependencies have been resolved and committed
+ ** - this language is a bit strong.  maybe we can take out the (and
+      anything after it) if we can guarantee that future txns will log
+      the closure of their deps (possible?)
+  - atomic resolveFutureDeps(txn, nFutures, futureTxn):
+    - resolve N future deps on futureTxn
+
+
+Cascade:  Table::open("foo")->set(X);
+
+  - nextTxn == 1, committedTxn == 0
+  - Queue commit: log cells (T=foo,P=X,txn=1,nextTxn=2)
+  - Commit: log cells (T=foo,P=X)
+    - create file log/1
+    - create fragment F=log/1?t=foo
+    - committedTxn = 1
+    - add F to foo:1,foo:4,foo:5
+      - Queue config (T=foo:1,txn=1)
+        - add config dep: txn 1 depends on 1 config
+      - Queue config (T=foo:4,txn=1)
+        - add config dep: txn 1 depends on 2 configs 
+      - Queue config (T=foo:5,txn=1)
+        - add config dep: txn 1 depends on 3 configs 
+  - Config: save (T=foo:1,txn=1)
+    - Set data in META table
+      - Queue commit: log cells (T=META,P=cf1,txn=2,nextTxn=3)
+      - replace 1 config dep(s): txn 1 depends on txn 2 and 2 configs
+  - Config: save (T=foo:4,txn=1), (T=foo:5,txn=1)  -- batch multiple
+    - Set data in META table
+      - Queue commit: log cells (T=META,P=cf4-5,txn=3,nextTxn=4)
+      - replace 2 config dep(s): txn 1 depends on txn 3
+        - (track max txn dep)
+  - Commit: log cells (T=META,P=cf1)
+    - reuse file log/1
+    - create fragment F=log/1?t=META
+    - committedTxn = 2
+    - add F to META:0
+      - Queue config: (T=META,txn=2)
+        - add config dep: txn 2 depends on 1 config
+  - Config: save (T=META:0,txn=2)
+    - Queue commit: write root (T=META,P=cm0,txn=4,nextTxn=5)
+      - replace 1 config dep(s): txn 2 depends on txn 4
+  - Commit: log cells (T=META,P=cf4-5)
+    - reuse file log/1
+    - reuse fragment F=log/1?t=foo
+    - committedTxn = 3
+  - Commit: write root (T=META,P=cm0)
+    - Write root config
+    - committedTxn = 4
+  
+
