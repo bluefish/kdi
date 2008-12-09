@@ -21,6 +21,7 @@
 #include <kdi/tablet/FragDag.h>
 #include <kdi/tablet/Tablet.h>
 #include <kdi/tablet/Fragment.h>
+#include <warp/log.h>
 #include <utility>
 #include <algorithm>
 #include <ex/exception.h>
@@ -37,6 +38,10 @@ using namespace std;
 void
 FragDag::addFragment(Tablet * tablet, FragmentPtr const & fragment)
 {
+    log("FragDag: Tablet %s append %s",
+        tablet->getPrettyName(),
+        fragment->getFragmentUri());
+
     FragmentPtr & tail = tailMap[tablet];
     if(tail)
     {
@@ -50,6 +55,9 @@ FragDag::addFragment(Tablet * tablet, FragmentPtr const & fragment)
 
 void FragDag::removeTablet(Tablet * tablet)
 {
+    log("FragDag: Tablet %s remove",
+        tablet->getPrettyName());
+
     fragment_set const & fragments = activeFragments[tablet];
     for(fragment_set::const_iterator f = fragments.begin();
         f != fragments.end(); ++f)
@@ -64,6 +72,8 @@ void FragDag::removeTablet(Tablet * tablet)
 FragmentPtr
 FragDag::getMaxWeightFragment(size_t minWeight) const
 {
+    log("FragDag: getMaxWeightFragment");
+
     // Find fragment with max weight
     FragmentPtr maxFrag;
     size_t maxWeight = minWeight;
@@ -85,6 +95,8 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
             weight += activeFragments.find(tablet)->second.size() - 1;
         }
 
+        log("FragDag: .. weight %d: %s", weight, frag->getFragmentUri());
+
         // Update max fragment if this one is bigger
         if(weight > maxWeight)
         {
@@ -101,7 +113,8 @@ FragDag::getActiveRanges(FragmentPtr const & frag) const
     IntervalSet<string> rows;
     ftset_map::const_iterator i = activeTablets.find(frag);
     if(i == activeTablets.end())
-        raise<RuntimeError>("fragment not in graph");
+        raise<RuntimeError>("fragment not in graph: %s",
+                            frag->getFragmentUri());
 
     tablet_set const & tablets = i->second;
     for(tablet_set::const_iterator j = tablets.begin();
@@ -139,7 +152,7 @@ FragDag::getParentSet(fragment_set const & frags) const
     {
         ffset_map::const_iterator pi = parentMap.find(*i);
         if(pi == parentMap.end())
-            raise<RuntimeError>("fragment not in graph");
+            continue;
 
         fragment_set const & parents = pi->second;
         for(fragment_set::const_iterator j = parents.begin();
@@ -163,11 +176,11 @@ FragDag::getChildSet(fragment_set const & frags) const
     {
         ffset_map::const_iterator pi = childMap.find(*i);
         if(pi == childMap.end())
-            raise<RuntimeError>("fragment not in graph");
+            continue;
 
-        fragment_set const & childs = pi->second;
-        for(fragment_set::const_iterator j = childs.begin();
-            j != childs.end(); ++j)
+        fragment_set const & children = pi->second;
+        for(fragment_set::const_iterator j = children.begin();
+            j != children.end(); ++j)
         {
             // Add child to adjecent set if it is not already in
             // original set
@@ -223,7 +236,8 @@ FragDag::filterTabletFragments(fragment_vec const & fragments,
     {
         ftset_map::const_iterator ti = activeTablets.find(*f);
         if(ti == activeTablets.end())
-            raise<RuntimeError>("fragment not in graph");
+            raise<RuntimeError>("fragment not in graph: %s",
+                                (*f)->getFragmentUri());
 
         tablet_set const & tablets = ti->second;
         if(tablets.find(tablet) != tablets.end())
@@ -239,7 +253,7 @@ FragDag::getParent(FragmentPtr const & fragment,
 {
     ffset_map::const_iterator pi = parentMap.find(fragment);
     if(pi == parentMap.end())
-        raise<RuntimeError>("fragment not in graph");
+        return FragmentPtr();
 
     fragment_set const & parents = pi->second;
     for(fragment_set::const_iterator f = parents.begin();
@@ -258,7 +272,7 @@ FragDag::getChild(FragmentPtr const & fragment,
 {
     ffset_map::const_iterator pi = childMap.find(fragment);
     if(pi == childMap.end())
-        raise<RuntimeError>("fragment not in graph");
+        return FragmentPtr();
 
     fragment_set const & children = pi->second;
     for(fragment_set::const_iterator f = children.begin();
@@ -280,7 +294,8 @@ FragDag::getActiveTablets(fragment_vec const & fragments)
     {
         ftset_map::const_iterator ti = activeTablets.find(*f);
         if(ti == activeTablets.end())
-            raise<RuntimeError>("fragment not in graph");
+            raise<RuntimeError>("fragment not in graph: %s",
+                                (*f)->getFragmentUri());
 
         tablet_set const & tablets = ti->second;
         active.insert(tablets.begin(), tablets.end());
@@ -441,21 +456,32 @@ FragDag::removeFragments(fragment_vec const & fragments)
 FragDag::fragment_set
 FragDag::chooseCompactionSet() const
 {
+    log("FragDag: chooseCompactionSet");
     fragment_set frags;
 
     FragmentPtr frag = getMaxWeightFragment(0);
     if(!frag)
+    {
+        log("FragDag: no max weight fragment");
         return frags;
+    }
+
+    log("FragDag: max fragment: %s", frag->getFragmentUri());
 
     // Expand fragment set until it is sufficiently large
     //  (16-way merge or 2 GB compaction, whichever comes first)
-    size_t const SUFFICIENTLY_LARGE = size_t(2) << 30;
+    size_t const SUFFICIENTLY_LARGE = size_t(4) << 30;
     size_t const SUFFICIENTLY_NUMEROUS = 16;
     size_t curSpace = getActiveSize(frag);
+    frags.insert(frag);
     for(;;)
     {
+        log("FragDag: expanding set: size=%d, space=%s",
+            frags.size(), sizeString(curSpace));
+
         // Get set of adjacent nodes
         fragment_set adjacent = getAdjacentSet(frags);
+        log("FragDag: found %d neighbor(s)", adjacent.size());
         if(adjacent.empty())
             return frags;
 
@@ -470,6 +496,7 @@ FragDag::chooseCompactionSet() const
         {
             size_t sz = getActiveSize(*i);
             sizes.push_back(size_pair(sz, *i));
+            log("FragDag: .. size %s: %s", sizeString(sz), (*i)->getFragmentUri());
         }
 
         // Sort by size
@@ -481,6 +508,10 @@ FragDag::chooseCompactionSet() const
         {
             frags.insert(i->second);
             curSpace += i->first;
+
+            log("FragDag: grow set (size=%d, space=%s): %s",
+                frags.size(), sizeString(curSpace),
+                i->second->getFragmentUri());
 
             if(frags.size() >= SUFFICIENTLY_NUMEROUS ||
                curSpace >= SUFFICIENTLY_LARGE)
@@ -494,10 +525,13 @@ FragDag::chooseCompactionSet() const
 FragDag::fragment_vec
 FragDag::chooseCompactionList() const
 {
+    log("FragDag: chooseCompactionList");
+
     fragment_vec frags;
 
     // Get the set of fragments to compact
     fragment_set fset = chooseCompactionSet();
+    log("FragDag: got compaction set of %d fragment(s)", fset.size());
     if(fset.size() < 2)
         return frags;
 
@@ -508,14 +542,18 @@ FragDag::chooseCompactionList() const
         for(fragment_set::iterator f = fset.begin(); f != fset.end();)
         {
             bool hasParent = false;
-            fragment_set const & parents = parentMap.find(*f)->second;
-            for(fragment_set::const_iterator p = parents.begin();
-                p != parents.end(); ++p)
+            ffset_map::const_iterator pi = parentMap.find(*f);
+            if(pi != parentMap.end())
             {
-                if(fset.find(*p) != fset.end())
+                fragment_set const & parents = pi->second;
+                for(fragment_set::const_iterator p = parents.begin();
+                    p != parents.end(); ++p)
                 {
-                    hasParent = true;
-                    break;
+                    if(fset.find(*p) != fset.end())
+                    {
+                        hasParent = true;
+                        break;
+                    }
                 }
             }
 
