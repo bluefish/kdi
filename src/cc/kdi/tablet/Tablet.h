@@ -136,11 +136,6 @@ public:
     /// Remove a sequence of fragments from the tablet
     void removeFragments(std::vector<FragmentPtr> const & oldFragments);
 
-    /// Get the priority for compacting this Tablet.  Higher
-    /// priorities are more important.  Priorities under 2 are
-    /// ignored.
-    size_t getCompactionPriority() const;
-
     /// Perform a Tablet compaction.  This method should only be
     /// called by the Compact thread.
     void doCompaction();

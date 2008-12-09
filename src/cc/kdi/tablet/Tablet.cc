@@ -652,24 +652,6 @@ namespace
     };
 }
 
-size_t Tablet::getCompactionPriority() const
-{
-    lock_t lock(mutex);
-
-    // Can't split and compact at the same time
-    if(splitPending)
-        return 0;
-
-    // Get the number of static tables in the set
-    size_t n = fragments.size();
-    if(n && !fragments.back()->isImmutable())
-        --n;
-    
-    // Return the number of static tables we have (don't bother if
-    // there's only one)
-    return (n > 1 ? n : 0);
-}
-
 void Tablet::doCompaction()
 {
     {
