@@ -26,6 +26,7 @@
 #include <kdi/cell_merge.h>
 #include <kdi/scan_predicate.h>
 #include <warp/functional.h>
+#include <warp/uri.h>
 #include <warp/log.h>
 #include <warp/call_or_die.h>
 #include <boost/bind.hpp>
@@ -178,7 +179,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
             // Finalize output and reset to indicate we do not have an
             // active output
             writer.close();
-            string uri = writerFn;
+            string uri = uriPushScheme(writerFn, "disk");
             outputOpen = false;
 
             // Close the output range with the last row added
@@ -245,7 +246,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         // Finalize output and reset to indicate we do not have an
         // active output
         writer.close();
-        string uri = writerFn;
+        string uri = uriPushScheme(writerFn, "disk");
         outputOpen = false;
 
         // Close the output range with the last row added
