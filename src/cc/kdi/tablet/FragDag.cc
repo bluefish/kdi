@@ -308,8 +308,8 @@ FragDag::replaceFragments(fragment_vec const & fragments,
                           FragmentPtr const & newFragment,
                           Interval<string> const & outputRange)
 {
-    log("FragDag: replace %d fragment(s) with %s (range=%s)",
-        fragments.size(), newFragment->getFragmentUri(), outputRange);
+    log("FragDag: replace %d fragment(s) with %s",
+        fragments.size(), newFragment->getFragmentUri());
 
     // Get the contained tablet set
     tablet_set contained;
@@ -319,17 +319,13 @@ FragDag::replaceFragments(fragment_vec const & fragments,
             t != active.end(); ++t)
         {
             Interval<string> const & rows = (*t)->getRows();
-            if(outputRange.contains(rows))
+            if(rows.overlaps(outputRange))
             {
-                log("FragDag: tablet %s is in", (*t)->getPrettyName());
+                log("FragDag: tablet %s overlaps", (*t)->getPrettyName());
                 contained.insert(*t);
             }
             else
-                log("FragDag: tablet %s is out", (*t)->getPrettyName());
-
-            // XXX implement Interval<T>::overlaps
-            // else if(rows.overlaps(outputRange))
-            //     raise<RuntimeError>("tablet range overlaps replacement range");
+                log("FragDag: tablet %s is disjoint", (*t)->getPrettyName());
         }
     }
 
