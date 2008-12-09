@@ -308,6 +308,9 @@ FragDag::replaceFragments(fragment_vec const & fragments,
                           FragmentPtr const & newFragment,
                           Interval<string> const & outputRange)
 {
+    log("FragDag: replace %d fragment(s) with %s (range=%s)",
+        fragments.size(), newFragment->getFragmentUri(), outputRange);
+
     // Get the contained tablet set
     tablet_set contained;
     {
@@ -317,7 +320,12 @@ FragDag::replaceFragments(fragment_vec const & fragments,
         {
             Interval<string> const & rows = (*t)->getRows();
             if(outputRange.contains(rows))
+            {
+                log("FragDag: tablet %s is in", (*t)->getPrettyName());
                 contained.insert(*t);
+            }
+            else
+                log("FragDag: tablet %s is out", (*t)->getPrettyName());
 
             // XXX implement Interval<T>::overlaps
             // else if(rows.overlaps(outputRange))
@@ -331,7 +339,11 @@ FragDag::replaceFragments(fragment_vec const & fragments,
     {
         fragment_vec filtered = filterTabletFragments(fragments, *t);
         if(filtered.empty())
+        {
+            log("FragDag: tablet %s has no replaceable fragments.  wtf?",
+                (*t)->getPrettyName());
             continue;
+        }
 
         FragmentPtr parent = getParent(filtered.front(), *t);
         FragmentPtr child = getChild(filtered.back(), *t);
@@ -377,6 +389,8 @@ FragDag::replaceFragments(fragment_vec const & fragments,
 void
 FragDag::removeFragments(fragment_vec const & fragments)
 {
+    log("FragDag: remove %d fragment(s)", fragments.size());
+
     // Any tablets still in the active set need to drop these
     // fragments
     tablet_set active = getActiveTablets(fragments);
@@ -385,7 +399,11 @@ FragDag::removeFragments(fragment_vec const & fragments)
     {
         fragment_vec filtered = filterTabletFragments(fragments, *t);
         if(filtered.empty())
+        {
+            log("FragDag: tablet %s has no removeable fragments.  wtf?",
+                (*t)->getPrettyName());
             continue;
+        }
 
         FragmentPtr parent = getParent(filtered.front(), *t);
         FragmentPtr child = getChild(filtered.back(), *t);
