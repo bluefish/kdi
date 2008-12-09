@@ -44,12 +44,12 @@ class kdi::tablet::FragDag
 {
     typedef std::vector<FragmentPtr>              fragment_vec;
     typedef std::set<FragmentPtr>                 fragment_set;
-    typedef std::set<TabletPtr>                   tablet_set;
+    typedef std::set<Tablet*>                     tablet_set;
     typedef std::map<FragmentPtr, fragment_set>   ffset_map;
     typedef std::map<FragmentPtr, tablet_set>     ftset_map;
-    typedef std::map<TabletPtr, fragment_set>     tfset_map;
-    typedef std::map<TabletPtr, FragmentPtr>      tf_map;
+    typedef std::map<Tablet*, fragment_set>       tfset_map;
 
+    typedef std::map<Tablet*, FragmentPtr>        tf_map;
     ffset_map parentMap;
     ffset_map childMap;
     ftset_map activeTablets;
@@ -59,7 +59,10 @@ class kdi::tablet::FragDag
 public:
     /// Append an edge to a tablet's fragment list.
     void
-    addFragment(TabletPtr const & tablet, FragmentPtr const & fragment);
+    addFragment(Tablet * tablet, FragmentPtr const & fragment);
+
+    /// Remove all references to tablet from DAG.
+    void removeTablet(Tablet * tablet);
 
     /// XXX ...
     FragmentPtr
@@ -96,19 +99,19 @@ public:
     // active set
     fragment_vec
     filterTabletFragments(fragment_vec const & fragments,
-                          TabletPtr const & tablet) const;
+                          Tablet * tablet) const;
 
     /// Get the parent of the given fragment in the line of the given
     /// tablet.
     FragmentPtr
     getParent(FragmentPtr const & fragment,
-              TabletPtr const & tablet);
+              Tablet * tablet);
 
     /// Get the child of the given fragment in the line of the given
     /// tablet.
     FragmentPtr
     getChild(FragmentPtr const & fragment,
-             TabletPtr const & tablet);
+             Tablet * tablet);
 
     tablet_set
     getActiveTablets(fragment_vec const & fragments);

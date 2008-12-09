@@ -35,7 +35,7 @@ using namespace std;
 // FragDag
 //----------------------------------------------------------------------------
 void
-FragDag::addFragment(TabletPtr const & tablet, FragmentPtr const & fragment)
+FragDag::addFragment(Tablet * tablet, FragmentPtr const & fragment)
 {
     FragmentPtr & tail = tailMap[tablet];
     if(tail)
@@ -46,6 +46,19 @@ FragDag::addFragment(TabletPtr const & tablet, FragmentPtr const & fragment)
     tail = fragment;
     activeTablets[fragment].insert(tablet);
     activeFragments[tablet].insert(fragment);
+}
+
+void FragDag::removeTablet(Tablet * tablet)
+{
+    fragment_set const & fragments = activeFragments[tablet];
+    for(fragment_set::const_iterator f = fragments.begin();
+        f != fragments.end(); ++f)
+    {
+        activeTablets[*f].erase(tablet);
+    }
+
+    activeFragments.erase(tablet);
+    tailMap.erase(tablet);
 }
 
 FragmentPtr
@@ -66,7 +79,7 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
         for(tablet_set::const_iterator j = tablets.begin();
             j != tablets.end(); ++j)
         {
-            TabletPtr const & tablet = *j;
+            Tablet * tablet = *j;
             // Use (length - 1) because we're only interested in
             // compacting chains with two or more fragments
             weight += activeFragments.find(tablet)->second.size() - 1;
@@ -201,7 +214,7 @@ FragDag::findNextSplit(fragment_vec const & fragments,
 
 FragDag::fragment_vec
 FragDag::filterTabletFragments(fragment_vec const & fragments,
-                               TabletPtr const & tablet) const
+                               Tablet * tablet) const
 {
     fragment_vec filtered;
 
@@ -222,7 +235,7 @@ FragDag::filterTabletFragments(fragment_vec const & fragments,
 
 FragmentPtr
 FragDag::getParent(FragmentPtr const & fragment,
-                   TabletPtr const & tablet)
+                   Tablet * tablet)
 {
     ffset_map::const_iterator pi = parentMap.find(fragment);
     if(pi == parentMap.end())
@@ -241,7 +254,7 @@ FragDag::getParent(FragmentPtr const & fragment,
 
 FragmentPtr
 FragDag::getChild(FragmentPtr const & fragment,
-                  TabletPtr const & tablet)
+                  Tablet * tablet)
 {
     ffset_map::const_iterator pi = childMap.find(fragment);
     if(pi == childMap.end())

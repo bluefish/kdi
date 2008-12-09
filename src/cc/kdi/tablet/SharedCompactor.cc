@@ -107,7 +107,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
     {
         lock_t lock(dagMutex);
         filterErasures = fragDag.isRooted(fragments);
-        TabletPtr t = *fragDag.getActiveTablets(fragments).begin();
+        Tablet * t = *fragDag.getActiveTablets(fragments).begin();
         configMgr = t->getConfigManager();
         table = t->getTableName();
     }
