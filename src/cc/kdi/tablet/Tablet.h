@@ -118,6 +118,9 @@ public:
     /// XXX ...
     ConfigManagerPtr const & getConfigManager() const { return configMgr; }
 
+    /// XXX ...
+    FileTrackerPtr const & getFileTracker() const { return tracker; }
+
     /// Get a merged scan of all the tables in this this Tablet, using
     /// the given predicate.  This method does not support history
     /// predicates.

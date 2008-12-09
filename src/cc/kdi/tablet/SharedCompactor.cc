@@ -21,6 +21,7 @@
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/Tablet.h>
 #include <kdi/tablet/ConfigManager.h>
+#include <kdi/tablet/FileTracker.h>
 #include <warp/log.h>
 #include <warp/call_or_die.h>
 #include <boost/bind.hpp>
@@ -102,6 +103,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
     // Get some info we need
     bool filterErasures;
     ConfigManagerPtr configMgr;
+    FileTrackerPtr tracker;
     string table;
     size_t const outputSplitSize = size_t(1) << 30; // 1 GB
     {
@@ -110,6 +112,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         Tablet * t = *fragDag.getActiveTablets(fragments).begin();
         configMgr = t->getConfigManager();
         table = t->getTableName();
+        tracker = t->getFileTracker();
     }
 
     // no writer, loader.  use configMgr + DiskTableWriter instead
@@ -180,12 +183,17 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
             // Close the output range with the last row added
             outputRange.setUpperBound(last.getRow().toString(), BT_INCLUSIVE);
 
+            // Open new fragment
+            FragmentPtr frag = configMgr->openFragment(uri);
+
+            // Track the new file for automatic deletion
+            FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
+
             // Replace all compacted fragments in the output range
             // with a new fragment opened from the recent output.
             // Since split points are chosen to fall on tablet
             // boundaries, each tablet will map to no more than one
             // output.
-            FragmentPtr frag = configMgr->openFragment(uri);
             {
                 lock_t lock(dagMutex);
                 fragDag.replaceFragments(fragments, frag, outputRange);
@@ -240,11 +248,16 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         // Close the output range with the last row added
         outputRange.setUpperBound(last.getRow().toString(), BT_INCLUSIVE);
 
+        // Open new fragment
+        FragmentPtr frag = configMgr->openFragment(uri);
+
+        // Track the new file for automatic deletion
+        FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
+
         // Replace all compacted fragments in the output range with a
         // new fragment opened from the recent output.  Since split
         // points are chosen to fall on tablet boundaries, each tablet
         // will map to no more than one output.
-        FragmentPtr frag = configMgr->openFragment(uri);
         {
             lock_t lock(dagMutex);
             fragDag.replaceFragments(fragments, frag, outputRange);
