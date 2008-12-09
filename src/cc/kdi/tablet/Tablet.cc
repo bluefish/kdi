@@ -118,8 +118,7 @@ Tablet::Tablet(std::string const & tableName,
     rows(cfg.getTabletRows()),
     mutationsPending(false),
     configChanged(false),
-    splitPending(false),
-    isCompacting(false)
+    splitPending(false)
 {
     log("Tablet %p %s: created", this, getPrettyName());
 
@@ -370,7 +369,6 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
     mutationsPending(false),
     configChanged(false),
     splitPending(false),
-    isCompacting(false),
     clonedLogs(o.clonedLogs)
 {
     // Add references to cloned fragment files
@@ -513,6 +511,59 @@ void Tablet::addFragment(FragmentPtr const & fragment)
         compactor->requestCompaction(shared_from_this());
 }
 
+void Tablet::replaceFragmentsInternal(
+    std::vector<FragmentPtr> const & oldFragments,
+    FragmentPtr const & newFragment)
+{
+    // Lock tableSet
+    lock_t lock(mutex);
+
+    // Find old sequence in fragment vector
+    fragments_t::iterator i = std::search(
+        fragments.begin(), fragments.end(),
+        oldFragments.begin(), oldFragments.end());
+    if(i != fragments.end())
+    {
+        fragments_t::iterator end = i + oldFragments.size();
+
+        if(newFragment)
+        {
+            // Replace first item in the sequence
+            *i = newFragment;
+            ++i;
+
+            // Add a reference to the new file
+            tracker->addReference(newFragment->getDiskUri());
+        }
+
+        // Remove the rest of the fragments from the set
+        fragments.erase(i, end);
+    }
+    else
+    {
+        // We didn't know about that sequence
+        raise<RuntimeError>("replaceFragments with unknown fragment sequence");
+    }
+
+    // Unlock and update scanners.  Scanners must update before we
+    // can mark files for release, as the scanners may hold
+    // references to some of these files.
+    lock.unlock();
+    updateScanners();
+    lock.lock();
+
+    // Mark old fragment files for release
+    for(vector<FragmentPtr>::const_iterator i = oldFragments.begin();
+        i != oldFragments.end(); ++i)
+    {
+        log("Tablet %s: ... drop fragment %s", getPrettyName(), (*i)->getFragmentUri());
+        deadFiles.push_back((*i)->getDiskUri());
+    }
+
+    // Queue a config rewrite to save changes
+    postConfigChange(lock);
+}
+
 void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
                               FragmentPtr const & newFragment)
 {
@@ -570,66 +621,27 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
         }
     }
 
-    bool wantSplit = false;
+    // Replace fragments
+    replaceFragmentsInternal(oldFragments, newFragment);
+
+    // Check to see if we should split
+    if(superTablet)
     {
-        // Lock tableSet
         lock_t lock(mutex);
 
-        // Find old sequence in fragment vector
-        fragments_t::iterator i = std::search(
-            fragments.begin(), fragments.end(),
-            oldFragments.begin(), oldFragments.end());
-        if(i != fragments.end())
-        {
-            // Replace first item in the sequence
-            *i = newFragment;
-
-            // Remove the rest of the fragments from the set
-            fragments.erase(i + 1, i + oldFragments.size());
-
-            // Add a reference to the new file
-            tracker->addReference(newFragment->getDiskUri());
-        }
-        else
-        {
-            // We didn't know about that sequence
-            raise<RuntimeError>("replaceFragments with unknown fragment sequence");
-        }
-
-        // Unlock and update scanners.  Scanners must update before we
-        // can mark files for release, as the scanners may hold
-        // references to some of these files.
-        lock.unlock();
-        updateScanners();
-        lock.lock();
-
-        // Mark old fragment files for release
-        for(vector<FragmentPtr>::const_iterator i = oldFragments.begin();
-            i != oldFragments.end(); ++i)
-        {
-            log("Tablet %s: ... drop fragment %s", getPrettyName(), (*i)->getFragmentUri());
-            deadFiles.push_back((*i)->getDiskUri());
-        }
-
-        // Queue a config rewrite to save changes
-        postConfigChange(lock);
-
-        // Check to see if we should split
-        if(!splitPending && !isCompacting && superTablet &&
-           getDiskSize(lock) >= SPLIT_THRESHOLD)
+        if(!splitPending && getDiskSize(lock) >= SPLIT_THRESHOLD)
         {
             splitPending = true;
-            wantSplit = true;
+
+            lock.unlock();
+            superTablet->requestSplit(this);
         }
     }
-
-    // Maybe request a split
-    if(wantSplit)
-        superTablet->requestSplit(this);
 }
 
 void Tablet::removeFragments(std::vector<FragmentPtr> const & oldFragments)
 {
+    replaceFragmentsInternal(oldFragments, FragmentPtr());
 }
 
 namespace
@@ -650,127 +662,6 @@ namespace
                 return true;    // remove expired scanner
         }
     };
-}
-
-void Tablet::doCompaction()
-{
-    {
-        lock_t lock(mutex);
-
-        if(splitPending)
-        {
-            log("Tablet %s: split pending, abort compaction", getPrettyName());
-            return;
-        }
-        
-        isCompacting = true;
-    }
-
-    vector<FragmentPtr> compactionFragments;
-    ScanPredicate compactionPred;
-    bool filterErasures = false;
-
-    log("Tablet %s: start compaction", getPrettyName());
-    
-    // Choose the sequence of tables to compact
-    {
-        // Use a sliding window of size K to pick the set of adjacent
-        // fragments with the minimum disk size.
-
-        int const K = 20;
-
-        lock_t lock(mutex);
-       
-        // Find the last static table
-        fragments_t::const_iterator last = fragments.begin();
-        for(fragments_t::const_reverse_iterator i = fragments.rbegin(); i != fragments.rend(); ++i)
-        {
-            if((*i)->isImmutable())
-            {
-                last = i.base();
-                break;
-            }
-        }
-
-        // Extend initial window from beginning up to K fragments.
-        fragments_t::const_iterator windowBegin = fragments.begin();
-        fragments_t::const_iterator windowEnd = windowBegin;
-        size_t windowSize = 0;
-        for(int k = 0; k < K && windowEnd != last; ++k, ++windowEnd)
-        {
-            windowSize += (*windowEnd)->getDiskSize(rows);
-        } 
-
-        // Find the minimum by sliding the window until it reaches the
-        // last statick fragment.
-        fragments_t::const_iterator minBegin = windowBegin;
-        fragments_t::const_iterator minEnd = windowEnd;
-        size_t minSize = windowSize;
-        for(; windowEnd != last; ++windowEnd, ++windowBegin)
-        {
-            windowSize -= (*windowBegin)->getDiskSize(rows);
-            windowSize += (*windowEnd)->getDiskSize(rows);
-            if(windowSize < minSize)
-            {
-                minBegin = windowBegin;
-                minEnd = windowEnd;
-                minSize = windowSize;
-            }
-        }
-        
-        // We filter erasures if the window includes the beginning
-        // fragment
-        filterErasures = (minBegin == fragments.begin());
-
-        // Make a copy of the fragment pointers to be compacted
-        compactionFragments.insert(compactionFragments.end(), minBegin, minEnd);
-
-        // Set the compaction predicate to look at the full row range
-        // (and only the row range) for this Tablet
-        compactionPred.setRowPredicate(
-            IntervalSet<string>().add(rows)
-            );
-    }
-
-    // Get an output file
-    std::string fn = configMgr->getDataFile(tableName);
-            
-    // Open a DiskTable for writing
-    DiskTableWriter writer(64<<10);
-    writer.open(fn);
-
-    // Build compaction merge stream
-    CellStreamPtr merge = CellMerge::make(filterErasures);
-    for(vector<FragmentPtr>::const_reverse_iterator i =
-            compactionFragments.rbegin();
-        i != compactionFragments.rend(); ++i)
-    {
-        log("Tablet %s: compacting %s", getPrettyName(), (*i)->getFragmentUri());
-        merge->pipeFrom((*i)->scan(compactionPred));
-    }
-
-    // Compact the tables
-    Cell x;
-    while(merge->get(x))
-        writer.put(x);
-    writer.close();     // XXX should sync file
-
-    log("Tablet %s: end compaction", getPrettyName());
-
-    // Reopen the table for reading
-    std::string diskUri = uriPushScheme(fn, "disk");
-    FragmentPtr frag = configMgr->openFragment(diskUri);
-
-    // Track the new file for automatic deletion
-    FileTracker::AutoTracker autoTrack(*tracker, fn);
-
-    // Update table set
-    replaceFragments(compactionFragments, frag);
-
-    {
-        lock_t lock(mutex);
-        isCompacting = false;
-    }
 }
 
 size_t Tablet::getDiskSize(lock_t const & lock) const

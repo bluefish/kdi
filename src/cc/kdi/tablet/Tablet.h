@@ -84,7 +84,6 @@ private:
     bool                         mutationsPending;
     bool                         configChanged;
     bool                         splitPending;
-    bool                         isCompacting;
 
     std::map<FragmentPtr, TabletPtr> clonedLogs;
     std::set<FragmentPtr>            duplicatedLogs;
@@ -129,16 +128,20 @@ public:
     /// Add a new fragment to the Tablet.
     void addFragment(FragmentPtr const & fragment);
 
+private:
+    /// Remove old fragments from fragment list.  Replace with
+    /// newFragment if non-null.
+    void replaceFragmentsInternal(
+        std::vector<FragmentPtr> const & oldFragments,
+        FragmentPtr const & newFragment);
+
+public:
     /// Replace a sequence of fragments with a new fragment.
     void replaceFragments(std::vector<FragmentPtr> const & oldFragments,
                           FragmentPtr const & newFragment);
 
     /// Remove a sequence of fragments from the tablet
     void removeFragments(std::vector<FragmentPtr> const & oldFragments);
-
-    /// Perform a Tablet compaction.  This method should only be
-    /// called by the Compact thread.
-    void doCompaction();
 
     /// Split the tablet into two.  An approximate median row is
     /// chosen as a split point.  This tablet shrinks to the range
