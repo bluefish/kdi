@@ -28,7 +28,8 @@ using namespace kdi::tablet;
 using namespace warp;
 using namespace ex;
 
-WorkQueue::WorkQueue(size_t nThreads)
+WorkQueue::WorkQueue(size_t nThreads) :
+    done(false)
 {
     if(!nThreads)
         raise<ValueError>("WorkQueue needs at least 1 thread");
@@ -48,7 +49,8 @@ WorkQueue::WorkQueue(size_t nThreads)
 
 WorkQueue::~WorkQueue()
 {
-    shutdown();
+    if(!done)
+        shutdown();
 
     log("WorkQueue %p: destroyed", this);
 }
@@ -61,9 +63,13 @@ void WorkQueue::post(job_t const & job)
 
 void WorkQueue::shutdown()
 {
+    if(done)
+        raise<RuntimeError>("WorkQueue already shut down");
+
     log("WorkQueue shutdown");
     jobs.cancelWaits();
     threads.join_all();
+    done = true;
 }
 
 void WorkQueue::workLoop()

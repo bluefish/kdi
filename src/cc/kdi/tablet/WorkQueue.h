@@ -44,6 +44,7 @@ class kdi::tablet::WorkQueue
 
     warp::SyncQueue<job_t> jobs;
     boost::thread_group threads;
+    bool done;
 
 public:
     explicit WorkQueue(size_t nThreads);
