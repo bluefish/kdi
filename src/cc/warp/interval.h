@@ -430,13 +430,8 @@ public:
         return lowerBound.isInfinite() && upperBound.isInfinite();
     }
 
-    /// Return true if the interval contains nothing, as defined by
-    /// the default less-than ordering on point values.
-    bool isEmpty() const
-    {
-        IntervalPointOrder< std::less<T> > plt;
-        return plt(upperBound, lowerBound);
-    }
+
+
 
     /// Return true if the interval contains nothing, as defined by
     /// the given less-than ordering on point values.
@@ -448,15 +443,6 @@ public:
     }
 
     /// Return true if the interval contains the given value, as
-    /// defined by the default less-than ordering on point values.
-    template <class TT>
-    bool contains(TT const & x) const
-    {
-        IntervalPointOrder< std::less<T> > plt;
-        return plt(lowerBound, x) && plt(x, upperBound);
-    }
-
-    /// Return true if the interval contains the given value, as
     /// defined by the given less-than ordering on point values.
     template <class TT, class Lt>
     bool contains(TT const & x, Lt const & lt) const
@@ -465,28 +451,6 @@ public:
         return plt(lowerBound, x) && plt(x, upperBound);
     }
 
-    /// Return true if the interval contains (or equals) the given
-    /// interval, as defined by the default less-than ordering on
-    /// point values.  Empty intervals contain nothing.  Non-empty
-    /// intervals contain any empty interval.
-    template <class TT>
-    bool contains(Interval<TT> const & o) const
-    {
-        IntervalPointOrder< std::less<T> > plt;
-
-        // Empty intervals contain nothing
-        if(plt(upperBound, lowerBound))
-            return false;
-
-        // Non-empty intervals contain any empty interval.
-        if(plt(o.getUpperBound(), o.getLowerBound()))
-            return true;
-
-        // We contain the interval iff:
-        //   my.lb <= o.lb && o.ub <= my.ub
-        return ( !plt(o.getLowerBound(), lowerBound) &&
-                 !plt(upperBound, o.getUpperBound()) );
-    }
 
     /// Return true if the interval contains (or equals) the given
     /// interval, as defined by the given less-than ordering on point
@@ -509,6 +473,69 @@ public:
         //   my.lb <= o.lb && o.ub <= my.ub
         return ( !plt(o.getLowerBound(), lowerBound) &&
                  !plt(upperBound, o.getUpperBound()) );
+    }
+
+    /// Return true if the interval overlaps the given interval, as
+    /// defined by the given less-than ordering on point values.
+    /// Empty intervals overlap nothing.
+    template <class TT, class Lt>
+    bool overlaps(Interval<TT> const & o, Lt const & lt) const
+    {
+        IntervalPointOrder<Lt> plt(lt);
+        
+        // Empty intervals overlap nothing
+        if(plt(upperBound, lowerBound) ||
+           plt(o.getUpperBound(), o.getLowerBound()))
+        {
+            return false;
+        }
+
+        // Are the intervals separated?
+        if(plt(upperBound, o.getLowerBound()) ||
+           plt(o.getUpperBound(), lowerBound))
+        {
+            return false;
+        }
+
+        // Must overlap
+        return true;
+    }
+
+
+    // Predicates using default ordering
+
+    /// Return true if the interval contains nothing, as defined by
+    /// the default less-than ordering on point values.
+    bool isEmpty() const
+    {
+        return isEmpty(std::less<T>());
+    }
+
+    /// Return true if the interval contains the given value, as
+    /// defined by the default less-than ordering on point values.
+    template <class TT>
+    bool contains(TT const & x) const
+    {
+        return contains(x, std::less<T>());
+    }
+
+    /// Return true if the interval contains (or equals) the given
+    /// interval, as defined by the default less-than ordering on
+    /// point values.  Empty intervals contain nothing.  Non-empty
+    /// intervals contain any empty interval.
+    template <class TT>
+    bool contains(Interval<TT> const & o) const
+    {
+        return contains(o, std::less<T>());
+    }
+
+    /// Return true if the interval overlaps the given interval, as
+    /// defined by the default less-than ordering on point values.
+    /// Empty intervals overlap nothing.
+    template <class TT>
+    bool overlaps(Interval<TT> const & o) const
+    {
+        return overlaps(o, std::less<T>());
     }
 };
 

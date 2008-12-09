@@ -442,6 +442,52 @@ BOOST_AUTO_UNIT_TEST(interval_contains_interval)
     BOOST_CHECK_EQUAL(makeInterval<int>(1,5).contains(makeInterval<float>(0.9f,1.4f), wlt), false);
 }
 
+BOOST_AUTO_UNIT_TEST(interval_overlaps_interval)
+{
+    // Empty intervals overlap nothing
+    BOOST_CHECK_EQUAL(Interval<int>().overlaps(Interval<int>()), false);
+    BOOST_CHECK_EQUAL(Interval<int>().overlaps(makeInterval<int>(1,5)), false);
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,5).overlaps(Interval<int>()), false);
+    
+    // Intervals overlap contained intervals
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,9).overlaps(makeInterval<int>(2,5)), true);
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,9).overlaps(makeInterval<int>(5,9)), true);
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,9).overlaps(makeInterval<int>(1,4)), true);
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,9).overlaps(makeInterval<int>(1,9)), true);
+
+    // Intervals overlap containing intervals
+    BOOST_CHECK_EQUAL(makeInterval<int>(2,4).overlaps(makeInterval<int>(1,5)), true);
+
+    // Check partial overlaps
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,9).overlaps(makeInterval<int>(-2,5)), true);
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,9).overlaps(makeInterval<int>(5,10)), true);
+
+    // Disjoint intervals do not overlap
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,9).overlaps(makeInterval<int>(20,30)), false);
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,9).overlaps(makeInterval<int>(-30,-20)), false);
+    
+    // Overlapping respects bound types
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,5,true,true).overlaps(makeInterval<int>(5,9,true,true)), true);
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,5,true,false).overlaps(makeInterval<int>(5,9,true,true)), false);
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,5,true,false).overlaps(makeInterval<int>(5,9,false,true)), false);
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,5,true,true).overlaps(makeInterval<int>(5,9,false,true)), false);
+
+    BOOST_CHECK_EQUAL(makeInterval<int>(5,9,true,true).overlaps(makeInterval<int>(1,5,true,true)), true);
+    BOOST_CHECK_EQUAL(makeInterval<int>(5,9,false,true).overlaps(makeInterval<int>(1,5,true,true)), false);
+    BOOST_CHECK_EQUAL(makeInterval<int>(5,9,false,true).overlaps(makeInterval<int>(1,5,true,false)), false);
+    BOOST_CHECK_EQUAL(makeInterval<int>(5,9,true,true).overlaps(makeInterval<int>(1,5,true,false)), false);
+    
+    // We can use custom comparators too
+    warp::less wlt;
+    std::greater<int> gt;
+
+    BOOST_CHECK_EQUAL(makeInterval<int>(9,1).overlaps(makeInterval<int>(4,3), wlt), false);
+    BOOST_CHECK_EQUAL(makeInterval<int>(9,1).overlaps(makeInterval<int>(4,3), gt), true);
+
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,5).overlaps(makeInterval<float>(1.1f,1.4f), wlt), true);
+    BOOST_CHECK_EQUAL(makeInterval<int>(1,5).overlaps(makeInterval<float>(0.9f,1.4f), wlt), true);
+}
+
 BOOST_AUTO_UNIT_TEST(intervalset_clip)
 {
     // Test set:  [1 7) (7 10) (13 21] [22 >>
