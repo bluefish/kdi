@@ -129,6 +129,9 @@ Tablet::Tablet(std::string const & tableName,
     EX_CHECK_NULL(tracker);
     EX_CHECK_NULL(workQueue);
 
+    // FragDag hackery
+    lock_t dagLock(compactor->dagMutex);
+
     // Load our fragments
     bool uriChanged = false;
     vector<string> const & uris = cfg.getTableUris();
@@ -140,6 +143,9 @@ Tablet::Tablet(std::string const & tableName,
         FragmentPtr frag = configMgr->openFragment(*i);
         tracker->addReference(frag->getDiskUri());
         fragments.push_back(frag);
+
+        // FragDag hackery
+        compactor->fragDag.addFragment(this, frag);
 
         // Check to see if the fragment URI changed on load.
         if(fragments.back()->getFragmentUri() != *i)
@@ -166,6 +172,12 @@ Tablet::~Tablet()
         i != fragments.end(); ++i)
     {
         tracker->untrack((*i)->getDiskUri());
+    }
+
+    // FragDag hackery
+    {
+        lock_t dagLock(compactor->dagMutex);
+        compactor->fragDag.removeTablet(this);
     }
 
     log("Tablet %p %s: destroyed", this, getPrettyName());
@@ -284,6 +296,7 @@ TabletPtr Tablet::splitTablet()
     // Make sure outstanding mutations are stable
     sync();
 
+    lock_t dagLock(compactor->dagMutex);
     lock_t lock(mutex);
 
     // Choose a median row
@@ -366,6 +379,11 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
         i != this->fragments.end(); ++i)
     {
         tracker->addReference((*i)->getDiskUri());
+
+        // FragDag hackery (even more gross than usual).  dagMutex is
+        // held by splitTablet(), which hopefully is the only way we
+        // can get into the copy constructor
+        compactor->fragDag.addFragment(this, *i);
     }
 }
 
@@ -536,6 +554,19 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
 
             duplicatedLogs.erase(j);
             return;
+        }
+
+        lock.unlock();
+
+        // FragDag hackery
+        {
+            // Only do this for log replacements.  Adding to the
+            // FragDag is effectively making the new fragment
+            // available for compaction.  Also, grabbing the dagMutex
+            // from a compactor replacement wold deadlock, since the
+            // compactor will have the dagMutex.  Evil code!  :)
+            lock_t lock(compactor->dagMutex);
+            compactor->fragDag.addFragment(this, newFragment);
         }
     }
 
