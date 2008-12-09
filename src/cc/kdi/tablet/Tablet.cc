@@ -128,9 +128,6 @@ Tablet::Tablet(std::string const & tableName,
     EX_CHECK_NULL(tracker);
     EX_CHECK_NULL(workQueue);
 
-    // FragDag hackery
-    lock_t dagLock(compactor->dagMutex);
-
     // Load our fragments
     bool uriChanged = false;
     vector<string> const & uris = cfg.getTableUris();
@@ -151,7 +148,6 @@ Tablet::Tablet(std::string const & tableName,
             uriChanged = true;
     }
 
-    dagLock.unlock();
     compactor->wakeup();
 
     // If a table URI changed during the load, resave our config
@@ -163,6 +159,32 @@ Tablet::Tablet(std::string const & tableName,
         saveConfig(lock);
     }
 }
+
+TabletPtr Tablet::make(std::string const & tableName,
+                       ConfigManagerPtr const & configMgr,
+                       SharedLoggerPtr const & logger,
+                       SharedCompactorPtr const & compactor,
+                       FileTrackerPtr const & tracker,
+                       WorkQueuePtr const & workQueue,
+                       TabletConfig const & cfg,
+                       SuperTablet * superTablet)
+{
+    // FragDag hackery
+    lock_t dagLock(compactor->dagMutex);
+
+    TabletPtr p(
+        new Tablet(
+            tableName,
+            configMgr,
+            logger,
+            compactor,
+            tracker,
+            workQueue,
+            cfg,
+            superTablet));
+    return p;
+}
+
 
 Tablet::~Tablet()
 {

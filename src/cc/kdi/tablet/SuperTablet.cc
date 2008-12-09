@@ -181,8 +181,8 @@ SuperTablet::SuperTablet(std::string const & name,
     for(std::list<TabletConfig>::const_iterator i = cfgs.begin();
         i != cfgs.end(); ++i)
     {
-        TabletPtr p(
-            new Tablet(
+        tablets.push_back(
+            Tablet::make(
                 name,
                 configMgr,
                 logger,
@@ -190,10 +190,7 @@ SuperTablet::SuperTablet(std::string const & name,
                 tracker,
                 workQueue,
                 *i,
-                this
-                )
-            );
-        tablets.push_back(p);
+                this));
     }
 }
 

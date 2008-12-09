@@ -91,7 +91,7 @@ private:
     mutable mutex_t mutex;
     mutable warp::Synchronized<scanner_vec_t> syncScanners;
 
-public:
+private:
     Tablet(std::string const & tableName,
            ConfigManagerPtr const & configMgr,
            SharedLoggerPtr const & logger,
@@ -99,7 +99,18 @@ public:
            FileTrackerPtr const & tracker,
            WorkQueuePtr const & workQueue,
            TabletConfig const & cfg,
-           SuperTablet * superTablet = 0);
+           SuperTablet * superTablet);
+
+public:
+    static TabletPtr make(std::string const & tableName,
+                          ConfigManagerPtr const & configMgr,
+                          SharedLoggerPtr const & logger,
+                          SharedCompactorPtr const & compactor,
+                          FileTrackerPtr const & tracker,
+                          WorkQueuePtr const & workQueue,
+                          TabletConfig const & cfg,
+                          SuperTablet * superTablet = 0);
+
     ~Tablet();
 
     // Table API

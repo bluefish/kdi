@@ -88,18 +88,14 @@ namespace {
                     raise<RuntimeError>("loaded %d configs for META table",
                                         cfgs.size());
 
-                tablet::TabletPtr p(
-                    new tablet::Tablet(
-                        "META",
-                        fixedMgr,
-                        logger,
-                        compactor,
-                        tracker,
-                        workQueue,
-                        cfgs.front()
-                        )
-                    );
-                metaTable = p;
+                metaTable = tablet::Tablet::make(
+                    "META",
+                    fixedMgr,
+                    logger,
+                    compactor,
+                    tracker,
+                    workQueue,
+                    cfgs.front());
             }
             else
             {
