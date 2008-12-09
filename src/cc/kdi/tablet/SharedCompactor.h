@@ -22,10 +22,11 @@
 #define KDI_TABLET_SHAREDCOMPACTOR_H
 
 #include <kdi/tablet/forward.h>
+#include <kdi/tablet/FragDag.h>
 #include <boost/thread.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/noncopyable.hpp>
-#include <set>
+#include <vector>
 
 namespace kdi {
 namespace tablet {
@@ -41,15 +42,18 @@ namespace tablet {
 class kdi::tablet::SharedCompactor :
     private boost::noncopyable
 {
-    typedef std::set<TabletWeakPtr> set_t;
     typedef boost::mutex::scoped_lock lock_t;
 
     boost::mutex mutex;
     boost::condition requestAdded;
     boost::scoped_ptr<boost::thread> thread;
-
-    set_t requests;
     bool cancel;
+
+public:
+    // Anything that wants to interact with the compaction graph has
+    // to hold a lock on this mutex.
+    boost::mutex dagMutex;
+    FragDag fragDag;
 
 public:
     SharedCompactor();
@@ -59,7 +63,7 @@ public:
     void shutdown();
 
 private:
-    bool getTabletForCompaction(TabletPtr & tablet);
+    void compact(std::vector<FragmentPtr> const & fragments);
     void compactLoop();
 };
 

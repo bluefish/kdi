@@ -597,6 +597,10 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
         superTablet->requestSplit(this);
 }
 
+void Tablet::removeFragments(std::vector<FragmentPtr> const & oldFragments)
+{
+}
+
 namespace
 {
     struct ReopenScannerOrRemove

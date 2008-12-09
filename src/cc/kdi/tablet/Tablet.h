@@ -115,6 +115,9 @@ public:
     /// Get a name suitable for printing in debug messages
     std::string const & getPrettyName() const { return prettyName; }
 
+    /// XXX ...
+    ConfigManagerPtr const & getConfigManager() const { return configMgr; }
+
     /// Get a merged scan of all the tables in this this Tablet, using
     /// the given predicate.  This method does not support history
     /// predicates.
@@ -123,9 +126,12 @@ public:
     /// Add a new fragment to the Tablet.
     void addFragment(FragmentPtr const & fragment);
 
-    /// Replace a sequence of ragments with a new fragment.
+    /// Replace a sequence of fragments with a new fragment.
     void replaceFragments(std::vector<FragmentPtr> const & oldFragments,
                           FragmentPtr const & newFragment);
+
+    /// Remove a sequence of fragments from the tablet
+    void removeFragments(std::vector<FragmentPtr> const & oldFragments);
 
     /// Get the priority for compacting this Tablet.  Higher
     /// priorities are more important.  Priorities under 2 are
@@ -158,7 +164,7 @@ public:
     /// change as the tablet splits.
     warp::Interval<std::string> getRows() const
     {
-        // XXX need lock
+        lock_t lock(mutex);
         return rows;
     }
 
