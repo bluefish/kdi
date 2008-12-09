@@ -151,6 +151,9 @@ Tablet::Tablet(std::string const & tableName,
             uriChanged = true;
     }
 
+    dagLock.unlock();
+    compactor->wakeup();
+
     // If a table URI changed during the load, resave our config
     if(uriChanged)
     {
@@ -383,6 +386,8 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
         // can get into the copy constructor
         compactor->fragDag.addFragment(this, *i);
     }
+
+    compactor->wakeup();
 }
 
 void Tablet::postConfigChange(lock_t const & lock)
@@ -462,53 +467,42 @@ void Tablet::addFragment(FragmentPtr const & fragment)
 
     log("Tablet %s: add fragment %s", getPrettyName(), fragment->getFragmentUri());
 
-    bool wantCompaction = false;
+    // Lock tables
+    lock_t lock(mutex);
+
+    // Log hackery -- search to see if we already have a mutable
+    // log matching this one
+    for(fragments_t::const_reverse_iterator i = fragments.rbegin();
+        i != fragments.rend(); ++i)
     {
-        // Lock tables
-        lock_t lock(mutex);
-
-        // Log hackery -- search to see if we already have a mutable
-        // log matching this one
-        for(fragments_t::const_reverse_iterator i = fragments.rbegin();
-            i != fragments.rend(); ++i)
+        if((*i)->isImmutable())
         {
-            if((*i)->isImmutable())
-            {
-                // No sense in searching further -- everything past
-                // here should be immutable.
-                break;
-            }
-
-            if(*i == fragment)
-            {
-                // Duplicate add.  We cloned this log, so expect two
-                // serialization notices.
-                duplicatedLogs.insert(fragment);
-                lock.unlock();
-                
-                log("Tablet %s: detected cloned log %s", getPrettyName(),
-                    fragment->getFragmentUri());
-                return;
-            }
+            // No sense in searching further -- everything past
+            // here should be immutable.
+            break;
         }
 
-        // Add to table list
-        fragments.push_back(fragment);
-
-        // Add a reference to the new file
-        tracker->addReference(fragment->getDiskUri());
-
-        // Let's just say we want a compaction if we have more than 5
-        // tables (or more than 4 static tables)
-        wantCompaction = (fragments.size() > 5);
-
-        // Save changes to config
-        postConfigChange(lock);
+        if(*i == fragment)
+        {
+            // Duplicate add.  We cloned this log, so expect two
+            // serialization notices.
+            duplicatedLogs.insert(fragment);
+            lock.unlock();
+                
+            log("Tablet %s: detected cloned log %s", getPrettyName(),
+                fragment->getFragmentUri());
+            return;
+        }
     }
 
-    // Request a compaction if we need one
-    if(wantCompaction)
-        compactor->requestCompaction(shared_from_this());
+    // Add to table list
+    fragments.push_back(fragment);
+
+    // Add a reference to the new file
+    tracker->addReference(fragment->getDiskUri());
+
+    // Save changes to config
+    postConfigChange(lock);
 }
 
 void Tablet::replaceFragmentsInternal(
@@ -616,9 +610,10 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             // available for compaction.  Also, grabbing the dagMutex
             // from a compactor replacement wold deadlock, since the
             // compactor will have the dagMutex.  Evil code!  :)
-            lock_t lock(compactor->dagMutex);
+            lock_t dagLock(compactor->dagMutex);
             compactor->fragDag.addFragment(this, newFragment);
         }
+        compactor->wakeup();
     }
 
     // Replace fragments
@@ -641,6 +636,9 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
 
 void Tablet::removeFragments(std::vector<FragmentPtr> const & oldFragments)
 {
+    log("Tablet %s: remove %d fragment(s)", getPrettyName(),
+        oldFragments.size());
+
     replaceFragmentsInternal(oldFragments, FragmentPtr());
 }
 

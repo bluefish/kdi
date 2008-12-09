@@ -45,7 +45,7 @@ class kdi::tablet::SharedCompactor :
     typedef boost::mutex::scoped_lock lock_t;
 
     boost::mutex mutex;
-    boost::condition requestAdded;
+    boost::condition wakeCond;
     boost::scoped_ptr<boost::thread> thread;
     bool cancel;
 
@@ -59,7 +59,7 @@ public:
     SharedCompactor();
     ~SharedCompactor();
 
-    void requestCompaction(TabletPtr const & tablet);
+    void wakeup();
     void shutdown();
 
 private:

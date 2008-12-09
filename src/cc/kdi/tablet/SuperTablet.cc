@@ -194,9 +194,6 @@ SuperTablet::SuperTablet(std::string const & name,
                 )
             );
         tablets.push_back(p);
-
-        // XXX hack
-        compactor->requestCompaction(p);
     }
 }
 

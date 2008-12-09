@@ -100,9 +100,6 @@ namespace {
                         )
                     );
                 metaTable = p;
-
-                // XXX hack
-                compactor->requestCompaction(p);
             }
             else
             {

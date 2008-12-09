@@ -22,32 +22,22 @@
 #include <kdi/tablet/Tablet.h>
 #include <kdi/tablet/ConfigManager.h>
 #include <kdi/tablet/FileTracker.h>
+#include <kdi/tablet/Fragment.h>
+#include <kdi/cell_merge.h>
+#include <kdi/scan_predicate.h>
+#include <warp/functional.h>
 #include <warp/log.h>
 #include <warp/call_or_die.h>
 #include <boost/bind.hpp>
 #include <iostream>
 
-using namespace kdi;
-using namespace kdi::tablet;
-using namespace warp;
-using namespace std;
-
-//----------------------------------------------------------------------------
-#include <kdi/tablet/Fragment.h>
-#include <kdi/cell_merge.h>
-#include <kdi/scan_predicate.h>
-#include <warp/functional.h>
-#include <boost/scoped_ptr.hpp>
-
-using namespace kdi;
-using namespace kdi::tablet;
-using namespace warp;
-using namespace std;
-//----------------------------------------------------------------------------
-
 #include <kdi/local/disk_table_writer.h>
 using kdi::local::DiskTableWriter;
 
+using namespace kdi;
+using namespace kdi::tablet;
+using namespace warp;
+using namespace std;
 
 
 //----------------------------------------------------------------------------
@@ -78,10 +68,10 @@ SharedCompactor::~SharedCompactor()
     log("SharedCompactor %p: destroyed", this);
 }
 
-void SharedCompactor::requestCompaction(TabletPtr const & tablet)
+void SharedCompactor::wakeup()
 {
     lock_t lock(mutex);
-    requestAdded.notify_one();
+    wakeCond.notify_one();
 }
 
 void SharedCompactor::shutdown()
@@ -91,7 +81,7 @@ void SharedCompactor::shutdown()
     {
         log("SharedCompactor shutdown");
         cancel = true;
-        requestAdded.notify_all();
+        wakeCond.notify_all();
 
         lock.unlock();
         thread->join();
@@ -100,6 +90,8 @@ void SharedCompactor::shutdown()
 
 void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
 {
+    log("Compact thread: compacting %d fragments", fragments.size());
+
     // Get some info we need
     bool filterErasures;
     ConfigManagerPtr configMgr;
@@ -115,10 +107,12 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         tracker = t->getFileTracker();
     }
 
+    log("Compact thread: %srooted compaction on table %s",
+        (filterErasures ? "" : "un"), table);
+
     // no writer, loader.  use configMgr + DiskTableWriter instead
     DiskTableWriter writer(64<<10);
     string writerFn;
-
 
     // External correctness depends on the following properties, but
     // this function doesn't actually care:
@@ -148,6 +142,10 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
                 fragDag.getActiveRanges(*i)
                 );
         }
+
+        log("Compact thread: merging from %s (%s)",
+            (*i)->getFragmentUri(), pred);
+
         merge->pipeFrom((*i)->scan(pred));
     }
 
@@ -170,6 +168,9 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         // split.
         if(readyToSplit && lt(nextSplit, x.getRow()))
         {
+            log("Compact thread: splitting output (sz=%s) at %s",
+                sizeString(writer.size()), reprString(last.getRow()));
+
             // Reset readyToSplit to indicate we're no longer looking
             // to split the output
             readyToSplit = false;
@@ -239,6 +240,8 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
     // it.
     if(outputOpen)
     {
+        log("Compact thread: last output (sz=%s)", sizeString(writer.size()));
+
         // Finalize output and reset to indicate we do not have an
         // active output
         writer.close();
@@ -287,6 +290,7 @@ void SharedCompactor::compactLoop()
         }
 
         // Get a compaction set
+        log("Compact thread: choosing compaction set");
         lock_t dagLock(dagMutex);
         vector<FragmentPtr> frags = fragDag.chooseCompactionList();
         dagLock.unlock();
@@ -297,7 +301,8 @@ void SharedCompactor::compactLoop()
             lock_t lock(mutex);
             if(cancel)
                 break;
-            requestAdded.wait(lock);
+            log("Compact thread: nothing to compact, waiting");
+            wakeCond.wait(lock);
             continue;
         }
 
