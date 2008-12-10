@@ -69,6 +69,43 @@ namespace warp {
         log((boost::format(fmt) % a1 % a2 % a3 % a4 % a5).str());
     }
 
+    /// Log a line with argument substitution.
+    template <class A1, class A2, class A3, class A4, class A5, class A6>
+    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3,
+             A4 const & a4, A5 const & a5, A6 const & a6)
+    {
+        log((boost::format(fmt) % a1 % a2 % a3 % a4 % a5 % a6).str());
+    }
+
+    /// Log a line with argument substitution.
+    template <class A1, class A2, class A3, class A4, class A5, class A6,
+              class A7>
+    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3,
+             A4 const & a4, A5 const & a5, A6 const & a6, A7 const & a7)
+    {
+        log((boost::format(fmt) % a1 % a2 % a3 % a4 % a5 % a6 % a7).str());
+    }
+
+    /// Log a line with argument substitution.
+    template <class A1, class A2, class A3, class A4, class A5, class A6,
+              class A7, class A8>
+    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3,
+             A4 const & a4, A5 const & a5, A6 const & a6, A7 const & a7,
+             A8 const & a8)
+    {
+        log((boost::format(fmt) % a1 % a2 % a3 % a4 % a5 % a6 % a7 % a8).str());
+    }
+
+    /// Log a line with argument substitution.
+    template <class A1, class A2, class A3, class A4, class A5, class A6,
+              class A7, class A8, class A9>
+    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3,
+             A4 const & a4, A5 const & a5, A6 const & a6, A7 const & a7,
+             A8 const & a8, A9 const & a9)
+    {
+        log((boost::format(fmt) % a1 % a2 % a3 % a4 % a5 % a6 % a7 % a8 % a9).str());
+    }
+
 } // namespace warp
 
 #endif // WARP_LOG_H
