@@ -368,37 +368,13 @@ FragDag::maxAdjacentTabletFragments(fragment_vec const & fragments,
 FragmentPtr
 FragDag::getParent(FragmentPtr const & fragment, Tablet * tablet) const
 {
-    ffset_map::const_iterator pi = parentMap.find(fragment);
-    if(pi == parentMap.end())
-        return FragmentPtr();
-
-    fragment_set const & parents = pi->second;
-    for(fragment_set::const_iterator f = parents.begin();
-        f != parents.end(); ++f)
-    {
-        tablet_set const & tablets = activeTablets.find(*f)->second;
-        if(tablets.find(tablet) != tablets.end())
-            return *f;
-    }
-    return FragmentPtr();
+    return tablet->getFragmentParent(fragment);
 }
 
 FragmentPtr
 FragDag::getChild(FragmentPtr const & fragment, Tablet * tablet) const
 {
-    ffset_map::const_iterator pi = childMap.find(fragment);
-    if(pi == childMap.end())
-        return FragmentPtr();
-
-    fragment_set const & children = pi->second;
-    for(fragment_set::const_iterator f = children.begin();
-        f != children.end(); ++f)
-    {
-        tablet_set const & tablets = activeTablets.find(*f)->second;
-        if(tablets.find(tablet) != tablets.end())
-            return *f;
-    }
-    return FragmentPtr();
+    return tablet->getFragmentChild(fragment);
 }
 
 FragDag::tablet_set

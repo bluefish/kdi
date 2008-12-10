@@ -527,6 +527,36 @@ void Tablet::addFragment(FragmentPtr const & fragment)
     postConfigChange(lock);
 }
 
+FragmentPtr Tablet::getFragmentParent(FragmentPtr const & f) const
+{
+    lock_t lock(mutex);
+
+    fragments_t::const_iterator i = std::find(
+        fragments.begin(), fragments.end(), f);
+    if(i == fragments.end())
+        raise<ValueError>("fragment not in tablet chain");
+
+    if(i == fragments.begin())
+        return FragmentPtr();
+    else
+        return *--i;
+}
+
+FragmentPtr Tablet::getFragmentChild(FragmentPtr const & f) const
+{
+    lock_t lock(mutex);
+
+    fragments_t::const_iterator i = std::find(
+        fragments.begin(), fragments.end(), f);
+    if(i == fragments.end())
+        raise<ValueError>("fragment not in tablet chain");
+
+    if(++i == fragments.end())
+        return FragmentPtr();
+    else
+        return *i;
+}
+
 void Tablet::replaceFragmentsInternal(
     std::vector<FragmentPtr> const & oldFragments,
     FragmentPtr const & newFragment)

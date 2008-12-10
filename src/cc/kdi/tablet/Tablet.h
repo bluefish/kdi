@@ -139,6 +139,9 @@ public:
     /// Add a new fragment to the Tablet.
     void addFragment(FragmentPtr const & fragment);
 
+    FragmentPtr getFragmentParent(FragmentPtr const & f) const;
+    FragmentPtr getFragmentChild(FragmentPtr const & f) const;
+
 private:
     /// Remove old fragments from fragment list.  Replace with
     /// newFragment if non-null.
