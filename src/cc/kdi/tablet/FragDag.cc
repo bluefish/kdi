@@ -186,19 +186,7 @@ FragDag::getActiveRanges(FragmentPtr const & frag) const
 size_t
 FragDag::getActiveSize(FragmentPtr const & frag) const
 {
-    IntervalSet<string> rows = getActiveRanges(frag);
-
-    size_t activeSize = 0;
-    for(IntervalSet<string>::const_iterator j = rows.begin();
-        j != rows.end();)
-    {
-        IntervalPoint<string> const & lo = *j;  ++j;
-        IntervalPoint<string> const & hi = *j;  ++j;
-
-        activeSize += frag->getDiskSize(Interval<string>(lo, hi));
-    }
-
-    return activeSize;
+    return frag->getDiskSize(getActiveRanges(frag));
 }
 
 FragDag::fragment_set
