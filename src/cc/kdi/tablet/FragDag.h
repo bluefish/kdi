@@ -42,14 +42,16 @@ namespace tablet {
 //----------------------------------------------------------------------------
 class kdi::tablet::FragDag
 {
+public:
     typedef std::vector<FragmentPtr>              fragment_vec;
     typedef std::set<FragmentPtr>                 fragment_set;
     typedef std::set<Tablet*>                     tablet_set;
     typedef std::map<FragmentPtr, fragment_set>   ffset_map;
     typedef std::map<FragmentPtr, tablet_set>     ftset_map;
     typedef std::map<Tablet*, fragment_set>       tfset_map;
-
     typedef std::map<Tablet*, FragmentPtr>        tf_map;
+
+private:
     ffset_map parentMap;
     ffset_map childMap;
     ftset_map activeTablets;
@@ -64,6 +66,11 @@ public:
     /// Remove all references to tablet from DAG.
     void removeTablet(Tablet * tablet);
 
+private:
+    /// Remove an inactive fragment from DAG.
+    void removeInactiveFragment(FragmentPtr const & fragment);
+
+public:
     /// XXX ...
     FragmentPtr
     getMaxWeightFragment(size_t minWeight) const;
@@ -101,32 +108,61 @@ public:
     filterTabletFragments(fragment_vec const & fragments,
                           Tablet * tablet) const;
 
+    /// Filter the fragment list based on which belong to a given
+    /// tablet's active set and choose the longest adjacent sequence
+    fragment_vec
+    maxAdjacentTabletFragments(fragment_vec const & fragments,
+                               Tablet * tablet) const;
+
     /// Get the parent of the given fragment in the line of the given
     /// tablet.
     FragmentPtr
-    getParent(FragmentPtr const & fragment,
-              Tablet * tablet);
+    getParent(FragmentPtr const & fragment, Tablet * tablet) const;
 
     /// Get the child of the given fragment in the line of the given
     /// tablet.
     FragmentPtr
-    getChild(FragmentPtr const & fragment,
-             Tablet * tablet);
+    getChild(FragmentPtr const & fragment, Tablet * tablet) const;
+
+    /// XXX ...
+    tablet_set
+    getActiveTablets(fragment_vec const & fragments) const;
 
     tablet_set
-    getActiveTablets(fragment_vec const & fragments);
+    getActiveTabletIntersection(fragment_vec const & fragments) const;
 
-    /// Replace the list of fragments in each tablet contained in
-    /// fragmentRows with newFragment.  Tablets covering ranges
-    /// outside fragmentRows will not be modified.
-    void
-    replaceFragments(fragment_vec const & fragments,
-                     FragmentPtr const & newFragment,
-                     warp::Interval<std::string> const & outputRange);
 
-    // Drop the fragments from the graph
+private:
+    /// Replace the fragments in adjFragments with newFragment for the
+    /// given tablet.  adjFragments must be a non-empty, adjacent
+    /// sequence in tablet's active list of fragments.  If newFragment
+    /// is not null, it is spliced into the place of adjFragments.  If
+    /// newFragment is null, adjFragments are spliced out.
     void
-    removeFragments(fragment_vec const & fragments);
+    replaceInternal(Tablet * tablet,
+                    fragment_vec const & adjFragments,
+                    FragmentPtr const & newFragment);
+
+public:
+    /// Replace the given fragments in active tablets contained in
+    /// range with newFragment.  adjFragments is expected to be an
+    /// adjacent sequence of fragments in each matching tablet's
+    /// active fragment list.
+    void
+    replaceFragments(warp::Interval<std::string> const & range,
+                     fragment_vec const & adjFragments,
+                     FragmentPtr const & newFragment);
+
+    /// Remove the given fragments from active tablets contained in
+    /// range.  adjFragments is expected to be an adjacent sequence of
+    /// fragments in each matching tablet's active fragment list.
+    void
+    removeFragments(warp::Interval<std::string> const & range,
+                    fragment_vec const & adjFragments);
+
+    /// Sweep graph of inactive tablets and fragments.  A tablet is
+    /// inactive if it has no active fragments and vice-versa.
+    void sweepGraph();
 
     /// XXX ...
     fragment_set

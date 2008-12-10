@@ -29,6 +29,7 @@
 #include <warp/uri.h>
 #include <warp/log.h>
 #include <warp/call_or_die.h>
+#include <ex/exception.h>
 #include <boost/bind.hpp>
 #include <iostream>
 
@@ -38,6 +39,7 @@ using kdi::local::DiskTableWriter;
 using namespace kdi;
 using namespace kdi::tablet;
 using namespace warp;
+using namespace ex;
 using namespace std;
 
 
@@ -108,6 +110,12 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
 {
     log("Compact thread: compacting %d fragments", fragments.size());
 
+    // External correctness depends on the following properties, but
+    // this function doesn't actually care:
+    //   - fragments is topologically ordered oldest to newest
+    //   - fragments must be in same locality group (e.g. 'table')
+
+
     // XXX we have chosen a fragment set, but the active tablet set
     // can change on the fragments after we start compacting.  We'll
     // only see cells in the compaction from Tablets that are active
@@ -121,116 +129,134 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
     // a subsequence but not a substring of its tablet list.
 
     // Choosing a fully adjacent set is hard
-    //
+
+
+
+
+    // Split outputs if they get bigger than this:
+    size_t const outputSplitSize = size_t(1) << 30; // 1 GB
+
+    // Random stuff we need to operate.  It probably should be
+    // abstracted away or passed in, but since we're in hack mode,
+    // we'll just pull it from the first Tablet we see.
+    ConfigManagerPtr configMgr;
+    FileTrackerPtr tracker;
+    string table;
+
+
     // For each active tablet in compaction set, remember:
-    //   rangeMap:
+    //   rangeMap:  (not an actual std::map)
     //      tablet range -> adjSeq (longest adjacent sequence
     //                              of fragments)
-    //
+
+    typedef std::vector<FragmentPtr> fragment_vec;
+    typedef std::pair<Interval<string>, fragment_vec> adj_pair;
+    typedef std::vector<adj_pair> adj_vec;
+
+    bool allRooted = true;
+    adj_vec rangeMap;
+    {
+        lock_t dagLock(dagMutex);
+
+        // Get all active tablets for fragment set
+        FragDag::tablet_set active = fragDag.getActiveTablets(fragments);
+
+        // For each tablet, figure out longest adjacent fragment
+        // sequence and remember that for the tablet's range
+        for(FragDag::tablet_set::const_iterator t = active.begin();
+            t != active.end(); ++t)
+        {
+            // Find max-length adjacent sequence
+            fragment_vec adjSeq =
+                fragDag.maxAdjacentTabletFragments(fragments, *t);
+
+            // Unless the sequence includes at least two fragments,
+            // there's no point in compacting it
+            if(adjSeq.size() < 2)
+                continue;
+
+            // Remember the sequence for the range
+            rangeMap.push_back(
+                adj_pair(
+                    (*t)->getRows(),
+                    adjSeq));
+
+            // If the first element in the sequence has a parent, then
+            // the sequence is not rooted
+            if(fragDag.getParent(adjSeq.front(), *t))
+                allRooted = false;
+        }
+
+        // Since we're in the neighborhood, pull our random parameters
+        // from one of the tablets.  It doesn't matter which as all of
+        // the tablets should have the same information.
+        if(!active.empty())
+        {
+            Tablet * t = *active.begin();
+            configMgr = t->getConfigManager();
+            tracker = t->getFileTracker();
+            table = t->getTableName();
+        }
+    }
+
+    // If we didn't find anything to compact, we're kind of hosed.
+    if(rangeMap.empty())
+        raise<ValueError>("fragment set contained no compactible sequences");
+
+
     // For each fragment in compaction set, remember:
     //   invRangeMap:
     //      fragment -> adjRange (ranges referencing fragment in
     //                            an adjacent sequence)
-    //
-    // When merging from fragments, only scan adjRange
-    //   for fragment,adjRange in invRangeMap:
-    //      merge->pipeFrom(fragment.scan(adjRange))
-    //
-    // When replacing fragments for tablets, replace by ranges
-    //   for range,adjSeq in rangeMap:
-    //      if not range.overlaps(outRange):
-    //         continue
-    //      graph->replace(range, adjSeq, outFrag)
-    //
 
-    // graph::replace(range, adjSeq, outFrag):
-    //    for tablet in (intersection of active tablets for each frag in adjSeq):
-    //       -- guaranteed tablet contains adjSeq (1)
-    //       if range contains tablet.rows:
-    //          -- guaranteed we merged all relevant data (2)
-    //          if outFrag contains data in tablet.rows:   -- optimization (3)
-    //             tablet.replace(adjSeq, outFrag)   -- blow up if adjSeq not found
-    //          else:
-    //             tablet.remove(adjSeq)             -- blow up if adjSeq not found
-    //
-    // (1) Guarantee: All of the fragments in adjSeq are part of the
-    //     current compaction set, so they are active and can't be
-    //     replaced by something different with the same name.  If a
-    //     tablet were to get dropped from this server, loaded by
-    //     another server, compacted, dropped from that server, and
-    //     reloaded by this server all while the compaction on this
-    //     server was happening, then we have two cases: 1) at least
-    //     one of fragments in the adjSeq was compacted and replaced
-    //     for this tablet by another server, or 2) the other server
-    //     didn't touch anything in adjSeq.  For 1), when the tablet
-    //     gets reloaded it will not be in the active set for the
-    //     replaced fragment.  The tablet will not be contained in the
-    //     intersection of all active tablets for the fragment.  For
-    //     2), we can go ahead with the replacement.
-    //
-    // (2) Guarantee: The input scan on each fragment in adjSeq
-    //     includes all ranges for each tablet referencing the
-    //     fragment (in that tablet's adjSeq).  There is no data in
-    //     any of the fragments in adjSeq inside of the given range
-    //     that is not included in outFrag.  This allows us to be
-    //     confident about doing the right thing for recently split or
-    //     joined tablets.
-    //
-    // (3) Optimization: it's possible outFrag doesn't contain
-    //     anything in the tablet's range, and therefore doesn't need
-    //     to be included in the tablet's fragment chain.  This seems
-    //     most likely to happen when tablets split.
+    typedef std::map<FragmentPtr, IntervalSet<string> > inv_range_map;
 
-    // Get some info we need
-    bool filterErasures;
-    ConfigManagerPtr configMgr;
-    FileTrackerPtr tracker;
-    string table;
-    size_t const outputSplitSize = size_t(1) << 30; // 1 GB
+    // Invert rangeMap to build invRangeMap
+    inv_range_map invRangeMap;
+    for(adj_vec::const_iterator i = rangeMap.begin();
+        i != rangeMap.end(); ++i)
     {
-        lock_t lock(dagMutex);
-        filterErasures = fragDag.isRooted(fragments);
-        Tablet * t = *fragDag.getActiveTablets(fragments).begin();
-        configMgr = t->getConfigManager();
-        table = t->getTableName();
-        tracker = t->getFileTracker();
+        Interval<string> const & range = i->first;
+        fragment_vec const & adjSeq = i->second;
+
+        for(fragment_vec::const_iterator f = adjSeq.begin();
+            f != adjSeq.end(); ++f)
+        {
+            invRangeMap[*f].add(range);
+        }
     }
 
+
     log("Compact thread: %srooted compaction on table %s",
-        (filterErasures ? "" : "un"), table);
+        (allRooted ? "" : "un"), table);
 
     // no writer, loader.  use configMgr + DiskTableWriter instead
     DiskTableWriter writer(64<<10);
     string writerFn;
 
-    // External correctness depends on the following properties, but
-    // this function doesn't actually care:
-    //   - fragments must be adjacent (see chooseCompactionFragments())
-    //   - fragments is topologically ordered oldest to newest
-    //   - fragments must be in same locality group (e.g. 'table')
-    //   - filterErasures <==> isRooted(fragments)
+
+    // When merging from fragments, only scan adjRange
+    //   for fragment,adjRange in invRangeMap:
+    //      merge->pipeFrom(fragment.scan(adjRange))
 
     /// Build a merge over the compaction fragments.  Filter erasures
     /// if the compaction set is rooted.
-    CellStreamPtr merge = CellMerge::make(filterErasures);
+    CellStreamPtr merge = CellMerge::make(allRooted);
     for(vector<FragmentPtr>::const_reverse_iterator i = fragments.rbegin();
         i != fragments.rend(); ++i)
     {
-        // Only scan the parts of the fragment covered by active
-        // tablets.  If the file is shared with external tablets, it's
-        // possible there's more to the fragment that we can ignore.
-        // Also, if the fragment contains stale/unactive cells in one
-        // of our other tablet ranges (maybe it used to be active and
-        // was compacted earlier), we don't want to get confused by
-        // pulling that data back in.
-        ScanPredicate pred;
-
+        inv_range_map::const_iterator mi = invRangeMap.find(*i);
+        if(mi == invRangeMap.end())
         {
-            lock_t lock(dagMutex);
-            pred.setRowPredicate(
-                fragDag.getActiveRanges(*i)
-                );
+            // This fragment isn't included in any adjacent sequence,
+            // so don't bother.
+            continue;
         }
+
+        // Only scan the parts of the fragment active in the current
+        // compaction
+        ScanPredicate pred;
+        pred.setRowPredicate(mi->second);
 
         log("Compact thread: merging from %s (%s)",
             (*i)->getFragmentUri(), pred);
@@ -240,29 +266,22 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
 
     // Bookkeeping: output
     Interval<string> outputRange;
+    outputRange.setInfinite();
     bool outputOpen = false;
-
-    // Bookkeeping: split
-    IntervalPoint<string> nextSplit;
     bool readyToSplit = false;
 
     // Read cells in merged order
     IntervalPointOrder<warp::less> lt;
-    Cell last;
     Cell x;
     while(merge->get(x))
     {
         // If we're looking for a place to split the output and the
-        // current cell crosses the boundary, perform the output
-        // split.
-        if(readyToSplit && lt(nextSplit, x.getRow()))
+        // current cell is outside our outputRange, perform the split.
+        if(readyToSplit && lt(outputRange.getUpperBound(), x.getRow()))
         {
             log("Compact thread: splitting output (sz=%s) at %s",
-                sizeString(writer.size()), reprString(last.getRow()));
-
-            // Reset readyToSplit to indicate we're no longer looking
-            // to split the output
-            readyToSplit = false;
+                sizeString(writer.size()),
+                reprString(outputRange.getUpperBound().getValue()));
 
             // Finalize output and reset to indicate we do not have an
             // active output
@@ -270,24 +289,54 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
             string uri = uriPushScheme(writerFn, "disk");
             outputOpen = false;
 
-            // Close the output range with the last row added
-            outputRange.setUpperBound(last.getRow().toString(), BT_INCLUSIVE);
-
-            // Open new fragment
+            // Open the newly written fragment
             FragmentPtr frag = configMgr->openFragment(uri);
 
             // Track the new file for automatic deletion
             FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
 
-            // Replace all compacted fragments in the output range
-            // with a new fragment opened from the recent output.
-            // Since split points are chosen to fall on tablet
-            // boundaries, each tablet will map to no more than one
-            // output.
+            // Replace the adjacent fragment sequence for all mapped
+            // ranges in the output with the new fragment.
             {
-                lock_t lock(dagMutex);
-                fragDag.replaceFragments(fragments, frag, outputRange);
+                lock_t dagLock(dagMutex);
+
+                for(adj_vec::const_iterator i = rangeMap.begin();
+                    i != rangeMap.end(); ++i)
+                {
+                    Interval<string> const & range = i->first;
+                    fragment_vec const & adjSeq = i->second;
+
+                    // If mapped range and output range don't overlap,
+                    // wait for a different output -- all ranges will
+                    // be covered eventually
+                    if(!range.overlaps(outputRange))
+                        continue;
+
+                    // It's possible the mapped range isn't entirely
+                    // contained in outputRange if a tablet split
+                    // happened after building the rangeMap.  Clip the
+                    // range to outputRange and update the clipped
+                    // range.  The other part of the range will be (or
+                    // was already) updated in a different output.
+                    Interval<string> clippedRange(range);
+                    clippedRange.clip(outputRange);
+                    fragDag.replaceFragments(clippedRange, adjSeq, frag);
+                }
             }
+
+            // Reset readyToSplit to indicate we're no longer looking
+            // to split the output
+            readyToSplit = false;
+
+            // The upper bound will be finite or it wouldn't have been
+            // less than the current row.
+            assert(outputRange.getUpperBound().isFinite());
+
+            // Reset outputRange to the half interval immediately
+            // above the current output range
+            outputRange.setLowerBound(
+                outputRange.getUpperBound().getAdjacentComplement());
+            outputRange.setUpperBound(string(), BT_INFINITE);
         }
 
         // If we don't have an active output, open a new one
@@ -297,29 +346,23 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
             writerFn = configMgr->getDataFile(table);
             writer.open(writerFn);
             outputOpen = true;
-
-            // Open the output range with the first row we're about to
-            // put into the output
-            outputRange.setLowerBound(x.getRow().toString(), BT_INCLUSIVE);
         }
 
         // Add another cell to the output
         writer.put(x);
 
-        // Remember the last cell we added
-        last = x;
-
         // Check to see if the output is large enough to split if
         // haven't already chosen one.
         if(!readyToSplit && writer.size() > outputSplitSize)
         {
-            // Choose a split point on a tablet boundary.  The last
-            // row we added to the output forms an inclusive lower
-            // bound for the split point.  We'll split the first time
-            // we see a cell with a row greater than nextSplit.
+            // Choose a split point on a tablet boundary and restrict
+            // outputRange.  The last row we added to the output forms
+            // an inclusive lower bound for the split point.  We'll
+            // split the first time we see a cell outside outputRange.
             {
                 lock_t lock(dagMutex);
-                nextSplit = fragDag.findNextSplit(fragments, last.getRow());
+                outputRange.setUpperBound(
+                    fragDag.findNextSplit(fragments, x.getRow()));
             }
             readyToSplit = true;
         }
@@ -337,33 +380,47 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         string uri = uriPushScheme(writerFn, "disk");
         outputOpen = false;
 
-        // Close the output range with the last row added
-        outputRange.setUpperBound(last.getRow().toString(), BT_INCLUSIVE);
-
-        // Open new fragment
+        // Open the newly written fragment
         FragmentPtr frag = configMgr->openFragment(uri);
 
         // Track the new file for automatic deletion
         FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
 
-        // Replace all compacted fragments in the output range with a
-        // new fragment opened from the recent output.  Since split
-        // points are chosen to fall on tablet boundaries, each tablet
-        // will map to no more than one output.
+        // Replace the adjacent fragment sequence for all mapped
+        // ranges in the output with the new fragment.
         {
-            lock_t lock(dagMutex);
-            fragDag.replaceFragments(fragments, frag, outputRange);
+            lock_t dagLock(dagMutex);
+
+            for(adj_vec::const_iterator i = rangeMap.begin();
+                i != rangeMap.end(); ++i)
+            {
+                Interval<string> const & range = i->first;
+                fragment_vec const & adjSeq = i->second;
+
+                // If mapped range and output range don't overlap,
+                // wait for a different output -- all ranges will be
+                // covered eventually
+                if(!range.overlaps(outputRange))
+                    continue;
+
+                // It's possible the mapped range isn't entirely
+                // contained in outputRange if a tablet split happened
+                // after building the rangeMap.  Clip the range to
+                // outputRange and update the clipped range.  The
+                // other part of the range will be (or was already)
+                // updated in a different output.
+                Interval<string> clippedRange(range);
+                clippedRange.clip(outputRange);
+                fragDag.replaceFragments(clippedRange, adjSeq, frag);
+            }
         }
     }
 
-    // Remove the fragments from the graph.  Any tablets referencing
-    // these fragments that didn't get one of the previous calls to
-    // replaceFragments() didn't overlap with any of the output files.
-    // Therefore the compaction set didn't contain anything belonging
-    // to these tablets and they should drop their references.
+    // Now that we're done, sweep the graph to get rid of old
+    // fragments
     {
-        lock_t lock(dagMutex);
-        fragDag.removeFragments(fragments);
+        lock_t dagLock(dagMutex);
+        fragDag.sweepGraph();
     }
 }
 

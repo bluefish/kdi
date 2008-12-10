@@ -55,18 +55,64 @@ FragDag::addFragment(Tablet * tablet, FragmentPtr const & fragment)
 
 void FragDag::removeTablet(Tablet * tablet)
 {
-    log("FragDag: Tablet %s remove",
-        tablet->getPrettyName());
+    tfset_map::iterator i = activeFragments.find(tablet);
+    if(i == activeFragments.end())
+        return;
 
-    fragment_set const & fragments = activeFragments[tablet];
+    log("FragDag: remove tablet %s", tablet->getPrettyName());
+
+    fragment_set const & fragments = i->second;
     for(fragment_set::const_iterator f = fragments.begin();
         f != fragments.end(); ++f)
     {
-        activeTablets[*f].erase(tablet);
+        tablet_set & tablets = activeTablets[*f];
+        tablets.erase(tablet);
+        if(tablets.empty())
+            removeInactiveFragment(*f);
     }
 
-    activeFragments.erase(tablet);
+    activeFragments.erase(i);
     tailMap.erase(tablet);
+}
+
+void FragDag::removeInactiveFragment(FragmentPtr const & fragment)
+{
+    assert(activeTablets[fragment].empty());
+
+    log("FragDag: remove fragment %s", fragment->getFragmentUri());
+
+    // Remove references from parents to fragment
+    ffset_map::iterator pi = parentMap.find(fragment);
+    if(pi != parentMap.end())
+    {
+        fragment_set const & parents = pi->second;
+        for(fragment_set::const_iterator p = parents.begin();
+            p != parents.end(); ++p)
+        {
+            childMap[*p].erase(fragment);
+            if(childMap[*p].empty())
+                childMap.erase(*p);
+        }
+        parentMap.erase(pi);
+    }
+
+    // Remove references from children to fragment
+    ffset_map::iterator ci = childMap.find(fragment);
+    if(ci != childMap.end())
+    {
+        fragment_set const & children = ci->second;
+        for(fragment_set::const_iterator c = children.begin();
+            c != children.end(); ++c)
+        {
+            parentMap[*c].erase(fragment);
+            if(parentMap[*c].empty())
+                parentMap.erase(*c);
+        }
+        childMap.erase(ci);
+    }
+
+    // Remove fragment from active map
+    activeTablets.erase(fragment);
 }
 
 FragmentPtr
@@ -77,6 +123,7 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
     // Find fragment with max weight
     FragmentPtr maxFrag;
     size_t maxWeight = minWeight;
+    size_t totalWeight = 0;
     for(ftset_map::const_iterator i = activeTablets.begin();
         i != activeTablets.end(); ++i)
     {
@@ -103,7 +150,18 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
             maxWeight = weight;
             maxFrag = frag;
         }
+
+        // Track total weight as a measure of graph fragmentation
+        totalWeight += weight;
     }
+
+    log("FragDag: total graph weight: %d", totalWeight);
+    if(!activeFragments.empty())
+    {
+        log("FragDag: average fragments/tablet: %.2f",
+            double(activeTablets.size()) / activeFragments.size());
+    }
+
     return maxFrag;
 }
 
@@ -247,9 +305,68 @@ FragDag::filterTabletFragments(fragment_vec const & fragments,
     return filtered;
 }
 
+FragDag::fragment_vec
+FragDag::maxAdjacentTabletFragments(fragment_vec const & fragments,
+                                    Tablet * tablet) const
+{
+    fragment_vec maxAdj;
+
+    log("FragDag: maxAdjacent for %s", tablet->getPrettyName());
+
+    // Restrict fragments to those in tablet's active set
+    fragment_vec filtered = filterTabletFragments(fragments, tablet);
+
+    // Track max adjacent range
+    fragment_vec::const_iterator maxStart;
+    fragment_vec::const_iterator maxEnd;
+    maxStart = maxEnd = filtered.begin();
+
+    for(fragment_vec::const_iterator f = filtered.begin();
+        f != filtered.end(); ++f)
+    {
+        log("FragDag: .. %d: %s", f - filtered.begin(),
+            (*f)->getFragmentUri());
+    }
+
+    // Walk through list looking for ajacent segments
+    for(fragment_vec::const_iterator start = filtered.begin();
+        start != filtered.end(); )
+    {
+        // Walk forward from start until we find the first
+        // non-adjacent fragment (one whose parent is not the previous
+        // fragment in the sequence)
+        fragment_vec::const_iterator end;
+        for(end = start + 1; end != filtered.end(); ++end)
+        {
+            if(getParent(*end, tablet) != *(end-1))
+                break;
+        }
+
+        log("FragDag: adj seq of length %d from #%d",
+            end - start, start - filtered.begin());
+
+        // Update the max range if the current range has more
+        // fragments
+        if((end - start) > (maxEnd - maxStart))
+        {
+            maxStart = start;
+            maxEnd = end;
+        }
+
+        // Move the starting point for the next search
+        start = end;
+    }
+
+    log("FragDag: max seq of length %d from #%d",
+        maxEnd - maxStart, maxStart - filtered.begin());
+
+    // Copy the max adjacent segment and return
+    maxAdj.insert(maxAdj.end(), maxStart, maxEnd);
+    return maxAdj;
+}
+
 FragmentPtr
-FragDag::getParent(FragmentPtr const & fragment,
-                   Tablet * tablet)
+FragDag::getParent(FragmentPtr const & fragment, Tablet * tablet) const
 {
     ffset_map::const_iterator pi = parentMap.find(fragment);
     if(pi == parentMap.end())
@@ -267,8 +384,7 @@ FragDag::getParent(FragmentPtr const & fragment,
 }
 
 FragmentPtr
-FragDag::getChild(FragmentPtr const & fragment,
-                  Tablet * tablet)
+FragDag::getChild(FragmentPtr const & fragment, Tablet * tablet) const
 {
     ffset_map::const_iterator pi = childMap.find(fragment);
     if(pi == childMap.end())
@@ -286,7 +402,7 @@ FragDag::getChild(FragmentPtr const & fragment,
 }
 
 FragDag::tablet_set
-FragDag::getActiveTablets(fragment_vec const & fragments)
+FragDag::getActiveTablets(fragment_vec const & fragments) const
 {
     tablet_set active;
     for(fragment_vec::const_iterator f = fragments.begin();
@@ -303,71 +419,82 @@ FragDag::getActiveTablets(fragment_vec const & fragments)
     return active;
 }
 
-void
-FragDag::replaceFragments(fragment_vec const & fragments,
-                          FragmentPtr const & newFragment,
-                          Interval<string> const & outputRange)
+FragDag::tablet_set
+FragDag::getActiveTabletIntersection(fragment_vec const & fragments) const
 {
-    log("FragDag: replace %d fragment(s) with %s",
-        fragments.size(), newFragment->getFragmentUri());
-    for(fragment_vec::const_iterator f = fragments.begin();
-        f != fragments.end(); ++f)
+    tablet_set active;
+
+    if(fragments.empty())
+        return active;
+
+    // Init active set from first element
+    fragment_vec::const_iterator f = fragments.begin();
     {
-        log("FragDag: .. %d: %s", f - fragments.begin(),
-            (*f)->getFragmentUri());
+        ftset_map::const_iterator ti = activeTablets.find(*f);
+        if(ti == activeTablets.end())
+            raise<RuntimeError>("fragment not in graph: %s",
+                                (*f)->getFragmentUri());
+        active = ti->second;
     }
 
-    // Get the contained tablet set
-    tablet_set contained;
+    // For each subsequent fragment, erase tablets from the
+    // intersection set not in the later fragment's active tablet set
+    for(++f; f != fragments.end(); ++f)
     {
-        tablet_set active = getActiveTablets(fragments);
-        for(tablet_set::const_iterator t = active.begin();
-            t != active.end(); ++t)
+        ftset_map::const_iterator ti = activeTablets.find(*f);
+        if(ti == activeTablets.end())
+            raise<RuntimeError>("fragment not in graph: %s",
+                                (*f)->getFragmentUri());
+
+        tablet_set const & tablets = ti->second;
+        for(tablet_set::iterator t = active.begin();
+            t != active.end(); )
         {
-            Interval<string> const & rows = (*t)->getRows();
-            if(rows.overlaps(outputRange))
-            {
-                log("FragDag: tablet %s overlaps", (*t)->getPrettyName());
-                contained.insert(*t);
-            }
+            if(tablets.find(*t) == tablets.end())
+                active.erase(t++);
             else
-                log("FragDag: tablet %s is disjoint", (*t)->getPrettyName());
+                ++t;
         }
     }
 
-    // Replace fragments for contained tablets
-    for(tablet_set::const_iterator t = contained.begin();
-        t != contained.end(); ++t)
+    return active;
+}
+
+void
+FragDag::replaceInternal(Tablet * tablet,
+                         fragment_vec const & adjFragments,
+                         FragmentPtr const & newFragment)
+{
+    log("FragDag: updating %s", tablet->getPrettyName());
+
+    assert(!adjFragments.empty());
+    assert(filterTabletFragments(adjFragments, tablet).size() == adjFragments.size());
+
+    FragmentPtr parent = getParent(adjFragments.front(), tablet);
+    FragmentPtr child = getChild(adjFragments.back(), tablet);
+
+    // Remove fragments and tablet from each other's active sets.
+    log("FragDag: parent: %s", parent ? parent->getFragmentUri() : "NULL");
+    for(fragment_vec::const_iterator f = adjFragments.begin();
+        f != adjFragments.end(); ++f)
     {
-        log("FragDag: updating %s", (*t)->getPrettyName());
+        log("FragDag: .. %d: %s", f - adjFragments.begin(), (*f)->getFragmentUri());
 
-        fragment_vec filtered = filterTabletFragments(fragments, *t);
-        if(filtered.empty())
-        {
-            log("FragDag: tablet %s has no replaceable fragments.  wtf?",
-                (*t)->getPrettyName());
-            continue;
-        }
+        activeTablets[*f].erase(tablet);
+        activeFragments[tablet].erase(*f);
+    }
+    log("FragDag:  child: %s", child ? child->getFragmentUri() : "NULL");
 
-        FragmentPtr parent = getParent(filtered.front(), *t);
-        FragmentPtr child = getChild(filtered.back(), *t);
-
-        // Remove fragments and tablets from each other's active
-        // sets.
-        log("FragDag: parent: %s", parent ? parent->getFragmentUri() : "NULL");
-        for(fragment_vec::const_iterator f = filtered.begin();
-            f != filtered.end(); ++f)
-        {
-            log("FragDag: .. %d: %s", f - filtered.begin(), (*f)->getFragmentUri());
-
-            activeTablets[*f].erase(*t);
-            activeFragments[*t].erase(*f);
-        }
-        log("FragDag:  child: %s", child ? child->getFragmentUri() : "NULL");
+    // Are we doing a replacement or deletion?
+    if(newFragment)
+    {
+        // Replacement: update graph by splicing fragment into place
+        log("FragDag: replacing %d fragment(s) with %s",
+            adjFragments.size(), newFragment->getFragmentUri());
 
         // Add new fragment to active lists
-        activeFragments[*t].insert(newFragment);
-        activeTablets[newFragment].insert(*t);
+        activeFragments[tablet].insert(newFragment);
+        activeTablets[newFragment].insert(tablet);
 
         // Update parent-child links
         if(parent)
@@ -382,48 +509,20 @@ FragDag::replaceFragments(fragment_vec const & fragments,
         }
 
         // Update tail link if we're replacing the tail
-        assert((!child) == (filtered.back() == tailMap[*t]));
+        assert((!child) == (adjFragments.back() == tailMap[tablet]));
         if(!child)
         {
-            tailMap[*t] = newFragment;
+            tailMap[tablet] = newFragment;
         }
 
         // Internal graph should be consistent now.  Update the
         // tablet.
-        (*t)->replaceFragments(filtered, newFragment);
+        (tablet)->replaceFragments(adjFragments, newFragment);
     }
-}
-
-void
-FragDag::removeFragments(fragment_vec const & fragments)
-{
-    log("FragDag: remove %d fragment(s)", fragments.size());
-
-    // Any tablets still in the active set need to drop these
-    // fragments
-    tablet_set active = getActiveTablets(fragments);
-    for(tablet_set::const_iterator t = active.begin();
-        t != active.end(); ++t)
+    else
     {
-        fragment_vec filtered = filterTabletFragments(fragments, *t);
-        if(filtered.empty())
-        {
-            log("FragDag: tablet %s has no removeable fragments.  wtf?",
-                (*t)->getPrettyName());
-            continue;
-        }
-
-        FragmentPtr parent = getParent(filtered.front(), *t);
-        FragmentPtr child = getChild(filtered.back(), *t);
-
-        // Remove fragments and tablets from each other's active
-        // sets.
-        for(fragment_vec::const_iterator f = filtered.begin();
-            f != filtered.end(); ++f)
-        {
-            activeTablets[*f].erase(*t);
-            activeFragments[*t].erase(*f);
-        }
+        // Deletion: update graph by splicing nothing into place
+        log("FragDag: removing %d fragment(s)", adjFragments.size());
 
         // Update parent-child links
         if(parent && child)
@@ -433,49 +532,116 @@ FragDag::removeFragments(fragment_vec const & fragments)
         }
 
         // Update tail link if we're removing the tail
-        assert((!child) == (filtered.back() == tailMap[*t]));
+        assert((!child) == (adjFragments.back() == tailMap[tablet]));
         if(!child)
         {
-            tailMap[*t] = parent;
+            tailMap[tablet] = parent;
         }
 
         // Internal graph should be consistent now.  Update the
         // tablet.
-        (*t)->removeFragments(filtered);
+        (tablet)->removeFragments(adjFragments);
+    }
+}
+
+void
+FragDag::replaceFragments(warp::Interval<std::string> const & range,
+                          fragment_vec const & adjFragments,
+                          FragmentPtr const & newFragment)
+{
+    // graph::replace(range, adjSeq, outFrag):
+    //    for tablet in (intersection of active tablets for each frag in adjSeq):
+    //       -- guaranteed tablet contains adjSeq (1)
+    //       if range contains tablet.rows:
+    //          -- guaranteed we merged all relevant data (2)
+    //          if outFrag contains data in tablet.rows:   -- optimization (3)
+    //             tablet.replace(adjSeq, outFrag)   -- blow up if adjSeq not found
+    //          else:
+    //             tablet.remove(adjSeq)             -- blow up if adjSeq not found
+    //
+    // (1) Guarantee: All of the fragments in adjSeq are part of the
+    //     current compaction set, so they are active and can't be
+    //     replaced by something different with the same name.  If a
+    //     tablet were to get dropped from this server, loaded by
+    //     another server, compacted, dropped from that server, and
+    //     reloaded by this server all while the compaction on this
+    //     server was happening, then we have two cases: 1) at least
+    //     one of fragments in the adjSeq was compacted and replaced
+    //     for this tablet by another server, or 2) the other server
+    //     didn't touch anything in adjSeq.  For 1), when the tablet
+    //     gets reloaded it will not be in the active set for the
+    //     replaced fragment.  The tablet will not be contained in the
+    //     intersection of all active tablets for the fragment.  For
+    //     2), we can go ahead with the replacement.
+    //
+    // (2) Guarantee: The input scan on each fragment in adjSeq
+    //     includes all ranges for each tablet referencing the
+    //     fragment (in that tablet's adjSeq).  There is no data in
+    //     any of the fragments in adjSeq inside of the given range
+    //     that is not included in outFrag.  This allows us to be
+    //     confident about doing the right thing for recently split or
+    //     joined tablets.
+    //
+    // (3) Optimization: it's possible outFrag doesn't contain
+    //     anything in the tablet's range, and therefore doesn't need
+    //     to be included in the tablet's fragment chain.  This seems
+    //     most likely to happen when tablets split.
+
+    if(adjFragments.empty())
+        raise<ValueError>("empty replacement set");
+
+    tablet_set active = getActiveTabletIntersection(adjFragments);
+    for(tablet_set::const_iterator t = active.begin();
+        t != active.end(); ++t)
+    {
+        if(!range.contains((*t)->getRows()))
+            continue;
+
+        replaceInternal(*t, adjFragments, newFragment);
+    }
+}
+
+void
+FragDag::removeFragments(warp::Interval<std::string> const & range,
+                         fragment_vec const & adjFragments)
+{
+    // See replaceFragments()
+
+    if(adjFragments.empty())
+        raise<ValueError>("empty replacement set");
+
+    tablet_set active = getActiveTabletIntersection(adjFragments);
+    for(tablet_set::const_iterator t = active.begin();
+        t != active.end(); ++t)
+    {
+        if(!range.contains((*t)->getRows()))
+            continue;
+
+        replaceInternal(*t, adjFragments, FragmentPtr());
+    }
+}
+
+void
+FragDag::sweepGraph()
+{
+    log("FragDag: sweeping graph");
+
+    for(tfset_map::iterator i = activeFragments.begin();
+        i != activeFragments.end(); )
+    {
+        if(i->second.empty())
+            removeTablet((i++)->first);
+        else
+            ++i;
     }
 
-    // Remove all childMap references into fragment set
-    fragment_set fragset(fragments.begin(), fragments.end());
-    fragment_set parents = getParentSet(fragset);
-    for(fragment_set::const_iterator p = parents.begin();
-        p != parents.end(); ++p)
+    for(ftset_map::iterator i = activeTablets.begin();
+        i != activeTablets.end(); )
     {
-        for(fragment_vec::const_iterator f = fragments.begin();
-            f != fragments.end(); ++f)
-        {
-            childMap[*p].erase(*f);
-        }
-    }
-
-    // Remove all parentMap references into fragment set
-    fragment_set children = getChildSet(fragset);
-    for(fragment_set::const_iterator c = children.begin();
-        c != children.end(); ++c)
-    {
-        for(fragment_vec::const_iterator f = fragments.begin();
-            f != fragments.end(); ++f)
-        {
-            parentMap[*c].erase(*f);
-        }
-    }
-
-    // Remove fragments from all fragment maps
-    for(fragment_vec::const_iterator f = fragments.begin();
-        f != fragments.end(); ++f)
-    {
-        parentMap.erase(*f);
-        childMap.erase(*f);
-        activeTablets.erase(*f);
+        if(i->second.empty())
+            removeInactiveFragment((i++)->first);
+        else
+            ++i;
     }
 }
 
@@ -495,7 +661,7 @@ FragDag::chooseCompactionSet() const
     log("FragDag: max fragment: %s", frag->getFragmentUri());
 
     // Expand fragment set until it is sufficiently large
-    //  (16-way merge or 2 GB compaction, whichever comes first)
+    //  (16-way merge or 4 GB compaction, whichever comes first)
     size_t const SUFFICIENTLY_LARGE = size_t(4) << 30;
     size_t const SUFFICIENTLY_NUMEROUS = 16;
     size_t curSpace = getActiveSize(frag);
@@ -509,7 +675,10 @@ FragDag::chooseCompactionSet() const
         fragment_set adjacent = getAdjacentSet(frags);
         log("FragDag: found %d neighbor(s)", adjacent.size());
         if(adjacent.empty())
+        {
+            log("FragDag: compaction set is complete");
             return frags;
+        }
 
         typedef std::pair<size_t, FragmentPtr> size_pair;
         typedef std::vector<size_pair> size_vec;
@@ -542,6 +711,7 @@ FragDag::chooseCompactionSet() const
             if(frags.size() >= SUFFICIENTLY_NUMEROUS ||
                curSpace >= SUFFICIENTLY_LARGE)
             {
+                log("FragDag: compaction set is sufficiently large");
                 return frags;
             }
         }
