@@ -29,6 +29,7 @@
 #include <warp/uri.h>
 #include <warp/log.h>
 #include <warp/call_or_die.h>
+#include <warp/timer.h>
 #include <ex/exception.h>
 #include <boost/bind.hpp>
 #include <iostream>
@@ -109,29 +110,19 @@ void SharedCompactor::shutdown()
 void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
 {
     log("Compact thread: compacting %d fragments", fragments.size());
+    WallTimer timer;
+    size_t outputCells = 0;
+    size_t outputFragments = 0;
+    size_t outputSize = 0;
+    size_t inputFragments = fragments.size();
+    size_t inputSize = 0;            // active parts
+    size_t restrictedFragments = 0;
+    size_t restrictedSize = 0;
 
     // External correctness depends on the following properties, but
     // this function doesn't actually care:
     //   - fragments is topologically ordered oldest to newest
     //   - fragments must be in same locality group (e.g. 'table')
-
-
-    // XXX we have chosen a fragment set, but the active tablet set
-    // can change on the fragments after we start compacting.  We'll
-    // only see cells in the compaction from Tablets that are active
-    // when we set up the merge.  If new tablets become active on the
-    // fragments in different ranges, we don't want to cause them to
-    // lose data by making them replace or remove.  Maybe need to
-    // figure out fixed interval set at start and clip everything to
-    // that (remove included).  currently seeing a problem where a
-    // tablet can't find its replacement sequence.  this is probably
-    // because it came in later and the filtered fragment sequence is
-    // a subsequence but not a substring of its tablet list.
-
-    // Choosing a fully adjacent set is hard
-
-
-
 
     // Split outputs if they get bigger than this:
     size_t const outputSplitSize = size_t(1) << 30; // 1 GB
@@ -157,6 +148,12 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
     adj_vec rangeMap;
     {
         lock_t dagLock(dagMutex);
+
+        for(fragment_vec::const_iterator f = fragments.begin();
+            f != fragments.end(); ++f)
+        {
+            inputSize += fragDag.getActiveSize(*f);
+        }
 
         // Get all active tablets for fragment set
         FragDag::tablet_set active = fragDag.getActiveTablets(fragments);
@@ -226,7 +223,6 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         }
     }
 
-
     log("Compact thread: %srooted compaction on table %s",
         (allRooted ? "" : "un"), table);
 
@@ -252,6 +248,9 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
             // so don't bother.
             continue;
         }
+
+        ++restrictedFragments;
+        restrictedSize += (*i)->getDiskSize(mi->second);
 
         // Only scan the parts of the fragment active in the current
         // compaction
@@ -286,11 +285,13 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
             // Finalize output and reset to indicate we do not have an
             // active output
             writer.close();
+            ++outputFragments;
             string uri = uriPushScheme(writerFn, "disk");
             outputOpen = false;
 
             // Open the newly written fragment
             FragmentPtr frag = configMgr->openFragment(uri);
+            outputSize += frag->getDiskSize(Interval<string>().setInfinite());
 
             // Track the new file for automatic deletion
             FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
@@ -350,6 +351,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
 
         // Add another cell to the output
         writer.put(x);
+        ++outputCells;
 
         // Check to see if the output is large enough to split if
         // haven't already chosen one.
@@ -377,11 +379,13 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         // Finalize output and reset to indicate we do not have an
         // active output
         writer.close();
+        ++outputFragments;
         string uri = uriPushScheme(writerFn, "disk");
         outputOpen = false;
 
         // Open the newly written fragment
         FragmentPtr frag = configMgr->openFragment(uri);
+        outputSize += frag->getDiskSize(Interval<string>().setInfinite());
 
         // Track the new file for automatic deletion
         FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
@@ -422,6 +426,13 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         lock_t dagLock(dagMutex);
         fragDag.sweepGraph();
     }
+
+    int64_t ms = timer.getElapsedNs() / 1000000;
+    log("Compact stats: in %d %d rin %d %d out %d %d cells %d ms %d",
+        inputFragments, inputSize,
+        restrictedFragments, restrictedSize,
+        outputFragments, outputSize,
+        outputCells, ms);
 }
 
 void SharedCompactor::compactLoop()

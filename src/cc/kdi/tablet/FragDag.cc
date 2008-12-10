@@ -158,8 +158,20 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
     log("FragDag: total graph weight: %d", totalWeight);
     if(!activeFragments.empty())
     {
-        log("FragDag: average fragments/tablet: %.2f",
-            double(activeTablets.size()) / activeFragments.size());
+        size_t totChain = 0;
+        size_t maxChain = 0;
+        for(tfset_map::const_iterator i = activeFragments.begin();
+            i != activeFragments.end(); ++i)
+        {
+            size_t len = i->second.size();
+            totChain += len;
+            if(len > maxChain)
+                maxChain = len;
+
+        }
+        log("FragDag: average chain length: %.2f",
+            double(totChain) / activeFragments.size());
+        log("FragDag: maximum chain length: %d", maxChain);
     }
 
     return maxFrag;
