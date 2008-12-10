@@ -430,9 +430,6 @@ public:
         return lowerBound.isInfinite() && upperBound.isInfinite();
     }
 
-
-
-
     /// Return true if the interval contains nothing, as defined by
     /// the given less-than ordering on point values.
     template <class Lt>
@@ -450,7 +447,6 @@ public:
         IntervalPointOrder<Lt> plt(lt);
         return plt(lowerBound, x) && plt(x, upperBound);
     }
-
 
     /// Return true if the interval contains (or equals) the given
     /// interval, as defined by the given less-than ordering on point
@@ -501,8 +497,25 @@ public:
         return true;
     }
 
+    /// Clip this interval to the given interval using the supplied
+    /// less-than ordering on point values.  If the intervals do not
+    /// overlap, the result will be empty.
+    template <class Lt>
+    my_t & clip(my_t const & o, Lt const & lt)
+    {
+        IntervalPointOrder<Lt> plt;
+        
+        if(plt(lowerBound, o.lowerBound))
+            lowerBound = o.lowerBound;
+        if(plt(o.upperBound, upperBound))
+            upperBound = o.upperBound;
 
-    // Predicates using default ordering
+        return *this;
+    }
+    
+    
+
+    // Point-ordering methods using default ordering
 
     /// Return true if the interval contains nothing, as defined by
     /// the default less-than ordering on point values.
@@ -536,6 +549,14 @@ public:
     bool overlaps(Interval<TT> const & o) const
     {
         return overlaps(o, std::less<T>());
+    }
+
+    /// Clip this interval to the given interval using the default
+    /// less-than ordering on point values.  If the intervals do not
+    /// overlap, the result will be empty.
+    my_t & clip(my_t const & o)
+    {
+        return clip(o, std::less<T>());
     }
 };
 
