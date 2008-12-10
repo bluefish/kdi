@@ -45,7 +45,7 @@ using namespace std;
 // SharedCompactor
 //----------------------------------------------------------------------------
 SharedCompactor::SharedCompactor() :
-    cancel(false)
+    cancel(false), enabled(true)
 {
     thread.reset(
         new boost::thread(
@@ -69,10 +69,25 @@ SharedCompactor::~SharedCompactor()
     log("SharedCompactor %p: destroyed", this);
 }
 
+void SharedCompactor::disableCompactions()
+{
+    lock_t lock(mutex);
+    log("Compact: disabling");
+    enabled = false;
+}
+
+void SharedCompactor::enableCompactions()
+{
+    lock_t lock(mutex);
+    log("Compact: enabling");
+    enabled = true;
+    wakeCond.notify_all();
+}
+
 void SharedCompactor::wakeup()
 {
     lock_t lock(mutex);
-    wakeCond.notify_one();
+    wakeCond.notify_all();
 }
 
 void SharedCompactor::shutdown()
@@ -281,13 +296,15 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
 
 void SharedCompactor::compactLoop()
 {
-    for(;;)
+    lock_t lock(mutex);
+    while(!cancel)
     {
-        // Check for cancelation
+        // Make sure we're enabled
+        if(!enabled)
         {
-            lock_t lock(mutex);
-            if(cancel)
-                break;
+            log("Compact thread: disabled, waiting");
+            wakeCond.wait(lock);
+            continue;
         }
 
         // Get a compaction set
@@ -296,18 +313,19 @@ void SharedCompactor::compactLoop()
         vector<FragmentPtr> frags = fragDag.chooseCompactionList();
         dagLock.unlock();
 
-        // If empty, wait for a compaction request
         if(frags.empty())
         {
-            lock_t lock(mutex);
-            if(cancel)
-                break;
+            // If empty, wait for a compaction request
             log("Compact thread: nothing to compact, waiting");
             wakeCond.wait(lock);
             continue;
         }
-
-        // Else, compact it
-        compact(frags);
+        else
+        {
+            // Else, compact it
+            lock.unlock();
+            compact(frags);
+            lock.lock();
+        }
     }
 }

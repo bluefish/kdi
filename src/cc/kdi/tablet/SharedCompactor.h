@@ -48,6 +48,7 @@ class kdi::tablet::SharedCompactor :
     boost::condition wakeCond;
     boost::scoped_ptr<boost::thread> thread;
     bool cancel;
+    bool enabled;
 
 public:
     // Anything that wants to interact with the compaction graph has
@@ -58,6 +59,9 @@ public:
 public:
     SharedCompactor();
     ~SharedCompactor();
+
+    void disableCompactions();
+    void enableCompactions();
 
     void wakeup();
     void shutdown();
