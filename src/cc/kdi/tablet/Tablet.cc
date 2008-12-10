@@ -557,6 +557,13 @@ void Tablet::replaceFragmentsInternal(
     }
     else
     {
+        for(fragments_t::const_iterator i = fragments.begin();
+            i != fragments.end(); ++i)
+        {
+            log("Tablet %s: fragment %d: %s", getPrettyName(),
+                i - fragments.begin(), (*i)->getFragmentUri());
+        }
+
         // We didn't know about that sequence
         raise<RuntimeError>("replaceFragments with unknown fragment sequence");
     }

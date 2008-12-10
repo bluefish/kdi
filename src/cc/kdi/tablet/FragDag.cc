@@ -310,6 +310,12 @@ FragDag::replaceFragments(fragment_vec const & fragments,
 {
     log("FragDag: replace %d fragment(s) with %s",
         fragments.size(), newFragment->getFragmentUri());
+    for(fragment_vec::const_iterator f = fragments.begin();
+        f != fragments.end(); ++f)
+    {
+        log("FragDag: .. %d: %s", f - fragments.begin(),
+            (*f)->getFragmentUri());
+    }
 
     // Get the contained tablet set
     tablet_set contained;
@@ -333,6 +339,8 @@ FragDag::replaceFragments(fragment_vec const & fragments,
     for(tablet_set::const_iterator t = contained.begin();
         t != contained.end(); ++t)
     {
+        log("FragDag: updating %s", (*t)->getPrettyName());
+
         fragment_vec filtered = filterTabletFragments(fragments, *t);
         if(filtered.empty())
         {
@@ -346,12 +354,16 @@ FragDag::replaceFragments(fragment_vec const & fragments,
 
         // Remove fragments and tablets from each other's active
         // sets.
+        log("FragDag: parent: %s", parent ? parent->getFragmentUri() : "NULL");
         for(fragment_vec::const_iterator f = filtered.begin();
             f != filtered.end(); ++f)
         {
+            log("FragDag: .. %d: %s", f - filtered.begin(), (*f)->getFragmentUri());
+
             activeTablets[*f].erase(*t);
             activeFragments[*t].erase(*f);
         }
+        log("FragDag:  child: %s", child ? child->getFragmentUri() : "NULL");
 
         // Add new fragment to active lists
         activeFragments[*t].insert(newFragment);
