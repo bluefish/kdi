@@ -64,6 +64,12 @@ public:
     /// row range.
     virtual size_t getDiskSize(warp::Interval<std::string> const & rows) const = 0;
 
+    /// Get the approximate disk space used by the cells in the given
+    /// row interval set.  The default implementation simply calls the
+    /// row range version for each interval in the set and may lead to
+    /// overcounting for fragmented sets.
+    virtual size_t getDiskSize(warp::IntervalSet<std::string> const & rows) const;
+
     /// Scan the index of the fragment within the given row range,
     /// returning (row, incremental-size) pairs.  The incremental size
     /// approximates the on-disk size of the cells between the last
