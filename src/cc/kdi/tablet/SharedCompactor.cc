@@ -108,6 +108,79 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
 {
     log("Compact thread: compacting %d fragments", fragments.size());
 
+    // XXX we have chosen a fragment set, but the active tablet set
+    // can change on the fragments after we start compacting.  We'll
+    // only see cells in the compaction from Tablets that are active
+    // when we set up the merge.  If new tablets become active on the
+    // fragments in different ranges, we don't want to cause them to
+    // lose data by making them replace or remove.  Maybe need to
+    // figure out fixed interval set at start and clip everything to
+    // that (remove included).  currently seeing a problem where a
+    // tablet can't find its replacement sequence.  this is probably
+    // because it came in later and the filtered fragment sequence is
+    // a subsequence but not a substring of its tablet list.
+
+    // Choosing a fully adjacent set is hard
+    //
+    // For each active tablet in compaction set, remember:
+    //   rangeMap:
+    //      tablet range -> adjSeq (longest adjacent sequence
+    //                              of fragments)
+    //
+    // For each fragment in compaction set, remember:
+    //   invRangeMap:
+    //      fragment -> adjRange (ranges referencing fragment in
+    //                            an adjacent sequence)
+    //
+    // When merging from fragments, only scan adjRange
+    //   for fragment,adjRange in invRangeMap:
+    //      merge->pipeFrom(fragment.scan(adjRange))
+    //
+    // When replacing fragments for tablets, replace by ranges
+    //   for range,adjSeq in rangeMap:
+    //      if not range.overlaps(outRange):
+    //         continue
+    //      graph->replace(range, adjSeq, outFrag)
+    //
+
+    // graph::replace(range, adjSeq, outFrag):
+    //    for tablet in (intersection of active tablets for each frag in adjSeq):
+    //       -- guaranteed tablet contains adjSeq (1)
+    //       if range contains tablet.rows:
+    //          -- guaranteed we merged all relevant data (2)
+    //          if outFrag contains data in tablet.rows:   -- optimization (3)
+    //             tablet.replace(adjSeq, outFrag)   -- blow up if adjSeq not found
+    //          else:
+    //             tablet.remove(adjSeq)             -- blow up if adjSeq not found
+    //
+    // (1) Guarantee: All of the fragments in adjSeq are part of the
+    //     current compaction set, so they are active and can't be
+    //     replaced by something different with the same name.  If a
+    //     tablet were to get dropped from this server, loaded by
+    //     another server, compacted, dropped from that server, and
+    //     reloaded by this server all while the compaction on this
+    //     server was happening, then we have two cases: 1) at least
+    //     one of fragments in the adjSeq was compacted and replaced
+    //     for this tablet by another server, or 2) the other server
+    //     didn't touch anything in adjSeq.  For 1), when the tablet
+    //     gets reloaded it will not be in the active set for the
+    //     replaced fragment.  The tablet will not be contained in the
+    //     intersection of all active tablets for the fragment.  For
+    //     2), we can go ahead with the replacement.
+    //
+    // (2) Guarantee: The input scan on each fragment in adjSeq
+    //     includes all ranges for each tablet referencing the
+    //     fragment (in that tablet's adjSeq).  There is no data in
+    //     any of the fragments in adjSeq inside of the given range
+    //     that is not included in outFrag.  This allows us to be
+    //     confident about doing the right thing for recently split or
+    //     joined tablets.
+    //
+    // (3) Optimization: it's possible outFrag doesn't contain
+    //     anything in the tablet's range, and therefore doesn't need
+    //     to be included in the tablet's fragment chain.  This seems
+    //     most likely to happen when tablets split.
+
     // Get some info we need
     bool filterErasures;
     ConfigManagerPtr configMgr;
