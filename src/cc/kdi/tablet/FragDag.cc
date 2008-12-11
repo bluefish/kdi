@@ -22,8 +22,10 @@
 #include <kdi/tablet/Tablet.h>
 #include <kdi/tablet/Fragment.h>
 #include <warp/log.h>
+#include <warp/fs.h>
 #include <utility>
 #include <algorithm>
+#include <sstream>
 #include <ex/exception.h>
 
 using namespace kdi;
@@ -729,8 +731,75 @@ FragDag::chooseCompactionList() const
             }
         }
         if(fset.size() == oldSize)
+        {
+            log("FragDag: cycle detected in subgraph");
+            for(fragment_vec::const_iterator f = frags.begin();
+                f != frags.end(); ++f)
+            {
+                log("FragDag: sorted %s", (*f)->getFragmentUri());
+            }
+            for(fragment_set::const_iterator f = fset.begin();
+                f != fset.end(); ++f)
+            {
+                log("FragDag: cycled %s", (*f)->getFragmentUri());
+            }
+
+            ostringstream oss;
+            fset.insert(frags.begin(), frags.end());
+            dumpDotGraph(oss, fset, true);
+            log("FragDag: subgraph:\n%s", oss.str());
+
             raise<RuntimeError>("graph has a cycle");
+        }
     }
 
     return frags;
+}
+
+void
+FragDag::dumpDotGraph(std::ostream & out,
+                      fragment_set const & fragments,
+                      bool restrictLinks) const
+{
+    out << "digraph G {" << endl;
+
+    for(fragment_set::const_iterator f = fragments.begin();
+        f != fragments.end(); ++f)
+    {
+        ffset_map::const_iterator i;
+
+        i = parentMap.find(*f);
+        if(i != parentMap.end())
+        {
+            fragment_set const & parents = i->second;
+            for(fragment_set::const_iterator p = parents.begin();
+                p != parents.end(); ++p)
+            {
+                if(restrictLinks && fragments.find(*p) == fragments.end())
+                    continue;
+                out << fs::basename((*p)->getFragmentUri())
+                    << " -> "
+                    << fs::basename((*f)->getFragmentUri())
+                    << ";" << endl;
+            }
+        }
+
+        i = childMap.find(*f);
+        if(i != childMap.end())
+        {
+            fragment_set const & children = i->second;
+            for(fragment_set::const_iterator c = children.begin();
+                c != children.end(); ++c)
+            {
+                if(restrictLinks && fragments.find(*c) == fragments.end())
+                    continue;
+                out << fs::basename((*f)->getFragmentUri())
+                    << " -> "
+                    << fs::basename((*c)->getFragmentUri())
+                    << ";" << endl;
+            }
+        }
+    }
+
+    out << "}" << endl;
 }

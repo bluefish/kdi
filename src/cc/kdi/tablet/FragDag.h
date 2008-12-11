@@ -25,6 +25,7 @@
 #include <warp/interval.h>
 #include <warp/string_range.h>
 #include <string>
+#include <ostream>
 #include <vector>
 #include <set>
 #include <map>
@@ -126,7 +127,6 @@ public:
     tablet_set
     getActiveTabletIntersection(fragment_vec const & fragments) const;
 
-
 private:
     /// Replace the fragments in adjFragments with newFragment for the
     /// given tablet.  adjFragments must be a non-empty, adjacent
@@ -166,6 +166,11 @@ public:
     /// XXX ...
     fragment_vec
     chooseCompactionList() const;
+
+    void
+    dumpDotGraph(std::ostream & out,
+                 fragment_set const & fragments,
+                 bool restrictLinks) const;
 };
 
 #endif // KDI_TABLET_FRAGDAG_H
