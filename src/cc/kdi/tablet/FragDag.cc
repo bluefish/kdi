@@ -115,6 +115,31 @@ void FragDag::removeInactiveFragment(FragmentPtr const & fragment)
     activeTablets.erase(fragment);
 }
 
+size_t
+FragDag::getFragmentWeight(FragmentPtr const & fragment) const
+{
+    ftset_map::const_iterator i = activeTablets.find(fragment);
+    if(i == activeTablets.end())
+        raise<RuntimeError>("fragment not in graph: %s",
+                            fragment->getFragmentUri());
+
+    tablet_set const & tablets = i->second;
+
+    // Frag weight is the sum of the lengths (minus 1) of the
+    // tablet chains of which it is a part
+    size_t weight = 0;
+    for(tablet_set::const_iterator j = tablets.begin();
+        j != tablets.end(); ++j)
+    {
+        Tablet * tablet = *j;
+        // Use (length - 1) because we're only interested in
+        // compacting chains with two or more fragments
+        weight += activeFragments.find(tablet)->second.size() - 1;
+    }
+
+    return weight;
+}
+
 FragmentPtr
 FragDag::getMaxWeightFragment(size_t minWeight) const
 {
@@ -128,20 +153,8 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
         i != activeTablets.end(); ++i)
     {
         FragmentPtr const & frag = i->first;
-        tablet_set const & tablets = i->second;
 
-        // Frag weight is the sum of the lengths (minus 1) of the
-        // tablet chains of which it is a part
-        size_t weight = 0;
-        for(tablet_set::const_iterator j = tablets.begin();
-            j != tablets.end(); ++j)
-        {
-            Tablet * tablet = *j;
-            // Use (length - 1) because we're only interested in
-            // compacting chains with two or more fragments
-            weight += activeFragments.find(tablet)->second.size() - 1;
-        }
-
+        size_t weight = getFragmentWeight(frag);
         log("FragDag: .. weight %d: %s", weight, frag->getFragmentUri());
 
         // Update max fragment if this one is bigger
@@ -665,20 +678,20 @@ FragDag::chooseCompactionSet() const
         for(fragment_set::const_iterator i = adjacent.begin();
             i != adjacent.end(); ++i)
         {
-            size_t sz = getActiveSize(*i);
-            sizes.push_back(size_pair(sz, *i));
-            log("FragDag: .. size %s: %s", sizeString(sz), (*i)->getFragmentUri());
+            size_t wt = getFragmentWeight(*i);
+            sizes.push_back(size_pair(wt, *i));
+            log("FragDag: .. weight %d: %s", wt, (*i)->getFragmentUri());
         }
 
         // Sort by size
-        std::sort(sizes.begin(), sizes.end());
+        std::sort(sizes.begin(), sizes.end(), std::greater<size_pair>());
 
-        // Add to fragment set in order of increasing size
+        // Add to fragment set in order of decreasing weight
         for(size_vec::const_iterator i = sizes.begin();
             i != sizes.end(); ++i)
         {
             frags.insert(i->second);
-            curSpace += i->first;
+            curSpace += getActiveSize(i->second);
 
             log("FragDag: grow set (size=%d, space=%s): %s",
                 frags.size(), sizeString(curSpace),

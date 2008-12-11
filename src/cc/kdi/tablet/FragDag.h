@@ -71,6 +71,9 @@ private:
     void removeInactiveFragment(FragmentPtr const & fragment);
 
 public:
+    size_t
+    getFragmentWeight(FragmentPtr const & fragment) const;
+
     /// XXX ...
     FragmentPtr
     getMaxWeightFragment(size_t minWeight) const;
