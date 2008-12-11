@@ -143,7 +143,7 @@ FragDag::getFragmentWeight(FragmentPtr const & fragment) const
 FragmentPtr
 FragDag::getMaxWeightFragment(size_t minWeight) const
 {
-    log("FragDag: getMaxWeightFragment");
+    //log("FragDag: getMaxWeightFragment");
 
     // Find fragment with max weight
     FragmentPtr maxFrag;
@@ -155,7 +155,7 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
         FragmentPtr const & frag = i->first;
 
         size_t weight = getFragmentWeight(frag);
-        log("FragDag: .. weight %d: %s", weight, frag->getFragmentUri());
+        //log("FragDag: .. weight %d: %s", weight, frag->getFragmentUri());
 
         // Update max fragment if this one is bigger
         if(weight > maxWeight)
@@ -292,7 +292,7 @@ FragDag::maxAdjacentTabletFragments(fragment_vec const & fragments,
 {
     fragment_vec maxAdj;
 
-    log("FragDag: maxAdjacent for %s", tablet->getPrettyName());
+    //log("FragDag: maxAdjacent for %s", tablet->getPrettyName());
 
     // Restrict fragments to those in tablet's active set
     fragment_vec filtered = filterTabletFragments(fragments, tablet);
@@ -302,12 +302,12 @@ FragDag::maxAdjacentTabletFragments(fragment_vec const & fragments,
     fragment_vec::const_iterator maxEnd;
     maxStart = maxEnd = filtered.begin();
 
-    for(fragment_vec::const_iterator f = filtered.begin();
-        f != filtered.end(); ++f)
-    {
-        log("FragDag: .. %d: %s", f - filtered.begin(),
-            (*f)->getFragmentUri());
-    }
+    //for(fragment_vec::const_iterator f = filtered.begin();
+    //    f != filtered.end(); ++f)
+    //{
+    //    log("FragDag: .. %d: %s", f - filtered.begin(),
+    //        (*f)->getFragmentUri());
+    //}
 
     // Walk through list looking for ajacent segments
     for(fragment_vec::const_iterator start = filtered.begin();
@@ -323,8 +323,8 @@ FragDag::maxAdjacentTabletFragments(fragment_vec const & fragments,
                 break;
         }
 
-        log("FragDag: adj seq of length %d from #%d",
-            end - start, start - filtered.begin());
+        //log("FragDag: adj seq of length %d from #%d",
+        //    end - start, start - filtered.begin());
 
         // Update the max range if the current range has more
         // fragments
@@ -338,8 +338,8 @@ FragDag::maxAdjacentTabletFragments(fragment_vec const & fragments,
         start = end;
     }
 
-    log("FragDag: max seq of length %d from #%d",
-        maxEnd - maxStart, maxStart - filtered.begin());
+    //log("FragDag: max seq of length %d from #%d",
+    //    maxEnd - maxStart, maxStart - filtered.begin());
 
     // Copy the max adjacent segment and return
     maxAdj.insert(maxAdj.end(), maxStart, maxEnd);
@@ -645,7 +645,7 @@ FragDag::chooseCompactionSet() const
         typedef std::pair<size_t, FragmentPtr> size_pair;
         typedef std::vector<size_pair> size_vec;
 
-        // Get sizes of adjacent nodes
+        // Get weights of adjacent nodes
         size_vec sizes;
         sizes.reserve(adjacent.size());
         for(fragment_set::const_iterator i = adjacent.begin();
@@ -653,7 +653,7 @@ FragDag::chooseCompactionSet() const
         {
             size_t wt = getFragmentWeight(*i);
             sizes.push_back(size_pair(wt, *i));
-            log("FragDag: .. weight %d: %s", wt, (*i)->getFragmentUri());
+            //log("FragDag: .. weight %d: %s", wt, (*i)->getFragmentUri());
         }
 
         // Sort by size
