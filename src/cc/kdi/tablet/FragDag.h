@@ -169,7 +169,7 @@ public:
     void
     dumpDotGraph(std::ostream & out,
                  fragment_set const & fragments,
-                 bool restrictLinks) const;
+                 bool restrictToSet) const;
 };
 
 #endif // KDI_TABLET_FRAGDAG_H

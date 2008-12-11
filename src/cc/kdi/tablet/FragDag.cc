@@ -688,43 +688,132 @@ FragDag::hasParent(FragmentPtr const & fragment,
 void
 FragDag::dumpDotGraph(std::ostream & out,
                       fragment_set const & fragments,
-                      bool restrictLinks) const
+                      bool restrictToSet) const
 {
-    out << "digraph G {" << endl;
+    out << "digraph G {" << endl
+        << "rankdir=LR;" << endl;
+
+    fragment_set external;
 
     for(fragment_set::const_iterator f = fragments.begin();
         f != fragments.end(); ++f)
     {
-        fragment_set linked;
+        out << "// fragment: " << (*f)->getFragmentUri() << endl;
 
         ftset_map::const_iterator i = activeTablets.find(*f);
         if(i == activeTablets.end())
         {
             out << "// not in graph: " << (*f)->getFragmentUri() << endl;
+            out << fs::basename((*f)->getFragmentUri())
+                << " [shape=oval,color=red];" << endl;
             continue;
         }
 
+        out << fs::basename((*f)->getFragmentUri())
+            << " [shape=oval,color=green];" << endl;
+
         tablet_set const & tablets = i->second;
+
+        // Scan for parent links
+        fragment_set linked;
         for(tablet_set::const_iterator t = tablets.begin();
             t != tablets.end(); ++t)
         {
+            // Find the parent of the fragment in this tablet chain
             FragmentPtr parent = getParent(*f, *t);
+
+            out << "//   in tablet: " << (*t)->getPrettyName() << endl;
+
+            // No parent, no link
             if(!parent)
+            {
+                out << "//     is root" << endl;
                 continue;
+            }
 
-            if(restrictLinks && fragments.find(parent) == fragments.end())
-                continue;
+            out << "//     parent: " << parent->getFragmentUri() << endl;
 
+            // Check to see if the parent is in the fragment set
+            if(fragments.find(parent) == fragments.end())
+            {
+                // If we don't want nodes outside the fragment set,
+                // skip.  Otherwhise note that we've found an external
+                // node.
+                if(restrictToSet)
+                    continue;
+                else
+                    external.insert(parent);
+            }
+
+            // If we've already linked the parent to the fragment,
+            // don't do it again
             if(linked.find(parent) != linked.end())
                 continue;
 
+            // Make a link from the parent to the fragment
             out << fs::basename(parent->getFragmentUri())
                 << " -> "
                 << fs::basename((*f)->getFragmentUri())
                 << ";" << endl;
 
+            // Remember the parent so we don't duplicate links
             linked.insert(parent);
         }
+
+        // Don't bother with child links if we don't want things
+        // outside the set
+        if(restrictToSet)
+            continue;
+
+        // Scan again for child links
+        linked.clear();
+        for(tablet_set::const_iterator t = tablets.begin();
+            t != tablets.end(); ++t)
+        {
+            // Find the child of the fragment in this tablet chain
+            FragmentPtr child = getChild(*f, *t);
+
+            out << "//   in tablet: " << (*t)->getPrettyName() << endl;
+
+            // No child, no link
+            if(!child)
+            {
+                out << "//     is leaf" << endl;
+                continue;
+            }
+
+            out << "//     child: " << child->getFragmentUri() << endl;
+
+            // If the child is in the fragment set, it will get a
+            // parent link elsewhere
+            if(fragments.find(child) != fragments.end())
+                continue;
+
+            // If we've already linked the fragment to the child,
+            // don't do it again
+            if(linked.find(child) != linked.end())
+                continue;
+
+            // Make a link from the fragment to the child
+            out << fs::basename((*f)->getFragmentUri())
+                << " -> "
+                << fs::basename(child->getFragmentUri())
+                << ";" << endl;
+
+            // Add the child to the external set
+            external.insert(child);
+
+            // Remember the child so we don't duplicate links
+            linked.insert(child);
+        }
+    }
+
+    // Make all the external fragments look different
+    for(fragment_set::const_iterator f = external.begin();
+        f != external.end(); ++f)
+    {
+        out << fs::basename((*f)->getFragmentUri())
+            << " [shape=box,color=blue];" << endl;
     }
 
     out << "}" << endl;
