@@ -355,7 +355,12 @@ FragDag::getParent(FragmentPtr const & fragment, Tablet * tablet) const
 FragmentPtr
 FragDag::getChild(FragmentPtr const & fragment, Tablet * tablet) const
 {
-    return tablet->getFragmentChild(fragment);
+    // Don't return log fragments
+    FragmentPtr f = tablet->getFragmentChild(fragment);
+    if(activeTablets.find(f) != activeTablets.end())
+        return f;
+    else
+        return FragmentPtr();
 }
 
 FragDag::tablet_set
