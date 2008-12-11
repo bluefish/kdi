@@ -47,17 +47,12 @@ public:
     typedef std::vector<FragmentPtr>              fragment_vec;
     typedef std::set<FragmentPtr>                 fragment_set;
     typedef std::set<Tablet*>                     tablet_set;
-    typedef std::map<FragmentPtr, fragment_set>   ffset_map;
     typedef std::map<FragmentPtr, tablet_set>     ftset_map;
     typedef std::map<Tablet*, fragment_set>       tfset_map;
-    typedef std::map<Tablet*, FragmentPtr>        tf_map;
 
 private:
-    ffset_map parentMap;
-    ffset_map childMap;
     ftset_map activeTablets;
     tfset_map activeFragments;
-    tf_map tailMap;
 
 public:
     /// Append an edge to a tablet's fragment list.

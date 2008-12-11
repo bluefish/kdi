@@ -44,13 +44,6 @@ FragDag::addFragment(Tablet * tablet, FragmentPtr const & fragment)
         tablet->getPrettyName(),
         fragment->getFragmentUri());
 
-    FragmentPtr & tail = tailMap[tablet];
-    if(tail)
-    {
-        childMap[tail].insert(fragment);
-        parentMap[fragment].insert(tail);
-    }
-    tail = fragment;
     activeTablets[fragment].insert(tablet);
     activeFragments[tablet].insert(fragment);
 }
@@ -74,7 +67,6 @@ void FragDag::removeTablet(Tablet * tablet)
     }
 
     activeFragments.erase(i);
-    tailMap.erase(tablet);
 }
 
 void FragDag::removeInactiveFragment(FragmentPtr const & fragment)
@@ -82,36 +74,6 @@ void FragDag::removeInactiveFragment(FragmentPtr const & fragment)
     assert(activeTablets[fragment].empty());
 
     log("FragDag: remove fragment %s", fragment->getFragmentUri());
-
-    // Remove references from parents to fragment
-    ffset_map::iterator pi = parentMap.find(fragment);
-    if(pi != parentMap.end())
-    {
-        fragment_set const & parents = pi->second;
-        for(fragment_set::const_iterator p = parents.begin();
-            p != parents.end(); ++p)
-        {
-            childMap[*p].erase(fragment);
-            if(childMap[*p].empty())
-                childMap.erase(*p);
-        }
-        parentMap.erase(pi);
-    }
-
-    // Remove references from children to fragment
-    ffset_map::iterator ci = childMap.find(fragment);
-    if(ci != childMap.end())
-    {
-        fragment_set const & children = ci->second;
-        for(fragment_set::const_iterator c = children.begin();
-            c != children.end(); ++c)
-        {
-            parentMap[*c].erase(fragment);
-            if(parentMap[*c].empty())
-                parentMap.erase(*c);
-        }
-        childMap.erase(ci);
-    }
 
     // Remove fragment from active map
     activeTablets.erase(fragment);
@@ -460,25 +422,6 @@ FragDag::replaceInternal(Tablet * tablet,
         activeFragments[tablet].insert(newFragment);
         activeTablets[newFragment].insert(tablet);
 
-        // Update parent-child links
-        if(parent)
-        {
-            parentMap[newFragment].insert(parent);
-            childMap[parent].insert(newFragment);
-        }
-        if(child)
-        {
-            childMap[newFragment].insert(child);
-            parentMap[child].insert(newFragment);
-        }
-
-        // Update tail link if we're replacing the tail
-        assert((!child) == (adjFragments.back() == tailMap[tablet]));
-        if(!child)
-        {
-            tailMap[tablet] = newFragment;
-        }
-
         // Internal graph should be consistent now.  Update the
         // tablet.
         (tablet)->replaceFragments(adjFragments, newFragment);
@@ -487,20 +430,6 @@ FragDag::replaceInternal(Tablet * tablet,
     {
         // Deletion: update graph by splicing nothing into place
         log("FragDag: removing %d fragment(s)", adjFragments.size());
-
-        // Update parent-child links
-        if(parent && child)
-        {
-            parentMap[child].insert(parent);
-            childMap[parent].insert(child);
-        }
-
-        // Update tail link if we're removing the tail
-        assert((!child) == (adjFragments.back() == tailMap[tablet]));
-        if(!child)
-        {
-            tailMap[tablet] = parent;
-        }
 
         // Internal graph should be consistent now.  Update the
         // tablet.
