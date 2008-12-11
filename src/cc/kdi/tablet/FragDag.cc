@@ -685,6 +685,7 @@ FragDag::chooseCompactionSet() const
     }
 }
 
+
 FragDag::fragment_vec
 FragDag::chooseCompactionList() const
 {
@@ -704,23 +705,7 @@ FragDag::chooseCompactionList() const
         size_t oldSize = fset.size();
         for(fragment_set::iterator f = fset.begin(); f != fset.end();)
         {
-            bool hasParent = false;
-            ffset_map::const_iterator pi = parentMap.find(*f);
-            if(pi != parentMap.end())
-            {
-                fragment_set const & parents = pi->second;
-                for(fragment_set::const_iterator p = parents.begin();
-                    p != parents.end(); ++p)
-                {
-                    if(fset.find(*p) != fset.end())
-                    {
-                        hasParent = true;
-                        break;
-                    }
-                }
-            }
-
-            if(!hasParent)
+            if(!hasParent(*f, fset))
             {
                 frags.push_back(*f);
                 fset.erase(f++);
@@ -730,19 +715,10 @@ FragDag::chooseCompactionList() const
                 ++f;
             }
         }
+
         if(fset.size() == oldSize)
         {
             log("FragDag: cycle detected in subgraph");
-            for(fragment_vec::const_iterator f = frags.begin();
-                f != frags.end(); ++f)
-            {
-                log("FragDag: sorted %s", (*f)->getFragmentUri());
-            }
-            for(fragment_set::const_iterator f = fset.begin();
-                f != fset.end(); ++f)
-            {
-                log("FragDag: cycled %s", (*f)->getFragmentUri());
-            }
 
             ostringstream oss;
             fset.insert(frags.begin(), frags.end());
@@ -756,6 +732,30 @@ FragDag::chooseCompactionList() const
     return frags;
 }
 
+bool
+FragDag::hasParent(FragmentPtr const & fragment,
+                   fragment_set const & inSet) const
+{
+    ftset_map::const_iterator i = activeTablets.find(fragment);
+    if(i == activeTablets.end())
+        raise<RuntimeError>("not in graph: %s",
+                            fragment->getFragmentUri());
+
+    tablet_set const & tablets = i->second;
+    for(tablet_set::const_iterator t = tablets.begin();
+        t != tablets.end(); ++t)
+    {
+        FragmentPtr parent = getParent(fragment, *t);
+        if(!parent)
+            continue;
+
+        if(inSet.find(parent) != inSet.end())
+            return true;
+    }
+
+    return false;
+}
+
 void
 FragDag::dumpDotGraph(std::ostream & out,
                       fragment_set const & fragments,
@@ -766,38 +766,35 @@ FragDag::dumpDotGraph(std::ostream & out,
     for(fragment_set::const_iterator f = fragments.begin();
         f != fragments.end(); ++f)
     {
-        ffset_map::const_iterator i;
+        fragment_set linked;
 
-        i = parentMap.find(*f);
-        if(i != parentMap.end())
+        ftset_map::const_iterator i = activeTablets.find(*f);
+        if(i == activeTablets.end())
         {
-            fragment_set const & parents = i->second;
-            for(fragment_set::const_iterator p = parents.begin();
-                p != parents.end(); ++p)
-            {
-                if(restrictLinks && fragments.find(*p) == fragments.end())
-                    continue;
-                out << fs::basename((*p)->getFragmentUri())
-                    << " -> "
-                    << fs::basename((*f)->getFragmentUri())
-                    << ";" << endl;
-            }
+            out << "// not in graph: " << (*f)->getFragmentUri() << endl;
+            continue;
         }
 
-        i = childMap.find(*f);
-        if(i != childMap.end())
+        tablet_set const & tablets = i->second;
+        for(tablet_set::const_iterator t = tablets.begin();
+            t != tablets.end(); ++t)
         {
-            fragment_set const & children = i->second;
-            for(fragment_set::const_iterator c = children.begin();
-                c != children.end(); ++c)
-            {
-                if(restrictLinks && fragments.find(*c) == fragments.end())
-                    continue;
-                out << fs::basename((*f)->getFragmentUri())
-                    << " -> "
-                    << fs::basename((*c)->getFragmentUri())
-                    << ";" << endl;
-            }
+            FragmentPtr parent = getParent(*f, *t);
+            if(!parent)
+                continue;
+
+            if(restrictLinks && fragments.find(parent) == fragments.end())
+                continue;
+
+            if(linked.find(parent) != linked.end())
+                continue;
+
+            out << fs::basename(parent->getFragmentUri())
+                << " -> "
+                << fs::basename((*f)->getFragmentUri())
+                << ";" << endl;
+
+            linked.insert(parent);
         }
     }
 

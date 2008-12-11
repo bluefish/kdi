@@ -167,6 +167,10 @@ public:
     fragment_vec
     chooseCompactionList() const;
 
+    bool
+    hasParent(FragmentPtr const & fragment,
+              fragment_set const & inSet) const;
+
     void
     dumpDotGraph(std::ostream & out,
                  fragment_set const & fragments,
