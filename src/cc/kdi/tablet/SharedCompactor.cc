@@ -1,18 +1,18 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
 // Created 2008-05-21
-// 
+//
 // This file is part of KDI.
-// 
+//
 // KDI is free software; you can redistribute it and/or modify it under the
 // terms of the GNU General Public License as published by the Free Software
 // Foundation; either version 2 of the License, or any later version.
-// 
+//
 // KDI is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -36,6 +36,17 @@
 
 #include <kdi/local/disk_table_writer.h>
 using kdi::local::DiskTableWriter;
+
+#define COMPACTOR_DEBUG
+#ifdef COMPACTOR_DEBUG
+#include <fstream>
+#include <sstream>
+#include <warp/strutil.h>
+namespace
+{
+    size_t compactionId = 0;
+}
+#endif
 
 using namespace kdi;
 using namespace kdi::tablet;
@@ -64,7 +75,7 @@ SharedCompactor::SharedCompactor() :
 
     log("SharedCompactor %p: created", this);
 }
-    
+
 SharedCompactor::~SharedCompactor()
 {
     shutdown();
@@ -109,6 +120,10 @@ void SharedCompactor::shutdown()
 
 void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
 {
+#ifdef COMPACTOR_DEBUG
+    FragDag::fragment_set fragmentSet(fragments.begin(), fragments.end());
+#endif
+
     log("Compact thread: compacting %d fragments", fragments.size());
     WallTimer timer;
     size_t outputCells = 0;
@@ -195,6 +210,21 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
             table = t->getTableName();
         }
     }
+
+#ifdef COMPACTOR_DEBUG
+    {
+        ostringstream oss;
+        oss << "compact." << compactionId << "." << table << ".A.txt";
+        string fn = replace(oss.str(), "/", "_");
+        ofstream out(fn.c_str());
+
+        lock_t dagLock(dagMutex);
+        fragDag.dumpDotGraph(out, fragmentSet, false);
+        dagLock.unlock();
+
+        out.close();
+    }
+#endif
 
     // If we didn't find anything to compact, we're kind of hosed.
     if(rangeMap.empty())
@@ -293,6 +323,10 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
             FragmentPtr frag = configMgr->openFragment(uri);
             outputSize += frag->getDiskSize(Interval<string>().setInfinite());
 
+#ifdef COMPACTOR_DEBUG
+            fragmentSet.insert(frag);
+#endif
+
             // Track the new file for automatic deletion
             FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
 
@@ -387,6 +421,10 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         FragmentPtr frag = configMgr->openFragment(uri);
         outputSize += frag->getDiskSize(Interval<string>().setInfinite());
 
+#ifdef COMPACTOR_DEBUG
+        fragmentSet.insert(frag);
+#endif
+
         // Track the new file for automatic deletion
         FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
 
@@ -433,6 +471,23 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         restrictedFragments, restrictedSize,
         outputFragments, outputSize,
         outputCells, ms);
+
+#ifdef COMPACTOR_DEBUG
+    {
+        ostringstream oss;
+        oss << "compact." << compactionId << "." << table << ".B.txt";
+        string fn = replace(oss.str(), "/", "_");
+        ofstream out(fn.c_str());
+
+        lock_t dagLock(dagMutex);
+        fragDag.dumpDotGraph(out, fragmentSet, false);
+        dagLock.unlock();
+
+        out.close();
+
+        ++compactionId;
+    }
+#endif
 }
 
 void SharedCompactor::compactLoop()
