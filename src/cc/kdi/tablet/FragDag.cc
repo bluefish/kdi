@@ -215,63 +215,31 @@ FragDag::getActiveSize(FragmentPtr const & frag) const
 }
 
 FragDag::fragment_set
-FragDag::getParentSet(fragment_set const & frags) const
-{
-    fragment_set ret;
-    for(fragment_set::const_iterator i = frags.begin();
-        i != frags.end(); ++i)
-    {
-        ffset_map::const_iterator pi = parentMap.find(*i);
-        if(pi == parentMap.end())
-            continue;
-
-        fragment_set const & parents = pi->second;
-        for(fragment_set::const_iterator j = parents.begin();
-            j != parents.end(); ++j)
-        {
-            // Add parent to adjecent set if it is not already in
-            // original set
-            if(frags.find(*j) == frags.end())
-                ret.insert(*j);
-        }
-    }
-    return ret;
-}
-
-FragDag::fragment_set
-FragDag::getChildSet(fragment_set const & frags) const
-{
-    fragment_set ret;
-    for(fragment_set::const_iterator i = frags.begin();
-        i != frags.end(); ++i)
-    {
-        ffset_map::const_iterator pi = childMap.find(*i);
-        if(pi == childMap.end())
-            continue;
-
-        fragment_set const & children = pi->second;
-        for(fragment_set::const_iterator j = children.begin();
-            j != children.end(); ++j)
-        {
-            // Add child to adjecent set if it is not already in
-            // original set
-            if(frags.find(*j) == frags.end())
-                ret.insert(*j);
-        }
-    }
-    return ret;
-}
-
-FragDag::fragment_set
 FragDag::getAdjacentSet(fragment_set const & frags) const
 {
     fragment_set adjacent;
 
-    fragment_set parents = getParentSet(frags);
-    fragment_set children = getChildSet(frags);
+    for(fragment_set::const_iterator f = frags.begin();
+        f != frags.end(); ++f)
+    {
+        ftset_map::const_iterator i = activeTablets.find(*f);
+        if(i == activeTablets.end())
+            raise<ValueError>("fragment not in graph: %s",
+                              (*f)->getFragmentUri());
 
-    adjacent.insert(parents.begin(), parents.end());
-    adjacent.insert(children.begin(), children.end());
+        tablet_set const & tablets = i->second;
+        for(tablet_set::const_iterator t = tablets.begin();
+            t != tablets.end(); ++t)
+        {
+            FragmentPtr parent = getParent(*f, *t);
+            if(parent && frags.find(parent) == frags.end())
+                adjacent.insert(parent);
+
+            FragmentPtr child = getChild(*f, *t);
+            if(child && frags.find(child) == frags.end())
+                adjacent.insert(child);
+        }
+    }
 
     return adjacent;
 }
@@ -703,6 +671,9 @@ FragDag::chooseCompactionSet() const
                 log("FragDag: compaction set is sufficiently large");
                 return frags;
             }
+
+            // Only add one node before getting a new expansion set.
+            break;
         }
     }
 }
@@ -757,10 +728,4 @@ FragDag::chooseCompactionList() const
     }
 
     return frags;
-}
-
-bool
-FragDag::isRooted(fragment_vec const & frags) const
-{
-    return getParentSet(fragment_set(frags.begin(), frags.end())).empty();
 }

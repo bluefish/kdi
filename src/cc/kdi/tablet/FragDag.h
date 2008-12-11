@@ -87,14 +87,6 @@ public:
     getActiveSize(FragmentPtr const & frag) const;
 
 private:
-    /// Get all immediate parents not already included in the set
-    fragment_set
-    getParentSet(fragment_set const & frags) const;
-
-    /// Get all immediate childs not already included in the set
-    fragment_set
-    getChildSet(fragment_set const & frags) const;
-
     /// Get all immediate parents and children not already included in
     /// the set
     fragment_set
@@ -174,11 +166,6 @@ public:
     /// XXX ...
     fragment_vec
     chooseCompactionList() const;
-
-    // A fragment set is rooted if all parents of nodes in the set are
-    // also in the set
-    bool
-    isRooted(fragment_vec const & frags) const;
 };
 
 #endif // KDI_TABLET_FRAGDAG_H
