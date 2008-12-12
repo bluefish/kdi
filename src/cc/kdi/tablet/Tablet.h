@@ -142,6 +142,11 @@ public:
     FragmentPtr getFragmentParent(FragmentPtr const & f) const;
     FragmentPtr getFragmentChild(FragmentPtr const & f) const;
 
+    /// Get the longest chain of adjacent fragments in this tablet
+    /// where each fragments is in the given fragment set.
+    std::vector<FragmentPtr> getMaxAdjacentChain(
+        std::set<FragmentPtr> const & withinSet) const;
+
 private:
     /// Remove old fragments from fragment list.  Replace with
     /// newFragment if non-null.

@@ -1,18 +1,18 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
 // Created 2008-05-14
-// 
+//
 // This file is part of KDI.
-// 
+//
 // KDI is free software; you can redistribute it and/or modify it under the
 // terms of the GNU General Public License as published by the Free Software
 // Foundation; either version 2 of the License, or any later version.
-// 
+//
 // KDI is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -52,7 +52,7 @@ using namespace std;
 using boost::format;
 
 namespace {
-    
+
     /// Split tablets that get larger than 400 MB
     size_t const SPLIT_THRESHOLD = 400 << 20;
 
@@ -211,7 +211,7 @@ void Tablet::set(strref_t row, strref_t column, int64_t timestamp, strref_t valu
 {
     validateRow(row);
     logger->set(shared_from_this(), row, column, timestamp, value);
-    
+
     lock_t lock(mutex);
     mutationsPending = true;
 }
@@ -224,7 +224,7 @@ void Tablet::erase(strref_t row, strref_t column, int64_t timestamp)
     lock_t lock(mutex);
     mutationsPending = true;
 }
-    
+
 void Tablet::sync()
 {
     lock_t lock(mutex);
@@ -416,7 +416,7 @@ void Tablet::postConfigChange(lock_t const & lock)
 {
     if(!lock)
         raise<ValueError>("need lock");
-    
+
     configChanged = true;
 
     workQueue->post(
@@ -510,7 +510,7 @@ void Tablet::addFragment(FragmentPtr const & fragment)
             // serialization notices.
             duplicatedLogs.insert(fragment);
             lock.unlock();
-                
+
             log("Tablet %s: detected cloned log %s", getPrettyName(),
                 fragment->getFragmentUri());
             return;
@@ -555,6 +555,61 @@ FragmentPtr Tablet::getFragmentChild(FragmentPtr const & f) const
         return FragmentPtr();
     else
         return *i;
+}
+
+std::vector<FragmentPtr>
+Tablet::getMaxAdjacentChain(
+    std::set<FragmentPtr> const & withinSet) const
+{
+    std::vector<FragmentPtr> maxAdjacent;
+
+    lock_t lock(mutex);
+    typedef std::vector<FragmentPtr> fragment_vec;
+
+    // Track max adjacent range
+    fragment_vec::const_iterator maxStart;
+    fragment_vec::const_iterator maxEnd;
+    maxStart = maxEnd = fragments.begin();
+
+    // Walk through list looking for sequences in the filter set
+    for(fragment_vec::const_iterator start = fragments.begin();;)
+    {
+        // Move ahead until we've found a starting point in the filter
+        // set
+        for(; start != fragments.end(); ++start)
+        {
+            if(withinSet.find(*start) != withinSet.end())
+                break;
+        }
+
+        // At the end?  No more adjacent sequences
+        if(start == fragments.end())
+            break;
+
+        // Walk forward from start until we find the first fragment
+        // outside the filter set
+        fragment_vec::const_iterator end;
+        for(end = start + 1; end != fragments.end(); ++end)
+        {
+            if(withinSet.find(*end) == withinSet.end())
+                break;
+        }
+
+        // Update the max range if the current range has more
+        // fragments
+        if((end - start) > (maxEnd - maxStart))
+        {
+            maxStart = start;
+            maxEnd = end;
+        }
+
+        // Move the starting point for the next search
+        start = end;
+    }
+
+    // Copy the max adjacent segment and return
+    maxAdjacent.insert(maxAdjacent.end(), maxStart, maxEnd);
+    return maxAdjacent;
 }
 
 void Tablet::replaceFragmentsInternal(
@@ -642,7 +697,7 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
         if(i != clonedLogs.end())
         {
             log("Tablet %s: forwarding update to clone", getPrettyName());
-            
+
             i->second->replaceFragments(oldFragments, newFragment);
             clonedLogs.erase(i);
         }
@@ -748,7 +803,7 @@ std::string Tablet::chooseSplitRow(lock_t & lock) const
 
     typedef pair<string,size_t> pair_t;
     typedef flux::Stream<pair_t>::handle_t stream_t;
-    
+
     size_t totalSize = getDiskSize(lock);
     stream_t merge = flux::makeMerge<pair_t>(warp::less());
     for(fragments_t::const_iterator i = fragments.begin();
@@ -764,7 +819,7 @@ std::string Tablet::chooseSplitRow(lock_t & lock) const
     pair_t x;
     while(cumulativeSize < middle && merge->get(x))
         cumulativeSize += x.second;
-    
+
     log("Tablet %s: totalSize=%s, split=%.1f%%, splitRow=%s",
         getPrettyName(),
         sizeString(totalSize),

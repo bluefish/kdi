@@ -91,19 +91,13 @@ private:
 public:
     // Find the first tablet boundary not before minRow
     warp::IntervalPoint<std::string>
-    findNextSplit(fragment_vec const & fragments, warp::strref_t minRow);
+    findNextSplit(fragment_set const & fragments, warp::strref_t minRow);
 
     // Filter fragment list based on which belong to a given tablet's
     // active set
     fragment_vec
     filterTabletFragments(fragment_vec const & fragments,
                           Tablet * tablet) const;
-
-    /// Filter the fragment list based on which belong to a given
-    /// tablet's active set and choose the longest adjacent sequence
-    fragment_vec
-    maxAdjacentTabletFragments(fragment_vec const & fragments,
-                               Tablet * tablet) const;
 
     /// Get the parent of the given fragment in the line of the given
     /// tablet.
@@ -117,7 +111,7 @@ public:
 
     /// XXX ...
     tablet_set
-    getActiveTablets(fragment_vec const & fragments) const;
+    getActiveTablets(fragment_set const & fragments) const;
 
     tablet_set
     getActiveTabletIntersection(fragment_vec const & fragments) const;
@@ -157,10 +151,6 @@ public:
     /// XXX ...
     fragment_set
     chooseCompactionSet() const;
-
-    /// XXX ...
-    fragment_vec
-    chooseCompactionList() const;
 
     bool
     hasParent(FragmentPtr const & fragment,

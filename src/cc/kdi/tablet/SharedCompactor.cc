@@ -33,6 +33,7 @@
 #include <ex/exception.h>
 #include <boost/bind.hpp>
 #include <iostream>
+#include <vector>
 
 #include <kdi/local/disk_table_writer.h>
 using kdi::local::DiskTableWriter;
@@ -118,10 +119,10 @@ void SharedCompactor::shutdown()
     }
 }
 
-void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
+void SharedCompactor::compact(set<FragmentPtr> const & fragments)
 {
 #ifdef COMPACTOR_DEBUG
-    FragDag::fragment_set fragmentSet(fragments.begin(), fragments.end());
+    FragDag::fragment_set debugFragments(fragments.begin(), fragments.end());
 #endif
 
     log("Compact thread: compacting %d fragments", fragments.size());
@@ -155,6 +156,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
     //      tablet range -> adjSeq (longest adjacent sequence
     //                              of fragments)
 
+    typedef std::set<FragmentPtr> fragment_set;
     typedef std::vector<FragmentPtr> fragment_vec;
     typedef std::pair<fragment_vec, bool> adj_list;  // (frag-list, isRooted)
     typedef std::pair<Interval<string>, adj_list> adj_pair;
@@ -164,7 +166,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
     {
         lock_t dagLock(dagMutex);
 
-        for(fragment_vec::const_iterator f = fragments.begin();
+        for(fragment_set::const_iterator f = fragments.begin();
             f != fragments.end(); ++f)
         {
             inputSize += fragDag.getActiveSize(*f);
@@ -179,8 +181,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
             t != active.end(); ++t)
         {
             // Find max-length adjacent sequence
-            fragment_vec adjSeq =
-                fragDag.maxAdjacentTabletFragments(fragments, *t);
+            fragment_vec adjSeq = (*t)->getMaxAdjacentChain(fragments);
 
             // Unless the sequence includes at least two fragments,
             // there's no point in compacting it
@@ -219,7 +220,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         ofstream out(fn.c_str());
 
         lock_t dagLock(dagMutex);
-        fragDag.dumpDotGraph(out, fragmentSet, false);
+        fragDag.dumpDotGraph(out, debugFragments, false);
         dagLock.unlock();
 
         out.close();
@@ -366,7 +367,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
                 outputSize += frag->getDiskSize(Interval<string>().setInfinite());
 
 #ifdef COMPACTOR_DEBUG
-                fragmentSet.insert(frag);
+                debugFragments.insert(frag);
 #endif
 
                 // Track the new file for automatic deletion
@@ -465,7 +466,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         outputSize += frag->getDiskSize(Interval<string>().setInfinite());
 
 #ifdef COMPACTOR_DEBUG
-        fragmentSet.insert(frag);
+        debugFragments.insert(frag);
 #endif
 
         // Track the new file for automatic deletion
@@ -523,7 +524,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         ofstream out(fn.c_str());
 
         lock_t dagLock(dagMutex);
-        fragDag.dumpDotGraph(out, fragmentSet, false);
+        fragDag.dumpDotGraph(out, debugFragments, false);
         dagLock.unlock();
 
         out.close();
@@ -549,7 +550,7 @@ void SharedCompactor::compactLoop()
         // Get a compaction set
         log("Compact thread: choosing compaction set");
         lock_t dagLock(dagMutex);
-        vector<FragmentPtr> frags = fragDag.chooseCompactionList();
+        set<FragmentPtr> frags = fragDag.chooseCompactionSet();
         dagLock.unlock();
 
         if(frags.empty())

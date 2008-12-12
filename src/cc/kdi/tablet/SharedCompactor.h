@@ -26,7 +26,7 @@
 #include <boost/thread.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/noncopyable.hpp>
-#include <vector>
+#include <set>
 
 namespace kdi {
 namespace tablet {
@@ -67,7 +67,7 @@ public:
     void shutdown();
 
 private:
-    void compact(std::vector<FragmentPtr> const & fragments);
+    void compact(std::set<FragmentPtr> const & fragments);
     void compactLoop();
 };
 

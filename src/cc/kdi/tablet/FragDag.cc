@@ -209,7 +209,7 @@ FragDag::getAdjacentSet(fragment_set const & frags) const
 }
 
 IntervalPoint<string>
-FragDag::findNextSplit(fragment_vec const & fragments,
+FragDag::findNextSplit(fragment_set const & fragments,
                        strref_t minRow)
 {
     IntervalPoint<string> splitPoint(string(), PT_INFINITE_UPPER_BOUND);
@@ -250,66 +250,6 @@ FragDag::filterTabletFragments(fragment_vec const & fragments,
     return filtered;
 }
 
-FragDag::fragment_vec
-FragDag::maxAdjacentTabletFragments(fragment_vec const & fragments,
-                                    Tablet * tablet) const
-{
-    fragment_vec maxAdj;
-
-    //log("FragDag: maxAdjacent for %s", tablet->getPrettyName());
-
-    // Restrict fragments to those in tablet's active set
-    fragment_vec filtered = filterTabletFragments(fragments, tablet);
-
-    // Track max adjacent range
-    fragment_vec::const_iterator maxStart;
-    fragment_vec::const_iterator maxEnd;
-    maxStart = maxEnd = filtered.begin();
-
-    //for(fragment_vec::const_iterator f = filtered.begin();
-    //    f != filtered.end(); ++f)
-    //{
-    //    log("FragDag: .. %d: %s", f - filtered.begin(),
-    //        (*f)->getFragmentUri());
-    //}
-
-    // Walk through list looking for ajacent segments
-    for(fragment_vec::const_iterator start = filtered.begin();
-        start != filtered.end(); )
-    {
-        // Walk forward from start until we find the first
-        // non-adjacent fragment (one whose parent is not the previous
-        // fragment in the sequence)
-        fragment_vec::const_iterator end;
-        for(end = start + 1; end != filtered.end(); ++end)
-        {
-            if(getParent(*end, tablet) != *(end-1))
-                break;
-        }
-
-        //log("FragDag: adj seq of length %d from #%d",
-        //    end - start, start - filtered.begin());
-
-        // Update the max range if the current range has more
-        // fragments
-        if((end - start) > (maxEnd - maxStart))
-        {
-            maxStart = start;
-            maxEnd = end;
-        }
-
-        // Move the starting point for the next search
-        start = end;
-    }
-
-    //log("FragDag: max seq of length %d from #%d",
-    //    maxEnd - maxStart, maxStart - filtered.begin());
-
-    // Copy the max adjacent segment and return
-    maxAdj.insert(maxAdj.end(), maxStart, maxEnd);
-    return maxAdj;
-}
-
 FragmentPtr
 FragDag::getParent(FragmentPtr const & fragment, Tablet * tablet) const
 {
@@ -328,10 +268,10 @@ FragDag::getChild(FragmentPtr const & fragment, Tablet * tablet) const
 }
 
 FragDag::tablet_set
-FragDag::getActiveTablets(fragment_vec const & fragments) const
+FragDag::getActiveTablets(fragment_set const & fragments) const
 {
     tablet_set active;
-    for(fragment_vec::const_iterator f = fragments.begin();
+    for(fragment_set::const_iterator f = fragments.begin();
         f != fragments.end(); ++f)
     {
         ftset_map::const_iterator ti = activeTablets.find(*f);
@@ -612,53 +552,6 @@ FragDag::chooseCompactionSet() const
             break;
         }
     }
-}
-
-
-FragDag::fragment_vec
-FragDag::chooseCompactionList() const
-{
-    log("FragDag: chooseCompactionList");
-
-    fragment_vec frags;
-
-    // Get the set of fragments to compact
-    fragment_set fset = chooseCompactionSet();
-    log("FragDag: got compaction set of %d fragment(s)", fset.size());
-    if(fset.size() < 2)
-        return frags;
-
-    // Get fragments in topological order, ancestors first
-    while(!fset.empty())
-    {
-        size_t oldSize = fset.size();
-        for(fragment_set::iterator f = fset.begin(); f != fset.end();)
-        {
-            if(!hasParent(*f, fset))
-            {
-                frags.push_back(*f);
-                fset.erase(f++);
-            }
-            else
-            {
-                ++f;
-            }
-        }
-
-        if(fset.size() == oldSize)
-        {
-            log("FragDag: cycle detected in subgraph");
-
-            ostringstream oss;
-            fset.insert(frags.begin(), frags.end());
-            dumpDotGraph(oss, fset, true);
-            log("FragDag: subgraph:\n%s", oss.str());
-
-            raise<RuntimeError>("graph has a cycle");
-        }
-    }
-
-    return frags;
 }
 
 bool
