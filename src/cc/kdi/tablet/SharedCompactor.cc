@@ -156,10 +156,10 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
     //                              of fragments)
 
     typedef std::vector<FragmentPtr> fragment_vec;
-    typedef std::pair<Interval<string>, fragment_vec> adj_pair;
+    typedef std::pair<fragment_vec, bool> adj_list;  // (frag-list, isRooted)
+    typedef std::pair<Interval<string>, adj_list> adj_pair;
     typedef std::vector<adj_pair> adj_vec;
 
-    bool allRooted = true;
     adj_vec rangeMap;
     {
         lock_t dagLock(dagMutex);
@@ -187,16 +187,16 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
             if(adjSeq.size() < 2)
                 continue;
 
+            // See if the sequence is rooted (doesn't have a parent)
+            bool isRooted = !(fragDag.getParent(adjSeq.front(), *t));
+
             // Remember the sequence for the range
             rangeMap.push_back(
                 adj_pair(
                     (*t)->getRows(),
-                    adjSeq));
-
-            // If the first element in the sequence has a parent, then
-            // the sequence is not rooted
-            if(fragDag.getParent(adjSeq.front(), *t))
-                allRooted = false;
+                    adj_list(
+                        adjSeq,
+                        isRooted)));
         }
 
         // Since we're in the neighborhood, pull our random parameters
@@ -244,7 +244,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         i != rangeMap.end(); ++i)
     {
         Interval<string> const & range = i->first;
-        fragment_vec const & adjSeq = i->second;
+        fragment_vec const & adjSeq = i->second.first;
 
         for(fragment_vec::const_iterator f = adjSeq.begin();
             f != adjSeq.end(); ++f)
@@ -253,44 +253,51 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
         }
     }
 
-    log("Compact thread: %srooted compaction on table %s",
-        (allRooted ? "" : "un"), table);
+    log("Compact thread: starting compaction on table %s", table);
 
     // no writer, loader.  use configMgr + DiskTableWriter instead
     DiskTableWriter writer(64<<10);
     string writerFn;
 
 
-    // When merging from fragments, only scan adjRange
-    //   for fragment,adjRange in invRangeMap:
-    //      merge->pipeFrom(fragment.scan(adjRange))
+    // New plan:
+    //
+    // When merging, allow order (and membership) of merge inputs to
+    // change at every range boundary.  To do this we need to make
+    // sure that each input to the merge stops returning cells when
+    // range boundaries are reached.  When we hit the end of stream on
+    // the merge, that means we're at the end of the range.  We take
+    // all the inputs necessary for the next range, notify them they
+    // should now return cells in the new range, and build a new merge
+    // in the order necessary for the new range.
 
-    /// Build a merge over the compaction fragments.  Filter erasures
-    /// if the compaction set is rooted.
-    CellStreamPtr merge = CellMerge::make(allRooted);
-    for(vector<FragmentPtr>::const_reverse_iterator i = fragments.rbegin();
-        i != fragments.rend(); ++i)
+
+    // When reading from fragments, only scan adjRange
+    //   for fragment,adjRange in invRangeMap:
+    //      inputMap[fragment] = fragment.scan(adjRange)
+
+    typedef std::map<FragmentPtr, CellStreamPtr> input_map;
+    input_map inputMap;
+
+    /// Open all active inputs on the intervals involved in compactions.
+    for(inv_range_map::const_iterator i = invRangeMap.begin();
+        i != invRangeMap.end(); ++i)
     {
-        inv_range_map::const_iterator mi = invRangeMap.find(*i);
-        if(mi == invRangeMap.end())
-        {
-            // This fragment isn't included in any adjacent sequence,
-            // so don't bother.
-            continue;
-        }
+        FragmentPtr const & fragment = i->first;
+        IntervalSet<string> const & activeRows = i->second;
 
         ++restrictedFragments;
-        restrictedSize += (*i)->getDiskSize(mi->second);
+        restrictedSize += fragment->getDiskSize(activeRows);
 
         // Only scan the parts of the fragment active in the current
         // compaction
         ScanPredicate pred;
-        pred.setRowPredicate(mi->second);
+        pred.setRowPredicate(activeRows);
 
         log("Compact thread: merging from %s (%s)",
-            (*i)->getFragmentUri(), pred);
+            fragment->getFragmentUri(), pred);
 
-        merge->pipeFrom((*i)->scan(pred));
+        inputMap[fragment] = fragment->scan(pred);
     }
 
     // Bookkeeping: output
@@ -301,77 +308,113 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
 
     // Read cells in merged order
     IntervalPointOrder<warp::less> lt;
-    Cell x;
-    while(merge->get(x))
+
+    // Merge one range at a time
+    for(adj_vec::const_iterator i = rangeMap.begin();
+        i != rangeMap.end(); ++i)
     {
-        // If we're looking for a place to split the output and the
-        // current cell is outside our outputRange, perform the split.
-        if(readyToSplit && lt(outputRange.getUpperBound(), x.getRow()))
+        Interval<string> const & range = i->first;
+        fragment_vec const & adjSeq = i->second.first;
+        bool isRooted = i->second.second;
+
+        log("Compact thread: compacting table %s, range: %s",
+            table, ScanPredicate().setRowPredicate(IntervalSet<string>().add(range)));
+
+        // Build a merge from all inputs involved
+        CellStreamPtr merge = CellMerge::make(isRooted);
+        for(fragment_vec::const_reverse_iterator f = adjSeq.rbegin();
+            f != adjSeq.rend(); ++f)
         {
-            log("Compact thread: splitting output (sz=%s) at %s",
-                sizeString(writer.size()),
-                reprString(outputRange.getUpperBound().getValue()));
+            // Get the input stream for the fragment
+            CellStreamPtr & inputStream = inputMap[*f];
 
-            // Finalize output and reset to indicate we do not have an
-            // active output
-            writer.close();
-            ++outputFragments;
-            string uri = uriPushScheme(writerFn, "disk");
-            outputOpen = false;
-
-            // Open the newly written fragment
-            FragmentPtr frag = configMgr->openFragment(uri);
-            outputSize += frag->getDiskSize(Interval<string>().setInfinite());
-
-#ifdef COMPACTOR_DEBUG
-            fragmentSet.insert(frag);
-#endif
-
-            // Track the new file for automatic deletion
-            FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
-
-            // Replace the adjacent fragment sequence for all mapped
-            // ranges in the output with the new fragment.
+            // Advance limits on each active input
+            if(range.getUpperBound().isFinite())
             {
-                lock_t dagLock(dagMutex);
-
-                for(adj_vec::const_iterator i = rangeMap.begin();
-                    i != rangeMap.end(); ++i)
-                {
-                    Interval<string> const & range = i->first;
-                    fragment_vec const & adjSeq = i->second;
-
-                    // If mapped range and output range don't overlap,
-                    // wait for a different output -- all ranges will
-                    // be covered eventually
-                    if(!range.overlaps(outputRange))
-                        continue;
-
-                    // It's possible the mapped range isn't entirely
-                    // contained in outputRange if a tablet split
-                    // happened after building the rangeMap.  Clip the
-                    // range to outputRange and update the clipped
-                    // range.  The other part of the range will be (or
-                    // was already) updated in a different output.
-                    Interval<string> clippedRange(range);
-                    clippedRange.clip(outputRange);
-                    fragDag.replaceFragments(clippedRange, adjSeq, frag);
-                }
+                //inputStream->setLimit(range.getUpperBound());
+            }
+            else
+            {
+                //inputStream->clearLimit();
             }
 
-            // Reset readyToSplit to indicate we're no longer looking
-            // to split the output
-            readyToSplit = false;
+            // Add the input to the merge
+            merge->pipeFrom(inputStream);
+        }
 
-            // The upper bound will be finite or it wouldn't have been
-            // less than the current row.
-            assert(outputRange.getUpperBound().isFinite());
+        // Merge until we're out of input (i.e. done with the range)
+        Cell x;
+        while(merge->get(x))
+        {
+            // If we're looking for a place to split the output and the
+            // current cell is outside our outputRange, perform the split.
+            if(readyToSplit && lt(outputRange.getUpperBound(), x.getRow()))
+            {
+                log("Compact thread: splitting output (sz=%s) at %s",
+                    sizeString(writer.size()),
+                    reprString(outputRange.getUpperBound().getValue()));
 
-            // Reset outputRange to the half interval immediately
-            // above the current output range
-            outputRange.setLowerBound(
-                outputRange.getUpperBound().getAdjacentComplement());
-            outputRange.setUpperBound(string(), BT_INFINITE);
+                // Finalize output and reset to indicate we do not have an
+                // active output
+                writer.close();
+                ++outputFragments;
+                string uri = uriPushScheme(writerFn, "disk");
+                outputOpen = false;
+
+                // Open the newly written fragment
+                FragmentPtr frag = configMgr->openFragment(uri);
+                outputSize += frag->getDiskSize(Interval<string>().setInfinite());
+
+#ifdef COMPACTOR_DEBUG
+                fragmentSet.insert(frag);
+#endif
+
+                // Track the new file for automatic deletion
+                FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
+
+                // Replace the adjacent fragment sequence for all mapped
+                // ranges in the output with the new fragment.
+                {
+                    lock_t dagLock(dagMutex);
+
+                    for(adj_vec::const_iterator i = rangeMap.begin();
+                        i != rangeMap.end(); ++i)
+                    {
+                        Interval<string> const & range = i->first;
+                        fragment_vec const & adjSeq = i->second.first;
+
+                        // If mapped range and output range don't overlap,
+                        // wait for a different output -- all ranges will
+                        // be covered eventually
+                        if(!range.overlaps(outputRange))
+                            continue;
+
+                        // It's possible the mapped range isn't entirely
+                        // contained in outputRange if a tablet split
+                        // happened after building the rangeMap.  Clip the
+                        // range to outputRange and update the clipped
+                        // range.  The other part of the range will be (or
+                        // was already) updated in a different output.
+                        Interval<string> clippedRange(range);
+                        clippedRange.clip(outputRange);
+                        fragDag.replaceFragments(clippedRange, adjSeq, frag);
+                    }
+                }
+
+                // Reset readyToSplit to indicate we're no longer looking
+                // to split the output
+                readyToSplit = false;
+
+                // The upper bound will be finite or it wouldn't have been
+                // less than the current row.
+                assert(outputRange.getUpperBound().isFinite());
+
+                // Reset outputRange to the half interval immediately
+                // above the current output range
+                outputRange.setLowerBound(
+                    outputRange.getUpperBound().getAdjacentComplement());
+                outputRange.setUpperBound(string(), BT_INFINITE);
+            }
         }
 
         // If we don't have an active output, open a new one
@@ -437,7 +480,7 @@ void SharedCompactor::compact(vector<FragmentPtr> const & fragments)
                 i != rangeMap.end(); ++i)
             {
                 Interval<string> const & range = i->first;
-                fragment_vec const & adjSeq = i->second;
+                fragment_vec const & adjSeq = i->second.first;
 
                 // If mapped range and output range don't overlap,
                 // wait for a different output -- all ranges will be
