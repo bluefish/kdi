@@ -81,7 +81,7 @@ namespace {
         fragment_vec fragments;
         bool isRooted;
 
-        CompactRange(Interval<string> const & r) :
+        CompactRange(Interval<string> const & range) :
             range(range), isRooted(false)
         {
         }
