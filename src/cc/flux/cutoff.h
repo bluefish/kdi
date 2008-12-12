@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2006 Josh Taylor (Kosmix Corporation)
-// Created 2006-01-11
+// Created 2008-12-11
 // 
 // This file is part of the flux library.
 // 
@@ -23,24 +23,24 @@
 #define FLUX_CUTOFF_H
 
 #include <flux/stream.h>
-#include <vector>
-#include <functional>
+#include <warp/functional.h>
 #include <boost/shared_ptr.hpp>
 
 namespace flux
 {
     //------------------------------------------------------------------------
-    // Cutoff 
-    //------------------------------------------------------------------------
-    // Breaks a stream into sections based on a cutoff value.
-    // Once the cutoff is reached, no more items are returned until a new
-    // cutoff value is set.
+    // Cutoff
+    // ------------------------------------------------------------------------
+    // Breaks an ordered stream into sections based on a cutoff value.
+    // Items will be returned as long as they are less than the given
+    // cutoff value.  Once the cutoff is reached, no more items are
+    // returned until a new cutoff value is set.
     //
-    template <class T, class Lt=std::less<T> >
+    template <class T, class V=T, class Lt=warp::less>
     class Cutoff: public Stream<T>
     {
     public:
-        typedef Cutoff<T, Lt> my_t;
+        typedef Cutoff<T,V,Lt> my_t;
         typedef boost::shared_ptr<my_t> handle_t;
         typedef typename my_t::base_handle_t base_handle_t;
 
@@ -48,13 +48,15 @@ namespace flux
         base_handle_t input;
         bool buffered;
         bool cutoffSet;
-        T cutoff;
+        V cutoff;
         T current;
+        Lt lt;
 
     public:
-        explicit Cutoff() :
+        explicit Cutoff(Lt const & lt = Lt()) :
             buffered(false),
-            cutoffSet(false)
+            cutoffSet(false),
+            lt(lt)
         {
         }
 
@@ -72,7 +74,7 @@ namespace flux
                 }
             }
 
-            if(!cutoffSet || current < cutoff) {
+            if(!cutoffSet || lt(current, cutoff)) {
                 x = current;
                 buffered = false;
                 return true;
@@ -81,7 +83,7 @@ namespace flux
             return false;
         }
 
-        my_t & setCutoff(const T & cutoff) {
+        my_t & setCutoff(const V & cutoff) {
             this->cutoff = cutoff;
             cutoffSet = true;
             return *this;
@@ -98,6 +100,30 @@ namespace flux
     makeCutoff()
     {
         typename Cutoff<T>::handle_t s(new Cutoff<T>());
+        return s;
+    }
+
+    template <class T, class V>
+    typename Cutoff<T,V>::handle_t
+    makeCutoff()
+    {
+        typename Cutoff<T,V>::handle_t s(new Cutoff<T,V>());
+        return s;
+    }
+
+    template <class T, class Lt>
+    typename Cutoff<T,T,Lt>::handle_t
+    makeCutoff(Lt const & lt)
+    {
+        typename Cutoff<T,T,Lt>::handle_t s(new Cutoff<T,T,Lt>(lt));
+        return s;
+    }
+
+    template <class T, class V, class Lt>
+    typename Cutoff<T,V,Lt>::handle_t
+    makeCutoff(Lt const & lt)
+    {
+        typename Cutoff<T,V,Lt>::handle_t s(new Cutoff<T,V,Lt>(lt));
         return s;
     }
 }
