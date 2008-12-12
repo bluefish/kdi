@@ -25,6 +25,7 @@
 #include <kdi/tablet/Fragment.h>
 #include <kdi/cell_merge.h>
 #include <kdi/scan_predicate.h>
+#include <flux/cutoff.h>
 #include <warp/functional.h>
 #include <warp/uri.h>
 #include <warp/log.h>
@@ -66,6 +67,17 @@ namespace {
     typedef std::pair<fragment_vec, bool> adj_list;  // (frag-list, isRooted)
     typedef std::pair<Interval<string>, adj_list> adj_pair;
     typedef std::vector<adj_pair> adj_vec;
+
+    struct CellRowCutoff
+    {
+        IntervalPointOrder<warp::less> lt;
+
+        bool operator()(Cell const & a, IntervalPoint<string> const & b) const
+        {
+            return lt(a.getRow(), b);
+        }
+    };
+
 }
 
 
@@ -465,7 +477,9 @@ void SharedCompactor::compact(fragment_set const & fragments)
     //   for fragment,adjRange in invRangeMap:
     //      inputMap[fragment] = fragment.scan(adjRange)
 
-    typedef std::map<FragmentPtr, CellStreamPtr> input_map;
+    typedef flux::Cutoff<Cell, IntervalPoint<string>, CellRowCutoff> CellCutoffStream;
+    typedef CellCutoffStream::handle_t CellCutoffStreamPtr;
+    typedef std::map<FragmentPtr, CellCutoffStreamPtr> input_map;
     input_map inputMap;
 
     /// Open all active inputs on the intervals involved in compactions.
@@ -486,7 +500,10 @@ void SharedCompactor::compact(fragment_set const & fragments)
         log("Compact thread: merging from %s (%s)",
             fragment->getFragmentUri(), pred);
 
-        inputMap[fragment] = fragment->scan(pred);
+        CellCutoffStreamPtr p(new CellCutoffStream);
+        p->pipeFrom(fragment->scan(pred));
+
+        inputMap[fragment] = p;
     }
 
     // Prepare output
@@ -515,17 +532,10 @@ void SharedCompactor::compact(fragment_set const & fragments)
             f != adjSeq.rend(); ++f)
         {
             // Get the input stream for the fragment
-            CellStreamPtr & inputStream = inputMap[*f];
+            CellCutoffStreamPtr & inputStream = inputMap[*f];
 
             // Advance limits on each active input
-            if(range.getUpperBound().isFinite())
-            {
-                //inputStream->setLimit(range.getUpperBound());
-            }
-            else
-            {
-                //inputStream->clearLimit();
-            }
+            inputStream->setCutoff(range.getUpperBound());
 
             // Add the input to the merge
             merge->pipeFrom(inputStream);
