@@ -64,9 +64,6 @@ namespace {
 
     typedef std::set<FragmentPtr> fragment_set;
     typedef std::vector<FragmentPtr> fragment_vec;
-    typedef std::pair<fragment_vec, bool> adj_list;  // (frag-list, isRooted)
-    typedef std::pair<Interval<string>, adj_list> adj_pair;
-    typedef std::vector<adj_pair> adj_vec;
 
     struct CellRowCutoff
     {
@@ -77,6 +74,30 @@ namespace {
             return lt(a.getRow(), b);
         }
     };
+
+    struct CompactRange
+    {
+        Interval<string> const range;
+        fragment_vec fragments;
+        bool isRooted;
+
+        CompactRange(Interval<string> const & r) :
+            range(range), isRooted(false)
+        {
+        }
+    };
+
+    typedef boost::shared_ptr<CompactRange> CompactRangePtr;
+
+    struct CompactRangePtrLt
+    {
+        bool operator()(CompactRangePtr const & a, CompactRangePtr const & b) const
+        {
+            return a->range.getUpperBound() < b->range.getUpperBound();
+        }
+    };
+
+    typedef std::vector<CompactRangePtr> range_vec;
 
 }
 
@@ -96,7 +117,7 @@ namespace {
         FragDag & fragDag;
         string table;
         fragment_set const & fragments;
-        adj_vec const & rangeMap;
+        range_vec const & rangeMap;
 
         DiskTableWriter writer;
         string writerFn;
@@ -136,7 +157,7 @@ namespace {
                          FragDag & fragDag,
                          string const & table,
                          fragment_set const & fragments,
-                         adj_vec const & rangeMap
+                         range_vec const & rangeMap
             ) :
             configMgr(configMgr),
             tracker(tracker),
@@ -234,11 +255,11 @@ namespace {
             {
                 lock_t dagLock(dagMutex);
 
-                for(adj_vec::const_iterator i = rangeMap.begin();
+                for(range_vec::const_iterator i = rangeMap.begin();
                     i != rangeMap.end(); ++i)
                 {
-                    Interval<string> const & range = i->first;
-                    fragment_vec const & adjSeq = i->second.first;
+                    Interval<string> const & range = (*i)->range;
+                    fragment_vec const & adjSeq = (*i)->fragments;
 
                     // If mapped range and output range don't overlap,
                     // wait for a different output -- all ranges will
@@ -366,7 +387,7 @@ void SharedCompactor::compact(fragment_set const & fragments)
     //      tablet range -> adjSeq (longest adjacent sequence
     //                              of fragments)
 
-    adj_vec rangeMap;
+    range_vec rangeMap;
     {
         lock_t dagLock(dagMutex);
 
@@ -384,24 +405,21 @@ void SharedCompactor::compact(fragment_set const & fragments)
         for(FragDag::tablet_set::const_iterator t = active.begin();
             t != active.end(); ++t)
         {
+            CompactRangePtr p(new CompactRange((*t)->getRows()));
+
             // Find max-length adjacent sequence
-            fragment_vec adjSeq = (*t)->getMaxAdjacentChain(fragments);
+            p->fragments = (*t)->getMaxAdjacentChain(fragments);
 
             // Unless the sequence includes at least two fragments,
             // there's no point in compacting it
-            if(adjSeq.size() < 2)
+            if(p->fragments.size() < 2)
                 continue;
 
             // See if the sequence is rooted (doesn't have a parent)
-            bool isRooted = !(fragDag.getParent(adjSeq.front(), *t));
+            p->isRooted = !(fragDag.getParent(p->fragments.front(), *t));
 
             // Remember the sequence for the range
-            rangeMap.push_back(
-                adj_pair(
-                    (*t)->getRows(),
-                    adj_list(
-                        adjSeq,
-                        isRooted)));
+            rangeMap.push_back(p);
         }
 
         // Since we're in the neighborhood, pull our random parameters
@@ -436,6 +454,9 @@ void SharedCompactor::compact(fragment_set const & fragments)
         raise<ValueError>("fragment set contained no compactible sequences");
 
 
+    // Organize the range map in ascending range order
+    std::sort(rangeMap.begin(), rangeMap.end(), CompactRangePtrLt());
+
     // For each fragment in compaction set, remember:
     //   invRangeMap:
     //      fragment -> adjRange (ranges referencing fragment in
@@ -445,11 +466,11 @@ void SharedCompactor::compact(fragment_set const & fragments)
 
     // Invert rangeMap to build invRangeMap
     inv_range_map invRangeMap;
-    for(adj_vec::const_iterator i = rangeMap.begin();
+    for(range_vec::const_iterator i = rangeMap.begin();
         i != rangeMap.end(); ++i)
     {
-        Interval<string> const & range = i->first;
-        fragment_vec const & adjSeq = i->second.first;
+        Interval<string> const & range = (*i)->range;
+        fragment_vec const & adjSeq = (*i)->fragments;
 
         for(fragment_vec::const_iterator f = adjSeq.begin();
             f != adjSeq.end(); ++f)
@@ -516,12 +537,12 @@ void SharedCompactor::compact(fragment_set const & fragments)
                             rangeMap);
 
     // Merge one range at a time
-    for(adj_vec::const_iterator i = rangeMap.begin();
+    for(range_vec::const_iterator i = rangeMap.begin();
         i != rangeMap.end(); ++i)
     {
-        Interval<string> const & range = i->first;
-        fragment_vec const & adjSeq = i->second.first;
-        bool isRooted = i->second.second;
+        Interval<string> const & range = (*i)->range;
+        fragment_vec const & adjSeq = (*i)->fragments;
+        bool isRooted = (*i)->isRooted;
 
         log("Compact thread: compacting table %s, range: %s",
             table, ScanPredicate().setRowPredicate(IntervalSet<string>().add(range)));
