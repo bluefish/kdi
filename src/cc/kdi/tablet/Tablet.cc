@@ -148,8 +148,6 @@ Tablet::Tablet(std::string const & tableName,
             uriChanged = true;
     }
 
-    compactor->wakeup();
-
     // If a table URI changed during the load, resave our config
     if(uriChanged)
     {
@@ -182,6 +180,10 @@ TabletPtr Tablet::make(std::string const & tableName,
             workQueue,
             cfg,
             superTablet));
+
+    dagLock.unlock();
+    compactor->wakeup();
+
     return p;
 }
 
@@ -408,8 +410,6 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
         // can get into the copy constructor
         compactor->fragDag.addFragment(this, *i);
     }
-
-    compactor->wakeup();
 }
 
 void Tablet::postConfigChange(lock_t const & lock)
@@ -534,7 +534,8 @@ FragmentPtr Tablet::getFragmentParent(FragmentPtr const & f) const
     fragments_t::const_iterator i = std::find(
         fragments.begin(), fragments.end(), f);
     if(i == fragments.end())
-        raise<ValueError>("fragment not in tablet chain");
+        raise<ValueError>("fragment not in tablet chain: tablet=%s, fragment=%s",
+                          getPrettyName(), f->getFragmentUri());
 
     if(i == fragments.begin())
         return FragmentPtr();
@@ -549,7 +550,8 @@ FragmentPtr Tablet::getFragmentChild(FragmentPtr const & f) const
     fragments_t::const_iterator i = std::find(
         fragments.begin(), fragments.end(), f);
     if(i == fragments.end())
-        raise<ValueError>("fragment not in tablet chain");
+        raise<ValueError>("fragment not in tablet chain: tablet=%s, fragment=%s",
+                          getPrettyName(), f->getFragmentUri());
 
     if(++i == fragments.end())
         return FragmentPtr();
@@ -684,6 +686,7 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
         oldFragments.size(), newFragment->getFragmentUri());
 
     // Log hackery
+    bool isLogReplacement = false;
     if(oldFragments.size() == 1 && !oldFragments[0]->isImmutable())
     {
         // Lock clonedLogs and duplicatedLogs
@@ -715,23 +718,26 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             return;
         }
 
-        lock.unlock();
-
-        // FragDag hackery
-        {
-            // Only do this for log replacements.  Adding to the
-            // FragDag is effectively making the new fragment
-            // available for compaction.  Also, grabbing the dagMutex
-            // from a compactor replacement wold deadlock, since the
-            // compactor will have the dagMutex.  Evil code!  :)
-            lock_t dagLock(compactor->dagMutex);
-            compactor->fragDag.addFragment(this, newFragment);
-        }
-        compactor->wakeup();
+        isLogReplacement = true;
     }
 
     // Replace fragments
     replaceFragmentsInternal(oldFragments, newFragment);
+
+    // FragDag hackery
+    if(isLogReplacement)
+    {
+        // Only do this for log replacements.  Adding to the FragDag
+        // is effectively making the new fragment available for
+        // compaction.  Also, grabbing the dagMutex from a compactor
+        // replacement wold deadlock, since the compactor will have
+        // the dagMutex.  Evil code!  :)
+        lock_t dagLock(compactor->dagMutex);
+        compactor->fragDag.addFragment(this, newFragment);
+        dagLock.unlock();
+
+        compactor->wakeup();
+    }
 
     // Check to see if we should split
     if(superTablet)
