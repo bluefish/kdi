@@ -39,7 +39,7 @@
 #include <kdi/local/disk_table_writer.h>
 using kdi::local::DiskTableWriter;
 
-#define COMPACTOR_DEBUG
+//#define COMPACTOR_DEBUG
 #ifdef COMPACTOR_DEBUG
 #include <fstream>
 #include <sstream>
