@@ -300,7 +300,8 @@ namespace {
 // SharedCompactor
 //----------------------------------------------------------------------------
 SharedCompactor::SharedCompactor() :
-    cancel(false), enabled(true)
+    disabled(0),
+    cancel(false)
 {
     thread.reset(
         new boost::thread(
@@ -327,16 +328,23 @@ SharedCompactor::~SharedCompactor()
 void SharedCompactor::disableCompactions()
 {
     lock_t lock(mutex);
-    log("Compact: disabling");
-    enabled = false;
+    ++disabled;
+    log("Compact: disabling (count=%d)", disabled);
 }
 
 void SharedCompactor::enableCompactions()
 {
     lock_t lock(mutex);
-    log("Compact: enabling");
-    enabled = true;
-    wakeCond.notify_all();
+    if(!disabled)
+        raise<RuntimeError>("compactor is not disabled");
+
+    if(!--disabled)
+    {
+        log("Compact: enabling");
+        wakeCond.notify_all();
+    }
+    else
+        log("Compact: enabling, but disable count still %d", disabled);
 }
 
 void SharedCompactor::wakeup()
@@ -618,7 +626,7 @@ void SharedCompactor::compactLoop()
     while(!cancel)
     {
         // Make sure we're enabled
-        if(!enabled)
+        if(disabled)
         {
             log("Compact thread: disabled, waiting");
             wakeCond.wait(lock);

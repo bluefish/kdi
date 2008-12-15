@@ -47,8 +47,8 @@ class kdi::tablet::SharedCompactor :
     boost::mutex mutex;
     boost::condition wakeCond;
     boost::scoped_ptr<boost::thread> thread;
+    size_t disabled;
     bool cancel;
-    bool enabled;
 
 public:
     // Anything that wants to interact with the compaction graph has
