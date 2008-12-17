@@ -89,11 +89,23 @@ namespace {
 
     typedef boost::shared_ptr<CompactRange> CompactRangePtr;
 
-    struct CompactRangePtrLt
+    class CompactRangePtrLt
     {
-        bool operator()(CompactRangePtr const & a, CompactRangePtr const & b) const
+        IntervalPoint<string> const & get(CompactRangePtr const & x) const
         {
-            return a->range.getUpperBound() < b->range.getUpperBound();
+            return x->range.getUpperBound();
+        }
+
+        IntervalPoint<string> const & get(IntervalPoint<string> const & x) const
+        {
+            return x;
+        }
+
+    public:
+        template <class A, class B>
+        bool operator()(A const & a, B const & b) const
+        {
+            return get(a) < get(b);
         }
     };
 
@@ -208,11 +220,20 @@ namespace {
                 // outputRange.  The last row we added to the output forms
                 // an inclusive lower bound for the split point.  We'll
                 // split the first time we see a cell outside outputRange.
-                {
-                    lock_t lock(dagMutex);
-                    outputRange.setUpperBound(
-                        fragDag.findNextSplit(fragments, x.getRow()));
-                }
+                IntervalPoint<string> curRow(x.getRow().toString(), PT_POINT);
+
+                // Find the first range that contains curRow
+                range_vec::const_iterator i = std::lower_bound(
+                    rangeMap.begin(), rangeMap.end(), curRow,
+                    CompactRangePtrLt());
+
+                // Set the output upper bound to the range upper bound
+                if(i != rangeMap.end())
+                    outputRange.setUpperBound((*i)->range.getUpperBound());
+                else
+                    outputRange.unsetUpperBound();
+
+                // Set the split flag
                 readyToSplit = true;
             }
         }

@@ -190,6 +190,14 @@ TabletPtr Tablet::make(std::string const & tableName,
 
 Tablet::~Tablet()
 {
+    // FragDag hackery
+    {
+        lock_t dagLock(compactor->dagMutex);
+        compactor->fragDag.removeTablet(this);
+    }
+
+    lock_t lock(mutex);
+
     // Untrack files that we're still referencing -- once a Tablet is
     // destroyed, another process may load it.  We have to assume the
     // file names have been exported.
@@ -198,12 +206,6 @@ Tablet::~Tablet()
         i != fragments.end(); ++i)
     {
         tracker->untrack((*i)->getDiskUri());
-    }
-
-    // FragDag hackery
-    {
-        lock_t dagLock(compactor->dagMutex);
-        compactor->fragDag.removeTablet(this);
     }
 
     log("Tablet %p %s: destroyed", this, getPrettyName());

@@ -208,26 +208,6 @@ FragDag::getAdjacentSet(fragment_set const & frags) const
     return adjacent;
 }
 
-IntervalPoint<string>
-FragDag::findNextSplit(fragment_set const & fragments,
-                       strref_t minRow)
-{
-    IntervalPoint<string> splitPoint(string(), PT_INFINITE_UPPER_BOUND);
-    IntervalPointOrder<warp::less> plt;
-
-    tablet_set tablets = getActiveTablets(fragments);
-    for(tablet_set::const_iterator t = tablets.begin();
-        t != tablets.end(); ++t)
-    {
-        IntervalPoint<string> const & upper =
-            (*t)->getRows().getUpperBound();
-        if(plt(minRow, upper) && plt(upper, splitPoint))
-            splitPoint = upper;
-    }
-
-    return splitPoint;
-}
-
 FragDag::fragment_vec
 FragDag::filterTabletFragments(fragment_vec const & fragments,
                                Tablet * tablet) const
@@ -298,8 +278,8 @@ FragDag::getActiveTabletIntersection(fragment_vec const & fragments) const
     {
         ftset_map::const_iterator ti = activeTablets.find(*f);
         if(ti == activeTablets.end())
-            raise<RuntimeError>("fragment not in graph: %s",
-                                (*f)->getFragmentUri());
+            return active;
+
         active = ti->second;
     }
 
@@ -309,8 +289,10 @@ FragDag::getActiveTabletIntersection(fragment_vec const & fragments) const
     {
         ftset_map::const_iterator ti = activeTablets.find(*f);
         if(ti == activeTablets.end())
-            raise<RuntimeError>("fragment not in graph: %s",
-                                (*f)->getFragmentUri());
+        {
+            active.clear();
+            return active;
+        }
 
         tablet_set const & tablets = ti->second;
         for(tablet_set::iterator t = active.begin();

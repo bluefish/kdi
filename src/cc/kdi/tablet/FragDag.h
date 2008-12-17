@@ -89,10 +89,6 @@ private:
     getAdjacentSet(fragment_set const & frags) const;
 
 public:
-    // Find the first tablet boundary not before minRow
-    warp::IntervalPoint<std::string>
-    findNextSplit(fragment_set const & fragments, warp::strref_t minRow);
-
     // Filter fragment list based on which belong to a given tablet's
     // active set
     fragment_vec
