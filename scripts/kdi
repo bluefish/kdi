@@ -87,6 +87,12 @@ EOF
 	export LD_LIBRARY_PATH=$BASE/bin:$LD_LIBRARY_PATH
 	export PATH=$BASE/bin:$PATH
 
+	if [[ $(ulimit -v) == "unlimited" ]]; then
+	    MEM_LIMIT=$(free | grep Mem | awk '{print int($2 * 0.60)}')
+	    echo "Setting VM limit to: $MEM_LIMIT KB" >> $BASE/kdi.log
+	    ulimit -v $MEM_LIMIT
+	fi
+
 	kdiNetServer --root $BASE/data --Ice.Config=$BASE/ice.cfg \
             >> $BASE/kdi.log 2>&1 </dev/null &
 	echo $! > $BASE/kdi.pid
