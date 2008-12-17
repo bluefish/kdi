@@ -1,18 +1,18 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2007 Josh Taylor (Kosmix Corporation)
 // Created 2007-12-10
-// 
+//
 // This file is part of KDI.
-// 
+//
 // KDI is free software; you can redistribute it and/or modify it under the
 // terms of the GNU General Public License as published by the Free Software
 // Foundation; either version 2 of the License, or any later version.
-// 
+//
 // KDI is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -53,7 +53,7 @@ using namespace ex;
 
 namespace {
 
-    class SuperTabletMaker
+    class SuperTabletServer
     {
         tablet::MetaConfigManagerPtr metaConfigMgr;
         tablet::FileTrackerPtr tracker;
@@ -64,8 +64,7 @@ namespace {
         std::string server;
 
     public:
-        SuperTabletMaker(std::string const & root,
-                         std::string const & metaTableUri,
+        SuperTabletServer(std::string const & root,
                          std::string const & server) :
             metaConfigMgr(new tablet::MetaConfigManager(root, server)),
             tracker(new tablet::FileTracker),
@@ -74,45 +73,33 @@ namespace {
             workQueue(new tablet::WorkQueue(1)),
             server(server)
         {
-            log("SuperTabletMaker %p: created", this);
+            log("SuperTabletServer %p: created", this);
 
-            if(metaTableUri.empty())
-            {
-                log("Creating META table");
+            log("Creating META table");
 
-                tablet::ConfigManagerPtr fixedMgr =
-                    metaConfigMgr->getFixedAdapter();
-                std::list<tablet::TabletConfig> cfgs =
-                    fixedMgr->loadTabletConfigs("META");
-                if(cfgs.size() != 1)
-                    raise<RuntimeError>("loaded %d configs for META table",
-                                        cfgs.size());
+            tablet::ConfigManagerPtr fixedMgr =
+                metaConfigMgr->getFixedAdapter();
+            std::list<tablet::TabletConfig> cfgs =
+                fixedMgr->loadTabletConfigs("META");
+            if(cfgs.size() != 1)
+                raise<RuntimeError>("loaded %d configs for META table",
+                                    cfgs.size());
 
-                metaTable = tablet::Tablet::make(
-                    "META",
-                    fixedMgr,
-                    logger,
-                    compactor,
-                    tracker,
-                    workQueue,
-                    cfgs.front());
-            }
-            else
-            {
-                log("Connecting to META table: %s", metaTableUri);
-                metaTable = Table::open(metaTableUri);
-            }
+            metaTable = tablet::Tablet::make(
+                "META",
+                fixedMgr,
+                logger,
+                compactor,
+                tracker,
+                workQueue,
+                cfgs.front());
 
             metaConfigMgr->setMetaTable(metaTable);
         }
-        
-        ~SuperTabletMaker()
-        {
-            compactor->shutdown();
-            workQueue->shutdown();
-            logger->shutdown();
 
-            log("SuperTabletMaker %p: destroyed", this);
+        ~SuperTabletServer()
+        {
+            log("SuperTabletServer %p: destroyed", this);
         }
 
         TablePtr makeTable(std::string const & name) const
@@ -154,6 +141,13 @@ namespace {
                 }
             }
         }
+
+        void shutdown()
+        {
+            compactor->shutdown();
+            workQueue->shutdown();
+            logger->shutdown();
+        }
     };
 
     std::string getHostName()
@@ -175,27 +169,8 @@ namespace {
             OptionParser op("%prog [ICE-parameters] [options]");
             {
                 using namespace boost::program_options;
-                op.addOption("mode,m", value<string>()->default_value("super"),
-                             "Server mode");
-
-                op.addOption("root,r", value<string>()->default_value("."),
+                op.addOption("root,r", value<string>(),
                              "Root directory for tablet data");
-
-                // This option tells the super tablet server where to
-                // find the meta table for getting table config
-                // information.  It is fine for the server that hosts
-                // the META table to refer to itself.  It does not
-                // imply that the table should be loaded.
-
-
-                // Examples: --meta=kdi://host:port/META
-                //           --meta=dref://ls-host:port/some/node
-                op.addOption("meta,M", value<string>(),
-                             "Location of META table");
-
-                op.addOption("server,s",
-                             value<string>()->default_value(getHostName()),
-                             "Name of server");
             }
 
             // Parse options
@@ -203,36 +178,15 @@ namespace {
             ArgumentList args;
             op.parse(ac, av, opt, args);
 
-            // Get the server mode
-            string mode;
-            if(!opt.get("mode", mode))
-                op.error("need --mode");
-
             // Get table root directory
             string tableRoot;
             if(!opt.get("root", tableRoot))
                 op.error("need --root");
 
-
-            // Init server based on mode
-            boost::function<TablePtr (std::string const &)> tableMaker;
-            if(mode == "super")
-            {
-                string meta;
-                opt.get("meta", meta);
-
-                string server;
-                if(!opt.get("server", server) || server.empty())
-                    op.error("need --server");
-
-                log("Starting in SuperTablet mode");
-                boost::shared_ptr<SuperTabletMaker> p(
-                    new SuperTabletMaker(tableRoot, meta, server)
-                    );
-                tableMaker = boost::bind(&SuperTabletMaker::makeTable, p, _1);
-            }
-            else
-                op.error("unknown --mode: " + mode);
+            // Create table server
+            boost::shared_ptr<SuperTabletServer> server(
+                new SuperTabletServer(
+                    tableRoot, getHostName()));
 
             // Create adapter
             Ice::CommunicatorPtr ic = communicator();
@@ -240,7 +194,10 @@ namespace {
                 = ic->createObjectAdapter("TableAdapter");
 
             // Create locator
-            TimeoutLocatorPtr locator = new TimeoutLocator(tableMaker);
+            TimeoutLocatorPtr locator = new TimeoutLocator(
+                boost::bind(
+                    &SuperTabletServer::makeTable,
+                    server, _1));
             adapter->addServantLocator(locator, "");
 
             // Create TableManager object
@@ -251,7 +208,12 @@ namespace {
             adapter->activate();
             ic->waitForShutdown();
 
+            // Shutdown
             log("Shutting down");
+            server->shutdown();
+
+            // Destructors after this point
+            log("Cleaning up");
         }
 
         virtual int run(int ac, char ** av)
