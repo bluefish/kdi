@@ -1,0 +1,262 @@
+#!/usr/bin/env python
+#
+# Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
+# Created 2008-12-17
+#
+# This file is part of KDI.
+#
+# KDI is free software; you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or any later version.
+#
+# KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc., 51
+# Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+
+# We want the server to be up and responsive.  If the server is not
+# responsive, we need to kill it.  If the server is not up, we need to
+# start a new server.
+
+import sys
+import os
+import time
+import threading
+import subprocess
+import random
+
+def log(x):
+    now = time.time()
+    ds = time.strftime('%FT%T', time.localtime(now))
+    usec = ('%.6f' % (now - int(now))).lstrip('0')
+    msg = '%s%s %s' % (ds, usec, x)
+    print >>sys.stderr, msg
+
+def readPidFile(pidFile):
+    try:
+        for l in file(pidFile):
+            return int(l.strip())
+    except:
+        return 0
+
+def serverUp(pid):
+    try:
+        cmdline = file('/proc/%s/cmdline' % pid).read()
+        #log('serverUp: %r' % cmdline)
+        args = cmdline.split('\x00')
+        #log('serverUp: %r' % args)
+        return 'kdiNetServer' in args
+    except:
+        return False
+
+class AsyncSystemCall(object):
+    def __init__(self, cmd):
+        self._ret = None
+        p = subprocess.Popen(cmd, shell=True)
+        self._pid = p.pid
+        self._cond = threading.Condition()
+        self._thread = threading.Thread(target=self._run, args=(p,))
+        self._thread.setDaemon(True)
+        self._thread.start()
+
+    def _run(self, p):
+        r = p.wait()
+        self._cond.acquire()
+        self._ret = r
+        self._cond.notifyAll()
+        self._cond.release()
+
+    def cancel(self):
+        self._cond.acquire()
+        if self._ret is None:
+            try:
+                os.kill(self._pid, 9)
+            except:
+                pass
+        while self._ret is None:
+            self._cond.wait()
+        self._cond.release()
+
+    def wait(self, timeout):
+        self._cond.acquire()
+        if self._ret is None:
+            self._cond.wait(timeout)
+        r = self._ret
+        self._cond.release()
+        return r
+
+
+def system_async(cmd):
+    return AsyncSystemCall(cmd)
+
+
+def killUnresponsive(pidFile, pingCmd):
+
+    cmdTimeout = 300      # 5 minutes
+    loopDelay = 60        # 1 minute
+    killThreshold = 600   # 10 minutes
+    loopJitter = 30
+
+    time.sleep(random.uniform(0, loopJitter))
+
+    lastResponse = time.time()
+    while True:
+
+        # Don't bother running if the server isn't up
+        pid = readPidFile(pidFile)
+        if not pid or not serverUp(pid):
+            time.sleep(loopDelay + random.uniform(0, loopJitter))
+            continue
+
+        # Try running our ping command
+        log('running: %s' % pingCmd)
+        x = system_async(pingCmd)
+
+        # Wait for it to finish or time out
+        ret = x.wait(cmdTimeout)
+
+        if ret == 0:
+            # Command succeeded
+            log('success: %s' % pingCmd)
+            lastResponse = time.time()
+        elif ret is None:
+            # Command timed out, kill
+            log('timeout: %s' % pingCmd)
+            x.cancel()
+        else:
+            # Command failed
+            log('failure: %s' % pingCmd)
+            pass
+
+        # If we haven't managed to get a good response recently, kill
+        # the server
+        if time.time() - lastResponse > killThreshold:
+            # Haven't gotten anything in a while, kill it!
+            log('command has not succeeded in %d seconds: %s' %
+                (time.time() - lastResponse, pingCmd))
+            pid = readPidFile(pidFile)
+            if pid:
+                log('killing PID %d' % pid)
+                try:
+                    os.kill(pid, 9)
+                except ex:
+                    log('kill failed: %s' % ex)
+
+        # Wait for a bit
+        time.sleep(loopDelay + random.uniform(0, loopJitter))
+
+
+def keepServerUp(pidFile, startCmd):
+
+    lastPid = None
+
+    while True:
+        # Get the PID of the server we're supposed to watch
+        pid = readPidFile(pidFile)
+
+        if lastPid != pid:
+            if pid:
+                log('PID file points to server with PID %d' % pid)
+            else:
+                log('PID file has no server')
+            lastPid = pid
+
+        # If the PID file was missing or empty, assume the server is
+        # supposed to be down
+        if not pid:
+            time.sleep(60)
+            continue
+
+        # If the server is up, wait
+        if serverUp(pid):
+            time.sleep(60)
+            continue
+
+        # There's no server with the given PID
+        log('server PID %s is down' % pid)
+
+        # Make sure the PID file hasn't just changed, possibly due to
+        # a new server coming up
+        pid2 = readPidFile(pidFile)
+        if pid != pid2:
+            log('PID file changed: old=%s, new=%s' % (pid, pid2))
+            time.sleep(5)
+            continue
+
+        # Server is down, we should try to restart it
+        log('starting new server: %s' % startCmd)
+        ret = os.system(startCmd)
+        if ret:
+            log('start command failed: %s' % startCmd)
+            sys.exit(1)
+
+        # Wait for a bit after restart
+        time.sleep(10)
+
+
+def main():
+    import optparse
+    op = optparse.OptionParser()
+    op.add_option('-T','--table',default='kdi:WATCHDOG',help='Watchdog table URI')
+    op.add_option('-k','--kdi',help='Path to KDI control script')
+    op.add_option('-s','--kdiScan',help='Path to kdiScan binary')
+    op.add_option('-l','--kdiLoad',help='Path to kdiLoad binary')
+    op.add_option('-p','--pidfile',help='Path to server PID file')
+
+    opt,args = op.parse_args()
+
+    if not opt.kdi:
+        p = os.path.join(os.path.dirname(sys.argv[0]), 'kdi')
+        if os.path.isfile(p):
+            opt.kdi = p
+    if not opt.kdi or not os.path.isfile(opt.kdi):
+        op.error('need --kdi')
+
+    if not opt.kdiScan:
+        p = os.path.join(os.path.dirname(sys.argv[0]), 'kdiScan')
+        if os.path.isfile(p):
+            opt.kdiScan = p
+    if not opt.kdiScan or not os.path.isfile(opt.kdiScan):
+        op.error('need --kdiScan')
+
+    if not opt.kdiLoad:
+        p = os.path.join(os.path.dirname(sys.argv[0]), 'kdiLoad')
+        if os.path.isfile(p):
+            opt.kdiLoad = p
+    if not opt.kdiLoad or not os.path.isfile(opt.kdiLoad):
+        op.error('need --kdiLoad')
+
+    if not opt.pidfile:
+        p = os.path.join(os.path.dirname(sys.argv[0]), '..', 'kdi.pid')
+        if os.path.isfile(p):
+            opt.pidfile = p
+    if not opt.pidfile:
+        op.error('need --pidfile')
+
+    scanCmd = "ulimit -c 0; %s -c '%s' >/dev/null 2>&1 </dev/null" % (opt.kdiScan, opt.table)
+    loadCmd = "ulimit -c 0; echo '(\"a\",\"b\",@0,\"c\")' | %s -t '%s' - >/dev/null 2>&1" % (opt.kdiLoad, opt.table)
+    startCmd = "%s start" % opt.kdi
+
+    log('scan: %s' % scanCmd)
+    log('load: %s' % loadCmd)
+    log('start: %s' % startCmd)
+    log('pidfile: %s' % opt.pidfile)
+
+    threads = []
+    threads.append(threading.Thread(target=killUnresponsive, args=(opt.pidfile, scanCmd)))
+    threads.append(threading.Thread(target=killUnresponsive, args=(opt.pidfile, loadCmd)))
+
+    for t in threads:
+        t.setDaemon(True)
+        t.start()
+
+    keepServerUp(opt.pidfile, startCmd)
+
+
+if __name__ == '__main__':
+    main()
