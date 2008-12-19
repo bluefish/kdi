@@ -79,11 +79,6 @@ case $1 in
 	    exit 1
 	fi
 
-	if [[ -r $BASE/kdi.pid && -d /proc/$(<$BASE/kdi.pid) ]]; then
-	    echo "Server already running"
-	    exit 1
-	fi
-
 	cat >$BASE/ice.cfg <<EOF
 TableAdapter.Endpoints=tcp -p $PORT
 Ice.MessageSizeMax=32768
@@ -113,11 +108,6 @@ EOF
     watch)
 	if [[ ! -x $BASE/bin/kdiWatchdog ]]; then
 	    echo "Couldn't find or execute watchdog: $BASE/bin/kdiWatchdog"
-	    exit 1
-	fi
-
-	if [[ -r $BASE/watchdog.pid && -d /proc/$(<$BASE/watchdog.pid) ]]; then
-	    echo "Watchdog already running"
 	    exit 1
 	fi
 
