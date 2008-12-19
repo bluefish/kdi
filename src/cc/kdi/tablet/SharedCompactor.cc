@@ -655,10 +655,14 @@ void SharedCompactor::compactLoop()
         }
 
         // Get a compaction set
+        lock.unlock();
         log("Compact thread: choosing compaction set");
         lock_t dagLock(dagMutex);
         set<FragmentPtr> frags = fragDag.chooseCompactionSet();
         dagLock.unlock();
+        lock.lock();
+        if(cancel || disabled)
+            continue;
 
         if(frags.empty())
         {
