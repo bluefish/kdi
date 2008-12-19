@@ -77,14 +77,14 @@ namespace {
 //----------------------------------------------------------------------------
 void Tablet::validateRow(strref_t row) const
 {
-    lock_t lock(mutex);
+    Interval<string> rows = getRows();
     if(!rows.contains(row, warp::less()))
         raise<RowNotInTabletError>("%s", row);
 }
 
 void Tablet::validateRows(ScanPredicate const & pred) const
 {
-    lock_t lock(mutex);
+    Interval<string> rows = getRows();
     if(pred.getRowPredicate())
     {
         if(!rows.contains(pred.getRowPredicate()->getHull()))
@@ -115,7 +115,8 @@ Tablet::Tablet(std::string const & tableName,
     tableName(tableName),
     server(cfg.getServer()),
     prettyName(makePrettyName(tableName, cfg.getTabletRows().getUpperBound())),
-    rows(cfg.getTabletRows()),
+    minRow(cfg.getTabletRows().getLowerBound()),
+    maxRow(cfg.getTabletRows().getUpperBound()),
     mutationsPending(false),
     configChanged(false),
     splitPending(false)
@@ -331,8 +332,8 @@ TabletPtr Tablet::splitTablet()
     std::string splitRow = chooseSplitRow(lock);
 
     // Make the new intervals
-    Interval<string> low(rows);
-    Interval<string> high(rows);
+    Interval<string> low(minRow, maxRow);
+    Interval<string> high(minRow, maxRow);
     low.setUpperBound(splitRow, BT_INCLUSIVE);
     high.setLowerBound(splitRow, BT_EXCLUSIVE);
 
@@ -349,7 +350,7 @@ TabletPtr Tablet::splitTablet()
     TabletPtr lowTablet(new Tablet(*this, low));
 
     // Shrink this tablet to the upper row bounds.
-    this->rows = high;
+    minRow = high.getLowerBound();
 
     // Post config changes.  Queue the upper tablet first because it
     // is somewhat less expensive to recover from a missing low tablet
@@ -393,7 +394,8 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
     tableName(o.tableName),
     server(o.server),
     prettyName(makePrettyName(tableName, rows.getUpperBound())),
-    rows(rows),
+    minRow(rows.getLowerBound()),
+    maxRow(rows.getUpperBound()),
     fragments(o.fragments),
     mutationsPending(false),
     configChanged(false),
@@ -447,6 +449,8 @@ void Tablet::saveConfig(lock_t & lock)
     {
         configChanged = false;
         vector<string> uris = getFragmentUris(lock);
+
+        Interval<string> rows(minRow, maxRow);
 
         lock.unlock();
 
@@ -789,6 +793,8 @@ size_t Tablet::getDiskSize(lock_t const & lock) const
     if(!lock)
         raise<ValueError>("need lock");
 
+    Interval<string> rows(minRow, maxRow);
+
     size_t sum = 0;
     for(fragments_t::const_iterator i = fragments.begin();
         i != fragments.end(); ++i)
@@ -808,6 +814,8 @@ std::string Tablet::chooseSplitRow(lock_t & lock) const
 {
     if(!lock)
         raise<ValueError>("need lock");
+
+    Interval<string> rows(minRow, maxRow);
 
     typedef pair<string,size_t> pair_t;
     typedef flux::Stream<pair_t>::handle_t stream_t;

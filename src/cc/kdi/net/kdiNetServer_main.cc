@@ -22,6 +22,7 @@
 #include <kdi/net/TimeoutLocator.h>
 #include <warp/options.h>
 #include <warp/fs.h>
+#include <warp/filestream.h>
 #include <warp/log.h>
 #include <ex/exception.h>
 #include <Ice/Ice.h>
@@ -29,6 +30,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <unistd.h>
 
 // For SuperTablet implementation
 #include <kdi/tablet/SuperTablet.h>
@@ -171,6 +173,9 @@ namespace {
                 using namespace boost::program_options;
                 op.addOption("root,r", value<string>(),
                              "Root directory for tablet data");
+                op.addOption("pidfile,p", value<string>(),
+                             "Write PID to file");
+                op.addOption("nodaemon", "Don't fork and run as daemon");
             }
 
             // Parse options
@@ -182,6 +187,15 @@ namespace {
             string tableRoot;
             if(!opt.get("root", tableRoot))
                 op.error("need --root");
+
+            // Write PID file
+            string pidFile;
+            if(opt.get("pidfile", pidFile))
+            {
+                FileStream pid(File::output(pidFile));
+                pid << getpid() << endl;
+                pid.close();
+            }
 
             // Create table server
             boost::shared_ptr<SuperTabletServer> server(
@@ -238,6 +252,27 @@ namespace {
 
 int main(int ac, char ** av)
 {
+    bool daemonize = true;
+    for(int i = 1; i < ac; ++i)
+    {
+        if(!strcmp(av[i], "--"))
+            break;
+
+        if(!strcmp(av[i], "--help") ||
+           !strcmp(av[i], "-h") ||
+           !strcmp(av[i], "--nodaemon"))
+        {
+            daemonize = false;
+            break;
+        }
+    }
+
+    if(daemonize)
+    {
+        if(0 != daemon(1,1))
+            raise<RuntimeError>("daemon failed: %s", getStdError());
+    }
+
     ServerApp app;
     return app.main(ac, av);
 }

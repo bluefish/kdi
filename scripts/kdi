@@ -11,7 +11,7 @@ DEFAULT_PORT=34666
 #----------------------------------------------------------------------------
 function usage()
 {
-    echo "usage: $(basename $0) [options] start|stop|patch <tarball>"
+    echo "usage: $(basename $0) [options] start|stop|watch|unwatch|patch <tarball>"
     [[ -n $1 ]] || exit 2
 
     echo
@@ -78,6 +78,7 @@ case $1 in
 	    echo "Couldn't find or execute server: $BASE/bin/kdiNetServer"
 	    exit 1
 	fi
+
 	cat >$BASE/ice.cfg <<EOF
 TableAdapter.Endpoints=tcp -p $PORT
 Ice.MessageSizeMax=32768
@@ -93,9 +94,8 @@ EOF
 	    ulimit -v $MEM_LIMIT
 	fi
 
-	kdiNetServer --root $BASE/data --Ice.Config=$BASE/ice.cfg \
+	kdiNetServer --root $BASE/data --pidfile $BASE/kdi.pid --Ice.Config=$BASE/ice.cfg \
             >> $BASE/kdi.log 2>&1 </dev/null &
-	echo $! > $BASE/kdi.pid
 	;;
 
     stop)
@@ -105,6 +105,27 @@ EOF
 	fi
 	;;
     
+    watch)
+	if [[ ! -x $BASE/bin/kdiWatchdog ]]; then
+	    echo "Couldn't find or execute watchdog: $BASE/bin/kdiWatchdog"
+	    exit 1
+	fi
+
+	export LD_LIBRARY_PATH=$BASE/bin:$LD_LIBRARY_PATH
+	export PATH=$BASE/bin:$PATH
+
+	kdiWatchdog --table kdi://localhost:$PORT/WATCHDOG --pidfile $BASE/kdi.pid \
+	    >> $BASE/watchdog.log 2>&1 </dev/null &
+	echo $! > $BASE/watchdog.pid
+	;;
+
+    unwatch)
+	if [[ -r $BASE/watchdog.pid ]]; then
+            kill $(<$BASE/watchdog.pid)
+            rm -f $BASE/watchdog.pid
+	fi
+	;;
+
     *)
 	usage
 	;;

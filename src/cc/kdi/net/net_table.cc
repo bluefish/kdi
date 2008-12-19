@@ -1,18 +1,18 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2007 Josh Taylor (Kosmix Corporation)
 // Created 2007-12-12
-// 
+//
 // This file is part of KDI.
-// 
+//
 // KDI is free software; you can redistribute it and/or modify it under the
 // terms of the GNU General Public License as published by the Free Software
 // Foundation; either version 2 of the License, or any later version.
-// 
+//
 // KDI is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -56,6 +56,9 @@ namespace
             Ice::initialize(ac, const_cast<char **>(av)));
         return com;
     }
+
+    int const RETRY_WAIT_SECONDS = 60;
+    int const MAX_CONNECTION_ATTEMPTS = 15;   // 15 minutes
 }
 
 
@@ -117,7 +120,7 @@ class NetTable::Scanner
     ScanPredicate pred;
 
     details::ScannerPrx scanner;
-    
+
     struct Key
     {
         std::string row;
@@ -143,7 +146,7 @@ class NetTable::Scanner
     };
 
     boost::scoped_ptr<Key> lastKey;
-    
+
     Ice::ByteSeq buffer;
     kdi::marshal::CellData const * next;
     kdi::marshal::CellData const * end;
@@ -160,19 +163,32 @@ class NetTable::Scanner
             if(eof)
                 return false;
 
-            try {
-                scanner->getBulk(buffer, eof);
-            }
-            catch(Ice::RequestFailedException const &) {
-                // Only retry so much
-                if(++scanFailures >= MAX_FAILURES)
-                    throw;
+            for(;;)
+            {
+                try {
+                    scanner->getBulk(buffer, eof);
+                    break;
+                }
+                catch(Ice::RequestFailedException const &) {
+                    // Only retry so much
+                    if(++scanFailures >= MAX_FAILURES)
+                        throw;
+                }
+                catch(Ice::SocketException const &) {
+                    // Only retry so much
+                    if(++scanFailures >= MAX_FAILURES)
+                        throw;
+                }
+                catch(Ice::TimeoutException const &) {
+                    // Only retry so much
+                    if(++scanFailures >= MAX_FAILURES)
+                        throw;
+                }
 
-                // If request fails, reopen the scan an try again
+                // If request fails, reopen the scan and try again
                 reopen();
-                continue;
             }
-            
+
             assert(!buffer.empty());
             CellBlock const * block =
                 reinterpret_cast<CellBlock const *>(&buffer[0]);
@@ -203,7 +219,7 @@ class NetTable::Scanner
                 return true;
         }
     }
-    
+
     void setLastKey()
     {
         // Already set?
@@ -217,7 +233,7 @@ class NetTable::Scanner
         // Get the block to make sure we're not at the beginning of
         // it.
         using kdi::marshal::CellBlock;
-        CellBlock const * block = 
+        CellBlock const * block =
             reinterpret_cast<CellBlock const *>(&buffer[0]);
 
         // Haven't returned any cells yet?
@@ -236,7 +252,7 @@ class NetTable::Scanner
             lastKey->timestamp = std::numeric_limits<int64_t>::min();
         }
     }
-    
+
     void reopen();
 
 public:
@@ -314,7 +330,30 @@ class NetTable::Impl
 
             builder.exportTo(&buffer[0]);
             reset();
-            table->applyMutations(buffer);
+
+            for(int attempt = 0;;)
+            {
+                try {
+                    table->applyMutations(buffer);
+                    table->sync();
+                    break;
+                }
+                catch(Ice::SocketException const & ex) {
+                    log("connection error on %s: %s", uri, ex);
+                }
+                catch(Ice::TimeoutException const & ex) {
+                    log("timeout error on %s: %s", uri, ex);
+                }
+
+                if(++attempt >= MAX_CONNECTION_ATTEMPTS)
+                    raise<RuntimeError>("lost connection to %s", uri);
+
+                int sleepTime = RETRY_WAIT_SECONDS;
+                log("will retry in %d seconds (attempt %d of %d)",
+                    sleepTime, attempt, MAX_CONNECTION_ATTEMPTS);
+
+                sleep(sleepTime);
+            }
         }
     }
 
@@ -394,13 +433,34 @@ public:
         //log("NetTable::getScanner(%s)", pred);
         std::ostringstream oss;
         oss << pred;
-        return table->scan(oss.str());
+        string predStr = oss.str();
+
+        for(int attempt = 0;;)
+        {
+            try {
+                return table->scan(predStr);
+            }
+            catch(Ice::SocketException const & ex) {
+                log("connection error on %s: %s", uri, ex);
+                }
+            catch(Ice::TimeoutException const & ex) {
+                log("timeout error on %s: %s", uri, ex);
+            }
+
+            if(++attempt >= MAX_CONNECTION_ATTEMPTS)
+                raise<RuntimeError>("lost connection to %s", uri);
+
+            int sleepTime = RETRY_WAIT_SECONDS;
+            log("will retry in %d seconds (attempt %d of %d)",
+                sleepTime, attempt, MAX_CONNECTION_ATTEMPTS);
+
+            sleep(sleepTime);
+        }
     }
 
     void sync()
     {
         flush();
-        table->sync();
     }
 
     RowIntervalStreamPtr scanIntervals() const

@@ -1,18 +1,18 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
 // Created 2008-05-14
-// 
+//
 // This file is part of KDI.
-// 
+//
 // KDI is free software; you can redistribute it and/or modify it under the
 // terms of the GNU General Public License as published by the Free Software
 // Foundation; either version 2 of the License, or any later version.
-// 
+//
 // KDI is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -75,10 +75,12 @@ private:
     std::string            const server;
     std::string            const prettyName;
 
+    warp::IntervalPoint<std::string>       minRow;
+    warp::IntervalPoint<std::string> const maxRow;
+
     // The following may change over the life of the Tablet.  Accesses
     // to them should be synchronized by holding a lock on the Tablet
     // mutex.
-    warp::Interval<std::string>  rows;
     fragments_t                  fragments;
     std::vector<std::string>     deadFiles;
     bool                         mutationsPending;
@@ -118,7 +120,7 @@ public:
     void erase(strref_t row, strref_t column, int64_t timestamp);
     void sync();
     CellStreamPtr scan(ScanPredicate const & pred) const;
-    
+
     /// Get the name of table of which this Tablet is a part
     std::string const & getTableName() const { return tableName; }
 
@@ -176,7 +178,7 @@ public:
     /// change over the life of the tablet.
     warp::IntervalPoint<std::string> const & getLastRow() const
     {
-        return rows.getUpperBound();
+        return maxRow;
     }
 
     /// Get the current row range for this Tablet.  The upper bound is
@@ -184,7 +186,12 @@ public:
     /// change as the tablet splits.
     warp::Interval<std::string> getRows() const
     {
-        lock_t lock(mutex);
+        warp::Interval<std::string> rows;
+        rows.setUpperBound(maxRow);
+        {
+            lock_t lock(mutex);
+            rows.setLowerBound(minRow);
+        }
         return rows;
     }
 
