@@ -196,7 +196,7 @@ def keepServerUp(pidFile, startCmd):
             sys.exit(1)
 
         # Wait for a bit after restart
-        time.sleep(10)
+        time.sleep(120)
 
 
 def main():
