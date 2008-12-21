@@ -39,6 +39,10 @@ namespace warp
 
     /// Open function prototype
     typedef FilePtr (FileOpenFunc)(std::string const & uri, int mode);
+
+
+    // Forward declaration
+    class Buffer;
 }
 
 
@@ -117,6 +121,29 @@ public:
     inline size_t readline(char * dst, size_t sz)
     {
         return readline(dst, sz, '\n');
+    }
+
+    /// Read until the next occurance of \c delim or EOF and store the
+    /// result in buffer.  The buffer will be expanded as necessary,
+    /// up to \c maxSize bytes.  If \c delim is read, it is included
+    /// at the end of \c buffer.  A null character is stored after the
+    /// last character in the \c buffer, and the length of the buffer
+    /// is returned.  Since the buffer may contain nulls, it's better
+    /// to trust the return value or the buffer size than strlen().
+    /// @return Number of bytes read.  Zero indicates EOF.
+    size_t readline(Buffer & buffer, size_t maxSize, char delim);
+
+    /// Read until the next newline or EOF and store the result in
+    /// buffer.  The buffer will be expanded as necessary, up to \c
+    /// maxSize bytes.  If a newline is read, it is included at the
+    /// end of \c buffer.  A null character is stored after the last
+    /// character in the \c buffer, and the length of the buffer is
+    /// returned.  Since the buffer may contain nulls, it's better to
+    /// trust the return value or the buffer size than strlen().
+    /// @return Number of bytes read.  Zero indicates EOF.
+    inline size_t readline(Buffer & buffer, size_t maxSize)
+    {
+        return readline(buffer, maxSize, '\n');
     }
 
     /// Write \c sz bytes, taken from the buffer pointed to by \c src.
