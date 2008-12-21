@@ -25,6 +25,7 @@
 #include <warp/file.h>
 #include <warp/filestream.h>
 #include <warp/uri.h>
+#include <warp/buffer.h>
 #include <ex/exception.h>
 
 using namespace warp;
@@ -446,15 +447,19 @@ void Config::loadProperties(FilePtr const & fp)
     baseUri = uriEraseParameter(loadUri, "configRoot");
 
     // Read file
-    char buf[16<<10];
-    size_t len;
+    size_t const INITIAL_BUFFER_SZ = 16 << 10;   // 16 KB
+    size_t const MAX_BUFFER_SZ     = 128 << 20;  // 128 MB
+
     size_t line = 0;
-    while((len = fp->readline(buf, sizeof(buf))))
+    for(Buffer buf(INITIAL_BUFFER_SZ);
+        fp->readline(buf, MAX_BUFFER_SZ);
+        buf.clear())
     {
+        buf.flip();
         ++line;
 
-        char const * begin = buf;
-        char const * end = begin + len;
+        char const * begin = buf.position();
+        char const * end = buf.limit();
 
         // Chop newline
         chomp(begin, end);
@@ -483,12 +488,15 @@ void Config::loadProperties(FilePtr const & fp)
         while(readValue(begin, end, value))
         {
             // Continue, read new line
-            len = fp->readline(buf, sizeof(buf));
-            if(!len)
+            buf.clear();
+            if(!fp->readline(buf, MAX_BUFFER_SZ))
                 break;
 
-            begin = buf;
-            end = buf + len;
+            buf.flip();
+            ++line;
+
+            begin = buf.position();
+            end = buf.limit();
 
             // Chop newline
             chomp(begin, end);
