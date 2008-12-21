@@ -71,18 +71,25 @@ size_t File::readline(Buffer & buffer, size_t maxSize, char delim)
     size_t bytesRead = 0;
     for(;;)
     {
-        if(!buffer.remaining())
+        // Grow buffer if it has less than 2 bytes of space in it
+        // (need at least 1 byte for a line, plus 1 byte for the
+        // terminating null)
+        if(buffer.remaining() < 2)
         {
+            // Compute new buffer capacity
             size_t newCap = std::min(
-                std::max(
-                    buffer.capacity() << 2,
-                    size_t(4)<<10),
-                maxSize);
+                std::max(                     // Grow to the max of:
+                    buffer.capacity() << 2,   //   2x current size
+                    size_t(4)<<10),           //   or 4 KB
+                maxSize);                     // Capped at maxSize
 
-            if(newCap <= buffer.capacity())
+            // Make sure new capacity will allow us to store at least
+            // 2 more bytes
+            if(newCap <= buffer.consumed() + 2)
                 raise<IOError>("readline: max buffer capacity reached: "
                                "%d bytes", buffer.capacity());
             
+            // Grow: alloc, copy, swap
             Buffer newBuf(newCap);
             buffer.flip();
             newBuf.put(buffer);
