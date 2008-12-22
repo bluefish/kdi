@@ -148,10 +148,6 @@ public:
     fragment_set
     chooseCompactionSet() const;
 
-    bool
-    hasParent(FragmentPtr const & fragment,
-              fragment_set const & inSet) const;
-
     void
     dumpDotGraph(std::ostream & out,
                  fragment_set const & fragments,
