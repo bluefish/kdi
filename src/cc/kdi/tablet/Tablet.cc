@@ -412,7 +412,10 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
         // FragDag hackery (even more gross than usual).  dagMutex is
         // held by splitTablet(), which hopefully is the only way we
         // can get into the copy constructor
-        compactor->fragDag.addFragment(this, *i);
+        if((*i)->isImmutable())
+        {
+            compactor->fragDag.addFragment(this, *i);
+        }
     }
 }
 
