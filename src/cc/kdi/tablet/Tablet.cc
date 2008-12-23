@@ -708,10 +708,19 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
             clonedLogs.find(oldFragments[0]);
         if(i != clonedLogs.end())
         {
-            log("Tablet %s: forwarding update to clone", getPrettyName());
-
-            i->second->replaceFragments(oldFragments, newFragment);
+            TabletPtr clonedTablet = i->second;
             clonedLogs.erase(i);
+
+            // We can't hold a Tablet lock when we forward to
+            // replaceFragments().  It can try to obtain a lock on the
+            // dagMutex, and dagMutex must always be locked before
+            // Tablet mutexes.
+            lock.unlock();
+
+            log("Tablet %s: forwarding update to clone", getPrettyName());
+            clonedTablet->replaceFragments(oldFragments, newFragment);
+
+            lock.lock();
         }
 
         // If we're in one of these clone forwarding chains, we may
@@ -722,7 +731,6 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
         if(j != duplicatedLogs.end())
         {
             log("Tablet %s: ignoring clone update", getPrettyName());
-
             duplicatedLogs.erase(j);
             return;
         }
