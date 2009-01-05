@@ -1,0 +1,249 @@
+#----------------------------------------------------------------------------
+# Transaction notes
+#----------------------------------------------------------------------------
+
+Transactional scanning is done with a RowScanner sort of thing.  All
+of the cells in a row are pulled from a single snapshot of the table.
+If they can all be buffered up in one read, great.  If not, the
+scanner needs to avoid updates until the end of the row is reached.
+It should also know the transaction number of the table when the row
+begins.  Merging scanners should not reopen streams mid-row.  Scanners
+over mutable tables should read the entire row at once.  It should fit
+in memory since the entire mutable table fits in memory.
+
+Transactional mutations are applied with an optional transactional
+number.  The mutation is atomic -- all cells in the mutation are
+written or none are.  If the transaction number is given, the table
+verifies that no mutations have been made to the affected row since
+the given transaction number before applying the mutation.  If
+something has changed or the table cannot tell, an exception will be
+thrown and it is up to the client to retry.
+
+One issue: suppose we want to insert a row only if it doesn't exist.
+We'd like to read the row, verify that it is empty, then set the row
+with a guarantee that it is empty when we commit.  If the table
+transaction number is available per-row, how do we get the transaction
+number for an empty row?  We'd need to make sure the scanner method to
+get the table transaction number is always defined with a valid
+number, even if the scan is empty.  If we can guarantee that the
+transaction number can only change between rows (e.g. on calls to
+fetch()), that should be sufficient.
+
+Scanners can sometimes expire due to resource constraints on the
+server and/or slow clients.  If a transactional scanner expires in the
+middle of a row and it cannot be reconstructed at the same transaction
+number as the old scanner, an exception will be thrown.  It might be
+useful for the scanner to have a row rewind function, enabling code
+like this:
+
+    XRowScanner xScan;
+    while(xScan.fetch())
+    {
+        try {
+            processRow(xScan);
+        }
+        catch(ScanTransactionExpired const &) {
+            if(xScan.getRowScanNumber() < MAX_TRIES)
+                // Try the same row again
+                xScan.rewindRow();
+            else
+                // Report error or move on to next row
+                ;
+        }
+    }
+
+
+
+Table:
+
+    XRowScanner xscan(ScanPredicate pred)
+
+    void xapply(RowMutation ...)
+
+
+XRowScanner:
+
+    /// Get the table transaction number associated with this scan.
+    /// This number is always defined, even for empty scans.  It will
+    /// be constant for all the values in a given row.  That is, all
+    /// cells from a given row will be from the same transaction
+    /// snapshot, even if future modifications are made to the row
+    /// after the scan starts.  The transaction may change between
+    /// rows (i.e. when fetch() is called).
+    int64_t getTransactionNumber();
+
+    /// Load the next row.  This may increase the transaction number of the scanner.  Returns false if there are no more rows in the scan.
+    bool fetch();
+
+    /// Get the next cell in the current row.  Returns false if there are no more cells.  May throw ScanTransactionExpired if the transaction number on which this row was started is no longer available.  If this happens, the next call to fetch() will restart the same row with a later transaction number.
+    bool get(Cell & x);
+
+    /// Abort the current row and rewind to the beginning of the row.  The next call to fetch() will restart the same row, possibly with a later transaction number.
+    void rewindRow();
+
+
+#----------------------------------------------------------------------------
+# txn.cc
+#----------------------------------------------------------------------------
+class MemTable
+{
+    // The last modification version for each row in the table
+    hash_map<string, uint64_t> rowVersions;
+
+    // The last version of any row in the table.  The next commit will
+    // be at maxVersion+1.
+    uint64_t maxVersion;
+
+    // Set of the latest cells in the table.  Each cell has a key and
+    // value.  The key is a (row, column, timestamp) triple.  Only the
+    // key is considered for ordering and equality comparison.  This
+    // property is exploited in applyMutation().
+    set<Cell> cells;
+
+    // Synchronization between applyMutation() and readMoreCells()
+    mutex_t mutex;
+
+public:
+    MemTable(uint64_t lastVersion) : maxVersion(lastVersion) {};
+
+    /// Apply a transaction to the table.  The transaction mutation is
+    /// given in the form of a group of cell (or cell erasures) to
+    /// apply all at once.  The transaction can be made conditional by
+    /// specifying the commitMax parameter.  If commitMax is given,
+    /// the transaction will not be applied if there have been updates
+    /// to rows in the transaction group since the given transaction
+    /// number.
+    void applyMutation(CellBuffer const & cells,
+                       uint64_t commitMax=uint64_t(-1))
+    {
+        // Scoped lock synchronization
+        lock_t lock(mutex);
+
+        // Check to see if the commitMax version is less than the max
+        // version in the table.  If not, anything goes.
+        if(commitMax < maxVersion)
+        {
+            // Something in the table is more recent than commitMax.
+            // Only fail if one of the rows in the transaction rows is
+            // more recent.
+            for(row in cells.iterRows())
+            {
+                if(rowVersions[row] > commitMax)
+                    throw TransactionConflict();
+            }
+        }
+
+        // Apply mutations
+        for(cell in cells.iterCells())
+        {
+            // Insert each cell in the table
+            pair<set<Cell>::iterator, bool> r =
+                cells.insert(cell);
+
+            // If the cell already existed in the table, overwrite the
+            // old cell with the new one.  While this seems a bit
+            // sketchy with the const_cast, it's actually safe because
+            // the old cell and new cell are guaranteed to have
+            // identical keys.
+            if(!r.second)
+                const_cast<Cell &>(r.first->cell) = cell;
+        }
+
+        // Update transaction numbers for table and rows
+        uint64_t commitVersion = ++maxVersion;
+        for(row in cells.iterRows())
+            rowVersions[row] = commitVersion;
+    }
+
+
+    /// State for continuing scans.  This is internal for the MemTable
+    /// and should be private, but I've lazily left it out here since
+    /// this is just pseudocode and the extra tricks to make it
+    /// private aren't relevant.
+    struct ScanState
+    {
+        // Iterator to next cell in the scan
+        set<Cell>::const_iterator iter;
+        // Table version as of last chunk
+        uint64_t scanVersion;
+        // Did the last chunk end in the middle of a row?
+        bool endMidRow; // implies: iter != end()
+    };
+
+
+    /// Continue a scan while ensuring row-level snapshot isolation.
+    /// Cells will be put into the output buffer until it indicates
+    /// that it is full.  If the last scan had to leave off in the
+    /// middle of a row and that row has changed in the interim, this
+    /// function will report a ScanReadConflict().  The client should
+    /// then retry the row scan.  This function assumes that the
+    /// ScanState object is in a valid state.
+    void readMoreCells(ScanState & state, CellBuffer & out)
+    {
+        // Scoped lock synchronization
+        lock_t lock(mutex);
+
+        // If the last scan ended in the middle of a row, make sure
+        // that the row hasn't changed since the last scan.  If it
+        // has, then the client will have to restart this row read.
+        if(state.endMidRow &&
+           rowVersions[state.iter->getRow()] > state.scanVersion)
+        {
+            throw ScanReadConflict();
+        }
+
+        // Put cells in the output buffer.  This simply packs the
+        // buffer until it is at capacity.  A smarter algorithm would
+        // be to look ahead to the end of the row and try to pack
+        // complete rows in the out buffer.  We can only get a
+        // ScanReadConflict if we have to return a scan mid-row.
+        out.clear();
+        while(state.iter != cells.end())
+        {
+            out.add(*state.iter);
+            ++state.iter;
+
+            if(out.isFull())
+                break;
+        }
+
+        // Update the scanner version.  This may have increased since
+        // the last time, but we don't have a problem with it unless
+        // it has increased mid-row (which is caught above).  We
+        // advance the scan version to the max version for the table
+        // rather than the version for any of the rows contained in
+        // the scan because we know nothing between the row version
+        // and the current max table version can affect the rows.  All
+        // new modifications (to any row) will be greater than
+        // maxVersion.
+        state.scanVersion = maxVersion;
+
+        // Update the mid-row state
+        if(state.iter == cells.end())
+        {
+            // We're at the end of the scan, so we're not mid row.
+            state.endMidRow = false;
+        }
+        else if(!out.empty())
+        {
+            // We're not at the end and we've output something.  We're
+            // mid-row if the row of the last output cell is the same
+            // as the row of the next cell that would be output.
+            state.endMidRow = out.lastCell().getRow() == state.iter->getRow();
+        }
+        else
+        {
+            // Output is empty and we're not done with the scan.
+            // Don't change the mid-row state, though this is likely a
+            // setup for an infinite loop.  Shouldn't be here.
+            assert(false && "returned nothing scan but not at end"))
+        }
+    }
+};
+
+#----------------------------------------------------------------------------
+# But wait there's more
+#----------------------------------------------------------------------------
+
+I made this design more concrete in an email exchange with Doug Judd.
+Dig that up sometime.  Or, there's always Gmail.

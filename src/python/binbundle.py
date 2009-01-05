@@ -47,6 +47,8 @@ def iterLdd(fn):
         l = l.strip()
         if l == 'not a dynamic executable':
             return
+        elif l == 'statically linked':
+            return
 
         m = _ldd_rel_fail.match(l)
         if m:

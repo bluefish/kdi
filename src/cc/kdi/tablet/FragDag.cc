@@ -536,30 +536,6 @@ FragDag::chooseCompactionSet() const
     }
 }
 
-bool
-FragDag::hasParent(FragmentPtr const & fragment,
-                   fragment_set const & inSet) const
-{
-    ftset_map::const_iterator i = activeTablets.find(fragment);
-    if(i == activeTablets.end())
-        raise<RuntimeError>("not in graph: %s",
-                            fragment->getFragmentUri());
-
-    tablet_set const & tablets = i->second;
-    for(tablet_set::const_iterator t = tablets.begin();
-        t != tablets.end(); ++t)
-    {
-        FragmentPtr parent = getParent(fragment, *t);
-        if(!parent)
-            continue;
-
-        if(inSet.find(parent) != inSet.end())
-            return true;
-    }
-
-    return false;
-}
-
 void
 FragDag::dumpDotGraph(std::ostream & out,
                       fragment_set const & fragments,

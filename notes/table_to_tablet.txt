@@ -1,0 +1,44 @@
+#----------------------------------------------------------------------------
+# Tablet server
+#----------------------------------------------------------------------------
+
+Current organization:
+
+  kdiNetServer
+    LocalTable
+      LoggedMemoryTable
+      DiskTable
+
+Future organization:
+
+  kdiTabletServer
+    TabletManager
+      SharedTableMgr
+        SharedLog
+      Tablet
+        SharedTable -> SharedTableMgr
+        DiskTable
+
+
+
+MetaTable:
+
+  Row: (tableName, inclusiveUpperBound)
+
+  Cells:
+     // Equal to inclusiveUpperBound of previous tablet (does not exist for first tablet in table)
+     ("lowerBound", 0, exclusiveLowerBound)
+
+     ("server", 0, tabletManagerProxy)
+
+
+  TabletId:
+    metaRow (includes table name and upper bound)
+    lowerBound
+
+  TabletManager:
+    addTablet(tabletId)
+
+
+
+    Tablet openTablet(tabletId)

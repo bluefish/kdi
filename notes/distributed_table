@@ -1,0 +1,113 @@
+#----------------------------------------------------------------------------
+# Distributed tables
+#----------------------------------------------------------------------------
+
+META tables:
+
+  PathChar := [a-zA-Z0-9_-]
+  PathWord := PathChar *PathChar
+  TableName := PathWord *( "/" PathWord )
+
+  Tablet row:         TableName + "\x01" + TabletLastKey
+  Last tablet row:    TableName + "\x02" + TabletLastKey
+
+  ("location", 0, "dev107:10000")
+  ("state", 0, state.cfg)
+
+
+Master(lockServer):
+
+  Acquire lock and periodically refresh it.  If the lock is lost, shut
+  down.
+
+
+
+#----------------------------------------------------------------------------
+# Distributed Table design
+#----------------------------------------------------------------------------
+
+  Table manangement client API:
+    - Create table
+    - Delete table
+    - Change table config (properties setting)
+      - Compression settings
+      - Locality groups & column families (eventually)
+      - Memory vs. disk
+      - Require transactions? (per loc. group?)
+      - Table/group ACLs
+    - Optimize table (request full compaction)
+    - Backup?
+
+  Table client API:
+    - Scan cells using predicates
+    - Set and erase cells
+    - Erase cells using predicates
+    - Row transaction API (maybe)
+
+
+  M1:
+    - Each logical table may be split into many different slices (tablets).
+    - The tablets may be located on many different servers.
+    - One server may host many tablets.
+      - Tablet compactions must be coordinated
+      - Mutations should be shared (single memory buffer, single log)
+
+  M2:
+    - The tablets may change servers while the table is in use.
+    - Large tablets may split as the table grows.
+    - Tablets may be joined with adjacent tablets if they get too small.
+
+  M3:
+    - A table may be organized into disjoint column-family "locality groups".
+
+
+#----------------------------------------------------------------------------
+# New client-server API
+#----------------------------------------------------------------------------
+
+Client:
+
+
+
+
+
+
+
+struct TableHandle
+{
+    Ice::ByteSeq opaque;
+};
+
+interface TableServer
+{
+    int openTable(string name, ...);
+    ScanHandle openScan(TableHandle table, string predicate, ...);
+
+    void closeTable(TableHandle table);
+    void closeScan(ScanHandle scan);
+
+
+    void applyMutations(
+
+
+
+
+    scan(string predicate, CellKey lastCell,
+
+    scanNext(string pred
+
+
+
+
+
+
+#----------------------------------------------------------------------------
+# Distributed table with master
+#----------------------------------------------------------------------------
+
+Server:
+   getServerLoad() --> (CPU load, network load, tablet count, disk usage)
+
+   /// Choose a tablet to offload, and migrate it to the named server
+   migrateTablet(targetServer)
+

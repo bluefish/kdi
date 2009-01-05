@@ -30,7 +30,8 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <unistd.h>
+#include <cstdlib>
+#include <new>
 
 // For SuperTablet implementation
 #include <kdi/tablet/SuperTablet.h>
@@ -248,10 +249,18 @@ namespace {
         }
     };
 
+    void outOfMemory()
+    {
+        std::cerr << "Operator new failed.  Out of memory." << std::endl;
+        std::exit(1);
+    }
+
 }
 
 int main(int ac, char ** av)
 {
+    std::set_new_handler(&outOfMemory);
+
     bool daemonize = true;
     for(int i = 1; i < ac; ++i)
     {

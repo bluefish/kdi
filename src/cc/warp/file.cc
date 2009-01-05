@@ -27,6 +27,7 @@
 #include <warp/perffile.h>
 #include <warp/varsub.h>
 #include <warp/md5.h>
+#include <warp/buffer.h>
 #include <ex/exception.h>
 #include <algorithm>
 #include <sys/time.h>
@@ -63,6 +64,59 @@ size_t File::readline(char * dst, size_t sz, char delim)
 
     *p = 0;
     return p - dst;
+}
+
+size_t File::readline(Buffer & buffer, size_t maxSize, char delim)
+{
+    size_t bytesRead = 0;
+    for(;;)
+    {
+        // Grow buffer if it has less than 2 bytes of space in it
+        // (need at least 1 byte for a line, plus 1 byte for the
+        // terminating null)
+        if(buffer.remaining() < 2)
+        {
+            // Compute new buffer capacity
+            size_t newCap = std::min(
+                std::max(                     // Grow to the max of:
+                    buffer.capacity() << 2,   //   2x current size
+                    size_t(4)<<10),           //   or 4 KB
+                maxSize);                     // Capped at maxSize
+
+            // Make sure new capacity will allow us to store at least
+            // 2 more bytes
+            if(newCap <= buffer.consumed() + 2)
+                raise<IOError>("readline: max buffer capacity reached: "
+                               "%d bytes", buffer.capacity());
+            
+            // Grow: alloc, copy, swap
+            Buffer newBuf(newCap);
+            buffer.flip();
+            newBuf.put(buffer);
+            buffer.swap(newBuf);
+        }
+
+        size_t sz = readline(buffer.position(), buffer.remaining(), delim);
+        if(!sz)
+            return bytesRead;
+
+        buffer.position(buffer.position() + sz);
+        bytesRead += sz;
+
+        // Did we get a full line?  remaining() will always be at
+        // least 1 to accomodate the null byte, so we got a full line
+        // if remaining() is greater than one (readline didn't need
+        // the whole buffer) or the last character is delim (the line
+        // fit exactly).  If remaining() is 1 and there is no delim,
+        // either there's more to the line or we've managed to read
+        // exactly to EOF with our buffer size.  Either way, we need
+        // to try to read more.
+        if(buffer.remaining() > 1 || buffer.position()[-1] == delim)
+        {
+            // We have a full line
+            return bytesRead;
+        }
+    }
 }
 
 void File::flush()

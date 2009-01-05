@@ -46,7 +46,7 @@ Use case:
    server.  Servers know which tablets they're responsible for.  They
    may load the actual tablet data lazily, and they can drop the
    tablet data when it hasn't been used in a while.
-      
+
 
 Startup procedure, proposal one:
 
@@ -56,14 +56,14 @@ Startup procedure, proposal one:
   2) Servers scan the META table for assigned tablets and add the them
      to the server's namespace.
 
-  3) 
+  3)
 
   When a tablet server starts up, it should consult the META
 table for all the
 
 
 #----------------------------------------------------------------------------
-# 
+#
 #----------------------------------------------------------------------------
 
 When we want to split a tablet, we need to make a new row in the meta
