@@ -27,6 +27,9 @@
 #include <ex/exception.h>
 #include <Ice/Ice.h>
 #include <boost/bind.hpp>
+#include <boost/thread.hpp>
+#include <boost/scoped_ptr.hpp>
+#include <warp/call_or_die.h>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -42,6 +45,7 @@
 #include <kdi/tablet/WorkQueue.h>
 #include <kdi/tablet/FileTracker.h>
 #include <kdi/tablet/MetaConfigManager.h>
+#include <kdi/tablet/TabletGc.h>
 #include <warp/tuple_encode.h>
 
 // For getHostName
@@ -56,6 +60,14 @@ using namespace ex;
 
 namespace {
 
+    inline boost::xtime makeTimeout(int64_t sec)
+    {
+        boost::xtime xt;
+        boost::xtime_get(&xt, boost::TIME_UTC);
+        xt.sec += sec;
+        return xt;
+    }
+
     class SuperTabletServer
     {
         tablet::MetaConfigManagerPtr metaConfigMgr;
@@ -66,15 +78,38 @@ namespace {
         TablePtr metaTable;
         std::string server;
 
+        boost::scoped_ptr<tablet::TabletGc> gc;
+        boost::scoped_ptr<boost::thread> gcThread;
+        boost::mutex gcMutex;
+        boost::condition gcCond;
+        bool gcExit;
+
+        void gcLoop()
+        {
+            boost::mutex::scoped_lock lock(gcMutex);
+
+            while(!gcExit)
+            {
+                gcCond.timed_wait(lock, makeTimeout(15*60)); // 15 min
+                if(gcExit)
+                    break;
+
+                lock.unlock();
+                gc->run();
+                lock.lock();
+            }
+        }
+
     public:
         SuperTabletServer(std::string const & root,
-                         std::string const & server) :
+                          std::string const & server) :
             metaConfigMgr(new tablet::MetaConfigManager(root, server)),
             tracker(new tablet::FileTracker),
             logger(new tablet::SharedLogger(metaConfigMgr, tracker)),
             compactor(new tablet::SharedCompactor),
             workQueue(new tablet::WorkQueue(1)),
-            server(server)
+            server(server),
+            gcExit(false)
         {
             log("SuperTabletServer %p: created", this);
 
@@ -98,6 +133,18 @@ namespace {
                 cfgs.front());
 
             metaConfigMgr->setMetaTable(metaTable);
+
+            gc.reset(
+                new tablet::TabletGc(
+                    root, metaTable, Timestamp::now(), server));
+            gcThread.reset(
+                new boost::thread(
+                    callOrDie(
+                        boost::bind(
+                            &SuperTabletServer::gcLoop,
+                            this
+                            ),
+                        "GC thread", true)));
         }
 
         ~SuperTabletServer()
@@ -147,9 +194,17 @@ namespace {
 
         void shutdown()
         {
+            {
+                boost::mutex::scoped_lock lock(gcMutex);
+                gcExit = true;
+                gcCond.notify_all();
+            }
+
             compactor->shutdown();
             workQueue->shutdown();
             logger->shutdown();
+
+            gcThread->join();
         }
     };
 
