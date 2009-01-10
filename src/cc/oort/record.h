@@ -242,6 +242,10 @@ public:
         }
     };
 
+    enum Flags {
+        LZO_COMPRESSED = 1
+    };
+
 public:
     virtual ~HeaderSpec() {}
 

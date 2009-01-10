@@ -122,11 +122,32 @@ bool FileInput::get(Record & r)
         HeaderSpec::Fields f;
         spec->deserialize(hdrBuf, f);
 
-        char * dataPtr = alloc->alloc(r, f);
-        size_t dataSz = file->read(dataPtr, f.length);
-        if(dataSz < f.length)
+        size_t diskLength = f.length;
+        char *diskData = 0;
+
+        bool isCompressed = f.flags & HeaderSpec::LZO_COMPRESSED;
+        lzo_uint uncompressedSize = f.length;
+        if(isCompressed) {
+            if(!file->read(&uncompressedSize, sizeof(lzo_uint))) {
+                return false;
+            }
+            f.length = uncompressedSize;
+            lzoBuffer.reserve(uncompressedSize);
+            diskData = &lzoBuffer[0];
+        }
+
+        char *dataPtr = alloc->alloc(r, f);
+        if(!diskData) { diskData = dataPtr; }
+
+        size_t dataSz = file->read(diskData, diskLength);
+        if(dataSz < diskLength)
             raise<IOError>("short record: got %1% bytes of %2% (%3%:%4%)",
-                           dataSz, f.length, file->getName(), pos);
+                           dataSz, diskLength, file->getName(), pos);
+
+        if(isCompressed) {
+            lzo1x_decompress_safe((unsigned char*)diskData, diskLength, (unsigned char*)dataPtr, &uncompressedSize, NULL);
+        }
+
         return true;
     }
     catch(Exception const & ex) {
@@ -218,13 +239,36 @@ void FileOutput::put(Record const & r)
     assert(hdrBuf);
     
     HeaderSpec::Fields f(r);
-    spec->serialize(f, hdrBuf);
 
+    const char *outputData = r.getData();
+    lzo_uint originalSize = (lzo_uint)f.length;
+    lzo_uint compressedSize = originalSize;
+    bool isCompressed = r.getFlags() & HeaderSpec::LZO_COMPRESSED;
+
+    if(isCompressed) {
+        // In the worst case, LZO may bloat the input data instead of compressing
+        // Docs say an extra 16 bytes per 1024 bytes of input should be safe
+        size_t bufferSize = originalSize + 16*(1+originalSize/1024);
+        lzoBuffer.reserve(bufferSize);
+        char *compressedData = &lzoBuffer[0];
+        lzo1x_1_compress((unsigned char*)outputData, originalSize, (unsigned char*)compressedData, &compressedSize, lzoWorkingMemory);
+        if(compressedSize < originalSize) {
+            f.length = compressedSize;
+            outputData = compressedData;
+        } else {
+            isCompressed = false;
+            f.flags ^= HeaderSpec::LZO_COMPRESSED;
+        }
+    }
+    
+    spec->serialize(f, hdrBuf);
     if(!file->write(hdrBuf, spec->headerSize(), 1))
         raise<IOError>("couldn't write header for Record %s to '%s'",
                        r.toString(), file->getName());
 
-    size_t dataSz = file->write(r.getData(), f.length);
+    if(isCompressed) { file->write(&originalSize, sizeof(lzo_uint)); }
+
+    size_t dataSz = file->write(outputData, f.length);
     if(dataSz < f.length)
         raise<IOError>("couldn't write data for Record %s (wrote %d bytes) "
                        "to '%s'", r.toString(), dataSz, file->getName());
