@@ -144,8 +144,8 @@ def killUnresponsive(pidFile, pingCmd):
                 log('killing PID %d' % pid)
                 try:
                     os.kill(pid, 9)
-                except ex:
-                    log('kill failed: %s' % ex)
+                except:
+                    log('kill failed')
 
         # Wait for a bit
         time.sleep(loopDelay + random.uniform(0, loopJitter))

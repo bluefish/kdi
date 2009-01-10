@@ -26,6 +26,7 @@
 #include <kdi/net/TimeoutLocator.h>
 #include <kdi/marshal/cell_block_builder.h>
 #include <kdi/table.h>
+#include <kdi/scan_predicate.h>
 #include <kdi/timestamp.h>
 #include <boost/noncopyable.hpp>
 #include <Ice/Identity.h>
@@ -57,6 +58,9 @@ class kdi::net::details::ScannerI
     : virtual public kdi::net::details::Scanner
 {
     kdi::CellStreamPtr scan;
+    kdi::ScanPredicate::StringSetCPtr columnPred;
+    kdi::ScanPredicate::TimestampSetCPtr timePred;
+
     warp::Builder builder;
     kdi::marshal::CellBlockBuilder cellBuilder;
 
@@ -65,6 +69,8 @@ class kdi::net::details::ScannerI
 
 public:
     ScannerI(kdi::CellStreamPtr const & scan,
+             kdi::ScanPredicate::StringSetCPtr const & columnPred,
+             kdi::ScanPredicate::TimestampSetCPtr const & timePred,
              TimeoutLocatorPtr const & locator);
     ~ScannerI();
 

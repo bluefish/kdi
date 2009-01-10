@@ -52,6 +52,7 @@ namespace
         if(!str.empty())
             memcpy(&seq[0], str.begin(), str.size());
     }
+
 }
 
 
@@ -59,8 +60,13 @@ namespace
 // ScannerI
 //----------------------------------------------------------------------------
 ScannerI::ScannerI(kdi::CellStreamPtr const & scan,
+                   kdi::ScanPredicate::StringSetCPtr const & columnPred,
+                   kdi::ScanPredicate::TimestampSetCPtr const & timePred,
                    TimeoutLocatorPtr const & locator) :
-    scan(scan), cellBuilder(&builder),
+    scan(scan),
+    columnPred(columnPred),
+    timePred(timePred),
+    cellBuilder(&builder),
     lastAccess(kdi::Timestamp::now()),
     locator(locator)
 {
@@ -78,14 +84,18 @@ ScannerI::~ScannerI()
 void ScannerI::getBulk(Ice::ByteSeq & cells, bool & lastBlock,
                        Ice::Current const & cur)
 {
-    enum { BLOCK_THRESHOLD = 100 << 10 }; // 100k
+    enum {
+        BLOCK_THRESHOLD = 100 << 10,      // 100 KB
+        SCAN_THRESHOLD  =   2 << 20       //   2 MB
+    };
 
     lastAccess = kdi::Timestamp::now();
 
     lastBlock = false;
     builder.reset();
     cellBuilder.reset();
-
+    
+    size_t scanSz = 0;
     Cell x;
     for(;;)
     {
@@ -95,8 +105,24 @@ void ScannerI::getBulk(Ice::ByteSeq & cells, bool & lastBlock,
             break;
         }
 
-        cellBuilder.append(x);
-        if(cellBuilder.getDataSize() >= BLOCK_THRESHOLD)
+        // Does the cell pass the filter?
+        if((!timePred || timePred->contains(x.getTimestamp())) &&
+           (!columnPred || columnPred->contains(x.getColumn().toString())))
+        {
+            // Passed the filter, add to output
+            cellBuilder.append(x);
+
+            // Is output full?
+            if(cellBuilder.getDataSize() >= BLOCK_THRESHOLD)
+                break;
+        }
+
+        // Track how much data we've scanned
+        scanSz += x.getRow().size() + x.getColumn().size()
+            + x.getValue().size();
+
+        // If we've scanned a lot of data, return what we have so far
+        if(scanSz >= SCAN_THRESHOLD)
             break;
     }
 
@@ -191,7 +217,12 @@ ScannerPrx TableI::scan(std::string const & predicate,
     lastAccess = kdi::Timestamp::now();
 
     // Open scan
-    kdi::CellStreamPtr scan = table->scan(predicate);
+    ScanPredicate pred(predicate);
+    ScanPredicate::StringSetCPtr columnPred = pred.getColumnPredicate();
+    pred.clearColumnPredicate();
+    ScanPredicate::TimestampSetCPtr timePred = pred.getTimePredicate();
+    pred.clearTimePredicate();
+    kdi::CellStreamPtr scan = table->scan(pred);
 
     // Make identity
     Ice::Identity id;
@@ -199,7 +230,7 @@ ScannerPrx TableI::scan(std::string const & predicate,
     id.name = IceUtil::generateUUID();
 
     // Make ICE object for scanner
-    ScannerIPtr obj = new ScannerI(scan, locator);
+    ScannerIPtr obj = new ScannerI(scan, columnPred, timePred, locator);
     locator->add(id, obj, 7200);
 
     return ScannerPrx::uncheckedCast(cur.adapter->createProxy(id));
