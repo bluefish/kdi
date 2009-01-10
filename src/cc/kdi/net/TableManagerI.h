@@ -1,18 +1,18 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2007 Josh Taylor (Kosmix Corporation)
 // Created 2007-12-10
-// 
+//
 // This file is part of KDI.
-// 
+//
 // KDI is free software; you can redistribute it and/or modify it under the
 // terms of the GNU General Public License as published by the Free Software
 // Foundation; either version 2 of the License, or any later version.
-// 
+//
 // KDI is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -28,6 +28,7 @@
 #include <kdi/table.h>
 #include <kdi/scan_predicate.h>
 #include <kdi/timestamp.h>
+#include <kdi/LimitedScanner.h>
 #include <boost/noncopyable.hpp>
 #include <Ice/Identity.h>
 
@@ -57,9 +58,8 @@ namespace details {
 class kdi::net::details::ScannerI
     : virtual public kdi::net::details::Scanner
 {
+    boost::shared_ptr<kdi::LimitedScanner> limit;
     kdi::CellStreamPtr scan;
-    kdi::ScanPredicate::StringSetCPtr columnPred;
-    kdi::ScanPredicate::TimestampSetCPtr timePred;
 
     warp::Builder builder;
     kdi::marshal::CellBlockBuilder cellBuilder;
@@ -68,9 +68,8 @@ class kdi::net::details::ScannerI
     TimeoutLocatorPtr locator;
 
 public:
-    ScannerI(kdi::CellStreamPtr const & scan,
-             kdi::ScanPredicate::StringSetCPtr const & columnPred,
-             kdi::ScanPredicate::TimestampSetCPtr const & timePred,
+    ScannerI(kdi::TablePtr const & table,
+             kdi::ScanPredicate const & pred,
              TimeoutLocatorPtr const & locator);
     ~ScannerI();
 
@@ -94,7 +93,7 @@ class kdi::net::details::TableI
 
     kdi::Timestamp lastAccess;
     TimeoutLocatorPtr locator;
-    
+
 public:
     TableI(kdi::TablePtr const & table,
            TimeoutLocatorPtr const & locator);
