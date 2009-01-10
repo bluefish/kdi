@@ -24,6 +24,7 @@
 
 #include <oort/record.h>
 #include <flux/stream.h>
+#include <minilzo/minilzo.h>
 
 namespace oort
 {
@@ -60,6 +61,7 @@ private:
     HeaderSpec const * spec;
     alloc_t alloc;
     char * hdrBuf;
+    std::vector<char> lzoBuffer;
 
 public:
     /// Make FileInput with VEGA_SPEC and a 1mb buffer allocator
@@ -104,6 +106,10 @@ private:
     file_t file;
     HeaderSpec const * spec;
     char * hdrBuf;
+    std::vector<char> lzoBuffer;
+
+    // Working memory for LZO compression
+    unsigned char lzoWorkingMemory[LZO1X_MEM_COMPRESS];
 
 public:
     explicit FileOutput(file_t const & file = file_t(),

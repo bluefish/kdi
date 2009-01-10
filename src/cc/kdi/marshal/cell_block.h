@@ -51,7 +51,7 @@ namespace marshal {
         enum {
             TYPECODE = WARP_PACK4('C','e','l','B'),
             VERSION = 0,
-            FLAGS = 0,
+            FLAGS = 1,
             ALIGNMENT = 8,
         };
 
