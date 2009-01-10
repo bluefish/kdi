@@ -68,7 +68,7 @@ private:
 
     /// Get a bit position by hashing the given data with a seed
     /// value.
-    size_t getBit(strref_t x, uint32_t seed) const
+    static size_t getBit(strref_t x, uint32_t seed, size_t nBits)
     {
         // Hash the seed first to twiddle the initial state
         size_t h = hash(&seed, sizeof(seed));
@@ -77,7 +77,14 @@ private:
         h = hash(x.begin(), x.size(), h);
 
         // Get a bit position from the hash
-        return h % bits.size();
+        return h % nBits;
+    }
+
+    /// Get a bit position by hashing the given data with a seed
+    /// value.
+    size_t getBit(strref_t x, uint32_t seed) const
+    {
+        return getBit(x, seed, bits.size());
     }
 
 public:
@@ -151,6 +158,14 @@ public:
         }
         return true;
     }
+
+    /// Check to see if the given data has been previously inserted in
+    /// the serialized Bloom filter.  The filter data must be the
+    /// output of a previous BloomFilter::serialize() call.  This call
+    /// is equivalent to BloomFilter(filter).contains(x), without
+    /// actually doing memory allocations necessary for creating a
+    /// BloomFilter object.
+    static bool contains(strref_t filter, strref_t x);
 
     /// Serialize the state of the Bloom filter into a buffer.
     void serialize(std::vector<char> & buf) const;

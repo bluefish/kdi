@@ -76,6 +76,36 @@ void BloomFilter::insert(BloomFilter const & o)
     bits |= o.bits;
 }
 
+bool BloomFilter::contains(strref_t filter, strref_t x)
+{
+    if(filter.size() < 8)
+        raise<ValueError>("Bloom filter data is too small");
+
+    char const * p = filter.begin();
+    size_t nBits = deserialize<uint32_t>(p);
+    p += 4;
+
+    size_t nSeeds = deserialize<uint32_t>(p);
+    p += 4;
+
+    if(filter.size() != (4 + 4 + (4 * nSeeds) + ((nBits + 7) / 8)))
+        raise<ValueError>("Bloom filter data is wrong size");
+
+    uint8_t const * bits = reinterpret_cast<uint8_t const *>(p + nSeeds*4);
+
+    for(size_t i = 0; i < nSeeds; ++i)
+    {
+        uint32_t seed = deserialize<uint32_t>(p);
+        p += 4;
+
+        size_t bit = getBit(x, seed, nBits);
+        if(!(bits[bit >> 3] & (1u << (bit & 7ul))))
+            return false;
+    }
+    
+    return true;
+}
+
 void BloomFilter::serialize(std::vector<char> & buf) const
 {
     // Format: nBits/4 nSeeds/4 (seed/4)*nSeeds bits/((nBits+7)/8)

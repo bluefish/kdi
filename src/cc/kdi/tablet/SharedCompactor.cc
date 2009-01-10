@@ -571,13 +571,15 @@ void SharedCompactor::compact(fragment_set const & fragments)
     {
         Interval<string> const & range = (*i)->range;
         fragment_vec const & adjSeq = (*i)->fragments;
-        bool isRooted = (*i)->isRooted;
+        bool filterErasures = (*i)->isRooted;
 
-        log("Compact thread: compacting table %s, range: %s",
-            table, ScanPredicate().setRowPredicate(IntervalSet<string>().add(range)));
+        log("Compact thread: compacting table %s, %srange: %s",
+            table,
+            (filterErasures ? "rooted " : ""),
+            ScanPredicate().setRowPredicate(IntervalSet<string>().add(range)));
 
         // Build a merge from all inputs involved
-        CellStreamPtr merge = CellMerge::make(isRooted);
+        CellStreamPtr merge = CellMerge::make(filterErasures);
         for(fragment_vec::const_reverse_iterator f = adjSeq.rbegin();
             f != adjSeq.rend(); ++f)
         {
@@ -592,11 +594,21 @@ void SharedCompactor::compact(fragment_set const & fragments)
         }
 
         // Merge until we're out of input (i.e. done with the range)
+        size_t outputBegin = outputCells;
         Cell x;
         while(merge->get(x))
         {
             output.put(x);
             ++outputCells;
+        }
+
+        // Did we have any output?
+        if(outputBegin == outputCells)
+        {
+            // This section had no output cells -- remove the
+            // fragments from the tablet chain(s)
+            lock_t dagLock(dagMutex);
+            fragDag.removeFragments(range, adjSeq);
         }
     }
 

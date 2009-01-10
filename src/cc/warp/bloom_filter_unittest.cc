@@ -222,3 +222,33 @@ BOOST_AUTO_UNIT_TEST(error_rate)
     BOOST_CHECK(measureFalsePositives(300000, 20000, 11) < 0.000747 * 1.30);
     BOOST_CHECK(measureFalsePositives(300000, 20000, 12) < 0.000778 * 1.30);
 }
+
+BOOST_AUTO_UNIT_TEST(inplace_bloom_contains)
+{
+    // Test the static contains() function
+
+    // First build a BloomFilter
+    BloomFilter f(129, 3);
+    f.insert("banjo");
+    f.insert("guitar");
+    f.insert("mandolin");
+    f.insert("pianoforte");
+    f.insert("harpsichord");
+
+    // Serialize it
+    vector<char> s;
+    f.serialize(s);
+
+    // Make sure they both contain the same things
+    BOOST_CHECK_EQUAL(f.contains("banjo")       , BloomFilter::contains(s, "banjo"));
+    BOOST_CHECK_EQUAL(f.contains("guitar")      , BloomFilter::contains(s, "guitar"));
+    BOOST_CHECK_EQUAL(f.contains("mandolin")    , BloomFilter::contains(s, "mandolin"));
+    BOOST_CHECK_EQUAL(f.contains("pianoforte")  , BloomFilter::contains(s, "pianoforte"));
+    BOOST_CHECK_EQUAL(f.contains("harpsichord") , BloomFilter::contains(s, "harpsichord"));
+
+    BOOST_CHECK_EQUAL(f.contains("blender")     , BloomFilter::contains(s, "blender"));
+    BOOST_CHECK_EQUAL(f.contains("sink")        , BloomFilter::contains(s, "sink"));
+    BOOST_CHECK_EQUAL(f.contains("spatula")     , BloomFilter::contains(s, "spatula"));
+    BOOST_CHECK_EQUAL(f.contains("toaster")     , BloomFilter::contains(s, "toaster"));
+    BOOST_CHECK_EQUAL(f.contains("oven")        , BloomFilter::contains(s, "oven"));
+}
