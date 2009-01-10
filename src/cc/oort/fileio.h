@@ -1,19 +1,19 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2006 Josh Taylor (Kosmix Corporation)
 // Created 2006-01-11
-// 
+//
 // This file is part of the oort library.
-// 
+//
 // The oort library is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by the
 // Free Software Foundation; either version 2 of the License, or any later
 // version.
-// 
+//
 // The oort library is distributed in the hope that it will be useful, but
 // WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
 // Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -24,7 +24,7 @@
 
 #include <oort/record.h>
 #include <flux/stream.h>
-#include <minilzo/minilzo.h>
+#include <vector>
 
 namespace oort
 {
@@ -107,9 +107,6 @@ private:
     HeaderSpec const * spec;
     char * hdrBuf;
     std::vector<char> lzoBuffer;
-
-    // Working memory for LZO compression
-    unsigned char lzoWorkingMemory[LZO1X_MEM_COMPRESS];
 
 public:
     explicit FileOutput(file_t const & file = file_t(),

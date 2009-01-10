@@ -1,19 +1,19 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2006 Josh Taylor (Kosmix Corporation)
 // Created 2006-01-11
-// 
+//
 // This file is part of the oort library.
-// 
+//
 // The oort library is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by the
 // Free Software Foundation; either version 2 of the License, or any later
 // version.
-// 
+//
 // The oort library is distributed in the hope that it will be useful, but
 // WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
 // Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -26,6 +26,7 @@
 #include <ex/exception.h>
 #include <assert.h>
 #include <boost/format.hpp>
+#include <minilzo/minilzo.h>
 
 using namespace oort;
 using namespace warp;
@@ -44,6 +45,20 @@ namespace
         else
             buf = 0;
     }
+
+    inline void initLzo()
+    {
+        static bool needInit = true;
+        if(needInit)
+        {
+            int err = lzo_init();
+            if(err != LZO_E_OK)
+                raise<RuntimeError>("failed to init LZO: err=%d", err);
+
+            needInit = false;
+        }
+    }
+
 }
 
 
@@ -118,34 +133,46 @@ bool FileInput::get(Record & r)
     try {
         if(!file->read(hdrBuf, spec->headerSize(), 1))
             return false;
-    
+
         HeaderSpec::Fields f;
         spec->deserialize(hdrBuf, f);
 
-        size_t diskLength = f.length;
-        char *diskData = 0;
-
+        char * dataPtr;
         bool isCompressed = f.flags & HeaderSpec::LZO_COMPRESSED;
-        lzo_uint uncompressedSize = f.length;
         if(isCompressed) {
-            if(!file->read(&uncompressedSize, sizeof(lzo_uint))) {
-                return false;
-            }
-            f.length = uncompressedSize;
-            lzoBuffer.reserve(uncompressedSize);
-            diskData = &lzoBuffer[0];
+            // Record is compressed, read into lzoBuffer
+            lzoBuffer.clear();
+            lzoBuffer.resize(f.length);
+            dataPtr = &lzoBuffer[0];
+        }
+        else {
+            // Not compressed, read directly into Record
+            dataPtr = alloc->alloc(r, f);
         }
 
-        char *dataPtr = alloc->alloc(r, f);
-        if(!diskData) { diskData = dataPtr; }
-
-        size_t dataSz = file->read(diskData, diskLength);
-        if(dataSz < diskLength)
+        size_t dataSz = file->read(dataPtr, f.length);
+        if(dataSz < f.length)
             raise<IOError>("short record: got %1% bytes of %2% (%3%:%4%)",
-                           dataSz, diskLength, file->getName(), pos);
+                           dataSz, f.length, file->getName(), pos);
 
         if(isCompressed) {
-            lzo1x_decompress_safe((unsigned char*)diskData, diskLength, (unsigned char*)dataPtr, &uncompressedSize, NULL);
+
+            lzo_uint compressedSize = f.length - sizeof(uint32_t);
+            lzo_uint uncompressedSize = deserialize<uint32_t>(dataPtr);
+
+            f.length = uncompressedSize;
+            char * recordPtr = alloc->alloc(r, f);
+
+            // Make sure LZO is ready
+            initLzo();
+
+            // Decompress buffer into record
+            lzo1x_decompress_safe(
+                reinterpret_cast<const lzo_bytep>(dataPtr + sizeof(uint32_t)),
+                compressedSize,
+                reinterpret_cast<lzo_bytep>(recordPtr),
+                &uncompressedSize,
+                NULL);
         }
 
         return true;
@@ -237,26 +264,54 @@ void FileOutput::put(Record const & r)
     assert(file);
     assert(spec);
     assert(hdrBuf);
-    
+
     HeaderSpec::Fields f(r);
+    char const * outputData = r.getData();
 
-    const char *outputData = r.getData();
-    lzo_uint originalSize = (lzo_uint)f.length;
-    lzo_uint compressedSize = originalSize;
-    bool isCompressed = r.getFlags() & HeaderSpec::LZO_COMPRESSED;
+    // Did the record header request compression?
+    if(r.getFlags() & HeaderSpec::LZO_COMPRESSED) {
+        // Make sure LZO is ready to roll
+        initLzo();
 
-    if(isCompressed) {
+        // Working memory for LZO compression
+        unsigned char lzoWorkingMemory[LZO1X_MEM_COMPRESS];
+
         // In the worst case, LZO may bloat the input data instead of compressing
         // Docs say an extra 16 bytes per 1024 bytes of input should be safe
-        size_t bufferSize = originalSize + 16*(1+originalSize/1024);
-        lzoBuffer.reserve(bufferSize);
-        char *compressedData = &lzoBuffer[0];
-        lzo1x_1_compress((unsigned char*)outputData, originalSize, (unsigned char*)compressedData, &compressedSize, lzoWorkingMemory);
-        if(compressedSize < originalSize) {
-            f.length = compressedSize;
-            outputData = compressedData;
+        size_t bufferSize = f.length + 16*(1+f.length/1024);
+
+        // Reserve space for compression buffer + originalSize field
+        lzoBuffer.clear();
+        lzoBuffer.resize(bufferSize + sizeof(uint32_t));
+        lzo_bytep compressedData = reinterpret_cast<lzo_bytep>(
+            &lzoBuffer[sizeof(uint32_t)]);
+
+        // Compress into lzoBuffer (after originalSize field)
+        lzo_uint compressedSize;
+        lzo1x_1_compress(
+            reinterpret_cast<const lzo_bytep>(outputData),
+            static_cast<lzo_uint>(f.length),
+            compressedData,
+            &compressedSize,
+            lzoWorkingMemory);
+
+        // See if resulting compression ratio is worth keeping.  We'll
+        // only use compression if we get better than 1/16th
+        // compression savings (that is, compressed size is less than
+        // 15/16 the size of the original data).  There's nothing
+        // particularly magical about 1/16th except that it is fast to
+        // compute.
+        if(compressedSize + sizeof(uint32_t) < ((size_t(f.length)*15)/16)) {
+            // Got some savings, use the compressed data
+            outputData = &lzoBuffer[0];
+
+            // Write the originalSize in the payload
+            serialize(&lzoBuffer[0], uint32_t(f.length));
+
+            // Rewrite the header
+            f.length = compressedSize + sizeof(uint32_t);
         } else {
-            isCompressed = false;
+            // Compression isn't worth it, clear compression flag
             f.flags ^= HeaderSpec::LZO_COMPRESSED;
         }
     }
@@ -265,8 +320,6 @@ void FileOutput::put(Record const & r)
     if(!file->write(hdrBuf, spec->headerSize(), 1))
         raise<IOError>("couldn't write header for Record %s to '%s'",
                        r.toString(), file->getName());
-
-    if(isCompressed) { file->write(&originalSize, sizeof(lzo_uint)); }
 
     size_t dataSz = file->write(outputData, f.length);
     if(dataSz < f.length)
