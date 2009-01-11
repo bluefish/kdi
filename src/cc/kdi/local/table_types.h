@@ -64,10 +64,10 @@ namespace disk {
         uint64_t blockOffset;
         uint64_t blockChecksum;
         uint8_t  colPrefixFilter[bloomFilterLength];
-        uint64_t timeRange;
+        int64_t lowestTime;
+        int64_t highestTime;
         uint64_t numCells;
         uint64_t numErasures;
-        uint64_t unpackedSize; // What does this mean?
     };
 
     /// Index of CellBlock records in the file.

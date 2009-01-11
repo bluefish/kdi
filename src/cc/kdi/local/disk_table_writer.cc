@@ -120,6 +120,8 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     PooledBuilder index;
 
     BloomFilter colPrefixFilter;
+    int64_t lowestTime;
+    int64_t highestTime;
 
     void addIndexEntry(Cell const & x);
     void addCell(Cell const & x);
@@ -163,10 +165,10 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Cell const & x)
     index.arr->append(o);           // blockOffset
     index.arr->append(t);           // checkSum
     index.arr->append(&serialized[0], disk::bloomFilterLength); // colPrefixFilter
-    index.arr->append(t);           // timeRange
-    index.arr->append(t);           // numCells
+    index.arr->append(lowestTime);  // timeRange-min
+    index.arr->append(highestTime); // timeRange-max
+    index.arr->append((uint64_t)block.nItems); // numCells
     index.arr->append(t);           // numErasures
-    index.arr->append(t);           // unpackedSize
 
     ++index.nItems;
 }
@@ -199,6 +201,15 @@ void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
 
     // Remember what column families have been added
     colPrefixFilter.insert(x.getColumnFamily());
+
+    // Remember range of timestamps added
+    if(block.nItems == 1) {
+        lowestTime = t;
+        highestTime = t;
+    } else {
+        if(t < lowestTime) lowestTime = t;
+        if(t > highestTime) highestTime = t;
+    }
 }
 
 void DiskTableWriterV1::ImplV1::writeCellBlock()
@@ -231,7 +242,10 @@ void DiskTableWriterV1::ImplV1::open(string const & fn)
 
     block.reset();
     index.reset();
+
     colPrefixFilter.clear();
+    lowestTime = 0;
+    highestTime = 0;
 }
 
 void DiskTableWriterV1::ImplV1::close()

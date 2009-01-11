@@ -156,7 +156,6 @@ bool FileInput::get(Record & r)
                            dataSz, f.length, file->getName(), pos);
 
         if(isCompressed) {
-
             lzo_uint compressedSize = f.length - sizeof(uint32_t);
             lzo_uint uncompressedSize = deserialize<uint32_t>(dataPtr);
 

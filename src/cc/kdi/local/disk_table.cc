@@ -398,7 +398,7 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
     CellStreamPtr diskScanner;
     if(ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate())
     {
-        ScanPredicate::StringSetCPtr const & cols = pred.getColumnPredicate();
+        //ScanPredicate::StringSetCPtr const & cols = pred.getColumnPredicate();
 
         // Make a scanner that handles the row predicate
         diskScanner.reset(new DiskScanner(fp, rows, indexRec));
