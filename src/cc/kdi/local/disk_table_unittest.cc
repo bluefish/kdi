@@ -307,7 +307,7 @@ BOOST_AUTO_UNIT_TEST(rowscan_test)
         210u);
 }
 
-BOOST_AUTO_UNIT_TEST(colfilter_test)
+BOOST_AUTO_UNIT_TEST(colscan_test)
 {
     TablePtr tbl(new CheaterDiskTable(256));
     fillColFamilyTestTable(tbl, 1000, 2, 30, 1, "%03d");
@@ -317,6 +317,19 @@ BOOST_AUTO_UNIT_TEST(colfilter_test)
     BOOST_CHECK_EQUAL(
         countCells(tbl->scan("row > 'a' and column ~= 'fam-001:'")),
         30000u
+    );
+}
+
+BOOST_AUTO_UNIT_TEST(timescan_test)
+{
+    TablePtr tbl(new CheaterDiskTable(256));
+    fillTestTable(tbl, 1000, 1, 30, "%03d");
+
+    BOOST_CHECK_EQUAL(countCells(tbl->scan()), 30000u);
+
+    BOOST_CHECK_EQUAL(
+        countCells(tbl->scan("row > 'a' and time = @1")),
+        1000u
     );
 }
 
