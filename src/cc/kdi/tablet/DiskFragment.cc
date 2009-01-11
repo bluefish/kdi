@@ -30,13 +30,13 @@ using namespace warp;
 //----------------------------------------------------------------------------
 DiskFragment::DiskFragment(std::string const & uri) :
     uri(uri),
-    table(uriPushScheme(uriPopScheme(uri), "cache"))
+    table(new kdi::local::DiskTableV0(uriPushScheme(uriPopScheme(uri), "cache")))
 {
 }
 
 CellStreamPtr DiskFragment::scan(ScanPredicate const & pred) const
 {
-    return table.scan(pred);
+    return table->scan(pred);
 }
 
 bool DiskFragment::isImmutable() const
@@ -70,5 +70,5 @@ size_t DiskFragment::getDiskSize(warp::Interval<std::string> const & rows) const
 flux::Stream< std::pair<std::string, size_t> >::handle_t
 DiskFragment::scanIndex(warp::Interval<std::string> const & rows) const
 {
-    return table.scanIndex(rows);
+    return table->scanIndex(rows);
 }

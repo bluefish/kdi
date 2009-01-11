@@ -49,14 +49,29 @@ namespace disk {
     using kdi::marshal::CellBlock;
 
     /// Mapping from a beginning CellKey to a CellBlock offset.
-    struct IndexEntry
+    struct IndexEntryV0
     {
         CellKey startKey;
         uint64_t blockOffset;  // from beginning of file
     };
 
+    const size_t bloomFilterLength = 32;
+
+    // Richer index format
+    struct IndexEntryV1
+    {
+        CellKey startKey;
+        uint64_t blockOffset;
+        uint64_t blockChecksum;
+        uint8_t  colPrefixFilter[bloomFilterLength];
+        uint64_t timeRange;
+        uint64_t numCells;
+        uint64_t numErasures;
+        uint64_t unpackedSize; // What does this mean?
+    };
+
     /// Index of CellBlock records in the file.
-    struct BlockIndex
+    struct BlockIndexV0
     {
         enum {
             TYPECODE = WARP_PACK4('C','B','I','x'),
@@ -65,7 +80,20 @@ namespace disk {
             ALIGNMENT = 8,
         };
 
-        warp::ArrayOffset<IndexEntry> blocks;
+        warp::ArrayOffset<IndexEntryV0> blocks;
+    };
+
+    // Index of CellBlock records using the new format
+    struct BlockIndexV1
+    {
+        enum {
+            TYPECODE = WARP_PACK4('C','B','I','x'),
+            VERSION = 1,
+            FLAGS = 0,
+            ALIGNMENT = 8
+        };
+
+        warp::ArrayOffset<IndexEntryV1> blocks;
     };
 
     /// Trailer for a disk table file.
@@ -83,7 +111,6 @@ namespace disk {
         TableInfo() {}
         explicit TableInfo(uint64_t off) : indexOffset(off) {}
     };
-
 } // namespace disk
 } // namespace local
 } // namespace kdi

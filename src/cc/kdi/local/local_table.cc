@@ -266,7 +266,7 @@ class LocalTable::Impl
         // Open output
         string name = str(format("%d") % idx);
         string fn = fs::resolve(tableDir, name);
-        DiskTableWriter writer(64 << 10);
+        DiskTableWriterV0 writer(64 << 10);
         writer.open(fn);
 
         // cerr << format("serialize: %s --> %s") % it->name % name << endl;
@@ -280,7 +280,7 @@ class LocalTable::Impl
         writer.close();
 
         // Open table for reading
-        TablePtr tbl(new DiskTable(fn));
+        TablePtr tbl(new DiskTableV0(fn));
         
         // Lock and swap table in
         TableInfo tmp(tbl, name, fs::filesize(fn), true);
@@ -324,7 +324,7 @@ class LocalTable::Impl
         // Open output
         string name = str(format("%d") % idx);
         string fn = fs::resolve(tableDir, name);
-        DiskTableWriter writer(64 << 10);
+        DiskTableWriterV0 writer(64 << 10);
         writer.open(fn);
 
         ostringstream info;
@@ -355,7 +355,7 @@ class LocalTable::Impl
         writer.close();
 
         // Open table for reading
-        TablePtr tbl(new DiskTable(fn));
+        TablePtr tbl(new DiskTableV0(fn));
         
         // Lock and replace tables with compacted result. Remove
         // [first, last-1), replace last, and write config.
@@ -500,7 +500,7 @@ class LocalTable::Impl
 
             TablePtr tbl;
             if(isDiskTable)
-                tbl.reset(new DiskTable(fn));
+                tbl.reset(new DiskTableV0(fn));
             else
                 tbl = LoggedMemoryTable::create(fn, false);
 

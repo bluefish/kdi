@@ -29,8 +29,6 @@
 #include <oort/recordbuffer.h>
 #include <oort/fileio.h>
 #include <warp/string_pool_builder.h>
-#include <warp/md5.h>
-#include <warp/bloom_filter.h>
 #include <boost/static_assert.hpp>
 
 using namespace kdi;
@@ -39,6 +37,14 @@ using namespace oort;
 using namespace warp;
 using namespace ex;
 using namespace std;
+
+/*
+ * DEPRECATED
+ *
+ * This file contains the writer for the original disk table implementation.
+ * It is preservered only for purposes of testing the old disk table reader.
+ * 
+ */
 
 //----------------------------------------------------------------------------
 // PooledBuilder
@@ -68,15 +74,6 @@ namespace
             nItems = 0;
         }
 
-        void build(Record & r, Allocator * alloc) {
-            // Finish array
-            builder.appendOffset(arr);
-            builder.append(nItems);
-
-            // Construct record
-            builder.build(r, alloc);
-        }
-
         void write(RecordStreamHandle const & output, Allocator * alloc)
         {
             // Finish array
@@ -90,12 +87,6 @@ namespace
 
             // Reset
             reset();
-
-            /*
-            uint64_t md5digest[2];
-            Md5 md5;
-            md5.digest(md5digest, r.getData(), r.getLength());
-            */
         }
 
         size_t getDataSize() const
@@ -103,13 +94,12 @@ namespace
             return pool.getDataSize() + arr->size() + 8;
         }
     };
-
 }
 
 //----------------------------------------------------------------------------
-// DiskTableWriter::Impl
+// DiskTableWriterV0::ImplV0
 //----------------------------------------------------------------------------
-class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
+class DiskTableWriterV0::ImplV0 : public DiskTableWriter::Impl
 {
     FilePtr fp;
     FileOutput::handle_t output;
@@ -119,30 +109,28 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     PooledBuilder block;
     PooledBuilder index;
 
-    BloomFilter colPrefixFilter;
-
     void addIndexEntry(Cell const & x);
     void addCell(Cell const & x);
     void writeCellBlock();
     void writeBlockIndex();
 
 public:
-    explicit ImplV1(size_t blockSize);
+    explicit ImplV0(size_t blockSize);
 
-    virtual void open(string const & fn);
-    virtual void close();
+    void open(string const & fn);
+    void close();
 
-    virtual void put(Cell const & x);
+    void put(Cell const & x);
 
-    virtual size_t size() const;
+    size_t size() const;
 };
 
 //----------------------------------------------------------------------------
-// DiskTableWriterV1::ImplV1
+// DiskTableWriterV0::ImplV0
 //----------------------------------------------------------------------------
-void DiskTableWriterV1::ImplV1::addIndexEntry(Cell const & x)
+void DiskTableWriterV0::ImplV0::addIndexEntry(Cell const & x)
 {
-    BOOST_STATIC_ASSERT(disk::BlockIndexV1::VERSION == 1);
+    BOOST_STATIC_ASSERT(disk::BlockIndexV0::VERSION == 0);
 
     // Get string offsets for cell key
     BuilderBlock * b = index.pool.getStringBlock();
@@ -150,28 +138,16 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Cell const & x)
     size_t         c = index.pool.getStringOffset(x.getColumn());
     int64_t        t = x.getTimestamp();
     uint64_t       o = fp->tell();
-
-    //std::cerr << "Adding serialized bloom filter to the block" << std::endl;
-    vector<char> serialized;
-    colPrefixFilter.serialize(serialized);
-    //std::cerr << "Length: " << serialized.size();
             
     // Append IndexEntry to array
     index.arr->appendOffset(b, r);  // startKey.row
     index.arr->appendOffset(b, c);  // startKey.column
     index.arr->append(t);           // startKey.timestamp
     index.arr->append(o);           // blockOffset
-    index.arr->append(t);           // checkSum
-    index.arr->append(&serialized[0], disk::bloomFilterLength); // colPrefixFilter
-    index.arr->append(t);           // timeRange
-    index.arr->append(t);           // numCells
-    index.arr->append(t);           // numErasures
-    index.arr->append(t);           // unpackedSize
-
     ++index.nItems;
 }
 
-void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
+void DiskTableWriterV0::ImplV0::addCell(Cell const & x)
 {
     BOOST_STATIC_ASSERT(disk::CellBlock::VERSION == 0);
 
@@ -196,45 +172,36 @@ void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
     }
     block.arr->append<uint32_t>(0);        // __pad
     ++block.nItems;
-
-    // Remember what column families have been added
-    colPrefixFilter.insert(x.getColumnFamily());
 }
 
-void DiskTableWriterV1::ImplV1::writeCellBlock()
+void DiskTableWriterV0::ImplV0::writeCellBlock()
 {
-    //Record r;
-    //block.build(r, &alloc);
     block.write(output, &alloc);
 }
 
-void DiskTableWriterV1::ImplV1::writeBlockIndex()
+void DiskTableWriterV0::ImplV0::writeBlockIndex()
 {
-    //Record r;
-    //block.build(r, &alloc);
     index.write(output, &alloc);
 }
 
-DiskTableWriterV1::ImplV1::ImplV1(size_t blockSize) :
+DiskTableWriterV0::ImplV0::ImplV0(size_t blockSize) :
     alloc(),
-    blockSize(blockSize),
-    colPrefixFilter(32,4)
+    blockSize(blockSize)
 {
     block.builder.setHeader<disk::CellBlock>();
-    index.builder.setHeader<disk::BlockIndexV1>();
+    index.builder.setHeader<disk::BlockIndexV0>();
 }
 
-void DiskTableWriterV1::ImplV1::open(string const & fn)
+void DiskTableWriterV0::ImplV0::open(string const & fn)
 {
     fp = File::output(fn);
     output = FileOutput::make(fp);
 
     block.reset();
     index.reset();
-    colPrefixFilter.clear();
 }
 
-void DiskTableWriterV1::ImplV1::close()
+void DiskTableWriterV0::ImplV0::close()
 {
     // Flush last cell block if there's something pending
     if(block.nItems)
@@ -258,67 +225,30 @@ void DiskTableWriterV1::ImplV1::close()
     fp.reset();
 }
 
-void DiskTableWriterV1::ImplV1::put(Cell const & x)
+void DiskTableWriterV0::ImplV0::put(Cell const & x)
 {
+    // If this is the first Cell in the block, write index record
+    if(!block.nItems)
+        addIndexEntry(x);
+
     // Add cell to the current block
     addCell(x);
 
     // Flush block if it is big enough
-    if(block.getDataSize() >= blockSize) {
-        addIndexEntry(x);
+    if(block.getDataSize() >= blockSize)
         writeCellBlock();
-    }
 }
 
-size_t DiskTableWriterV1::ImplV1::size() const
+size_t DiskTableWriterV0::ImplV0::size() const
 {
     return fp->tell() + block.getDataSize() + index.getDataSize();
 }
 
-DiskTableWriterV1::DiskTableWriterV1(size_t blockSize) :
-    DiskTableWriter(new ImplV1(blockSize))
-{
-}
-
 //----------------------------------------------------------------------------
-// DiskTableWriter
+// DiskTableWriterV0
 //----------------------------------------------------------------------------
-DiskTableWriter::~DiskTableWriter()
+DiskTableWriterV0::DiskTableWriterV0(size_t blockSize) :
+    DiskTableWriter(new ImplV0(blockSize))
 {
-    if(!closed)
-        close();
 }
-
-void DiskTableWriter::open(std::string const & fn)
-{
-    if(!closed)
-        raise<RuntimeError>("DiskTableWriter already open");
-
-    impl->open(fn);
-    closed = false;
-}
-
-void DiskTableWriter::close()
-{
-    if(closed)
-        raise<RuntimeError>("DiskTableWriter already closed");
-
-    impl->close();
-    closed = true;
-}
-
-void DiskTableWriter::put(Cell const & x)
-{
-    if(closed)
-        raise<RuntimeError>("put() to closed DiskTableWriter");
-
-    impl->put(x);
-}
-
-size_t DiskTableWriter::size() const
-{
-    if(closed)
-        raise<RuntimeError>("size() to closed DiskTableWriter");
-
-    return impl->size();
-}
+//

@@ -103,6 +103,39 @@ namespace unittest {
         tbl->sync();
     }
 
+    // Fill a table with cells of the form:
+    //    ("row-i", "fam-j:qual-k", t, "val-i-j-k-t")
+    // for i in [1, nRows], j in [1, nFams], k in [1, nQuals] and t in [1, nRevs]
+    void fillColFamilyTestTable(TablePtr const &tbl, size_t nRows,
+                                size_t nFams, size_t nQuals, size_t nRevs,
+                                std::string const &fmt = "%d")
+    {
+        using boost::format;
+        using std::string;
+
+        std::string rowFmt = (format("row-%s") % fmt).str();
+        std::string colFmt = (format("fam-%s:qual-%s") % fmt % fmt).str();
+        std::string valFmt = (format("val-%s-%s-%s-%s") % fmt % fmt % fmt % fmt).str();
+    
+        for(size_t i = 1; i<= nRows; ++i) 
+        {
+            string row = (format(rowFmt)%i).str();
+            for(size_t j = 1; j <= nFams; ++j) 
+            {
+                for(size_t k = 1; k <= nQuals; ++k) 
+                {
+                    string col = (format(colFmt)%j%k).str();
+                    for(size_t t = 1; t <= nRevs; ++t)
+                    {
+                        string val = (format(valFmt)%i%j%k%t).str();
+                        tbl->set(row, col, k, val);
+                    }
+                }
+            }
+        }
+        tbl->sync();
+    }
+
     /// Make a Table containing cells of the form:
     ///   ("row-i", "col-j", k, "val-i-j-k")
     /// for i in [1, nRows], j in [1, nCols], and k in [1, nRevs]

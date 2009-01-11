@@ -37,7 +37,7 @@
 #include <vector>
 
 #include <kdi/local/disk_table_writer.h>
-using kdi::local::DiskTableWriter;
+using kdi::local::DiskTableWriterV0;
 
 //#define COMPACTOR_DEBUG
 #ifdef COMPACTOR_DEBUG
@@ -131,7 +131,7 @@ namespace {
         fragment_set const & fragments;
         range_vec const & rangeMap;
 
-        DiskTableWriter writer;
+        DiskTableWriterV0 writer;
         string writerFn;
 
         Interval<string> outputRange;

@@ -18,6 +18,15 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
+/*
+ * DEPRECATED
+ *
+ * This file contains the original disk table implementation for backwords
+ * compatibility.  The writer for this disk table format has been removed as
+ * obsolete.  This implementation can be removed only when there are no 
+ * more users of the original disk table format.
+ */
+
 #include <kdi/local/disk_table.h>
 #include <kdi/local/table_types.h>
 #include <kdi/scan_predicate.h>
@@ -32,9 +41,9 @@ using namespace warp;
 using namespace oort;
 using namespace kdi;
 using namespace kdi::local;
-using namespace kdi::local::disk;
+using namespace kdi::local::disk; 
 
-namespace
+namespace 
 {
     struct RowLt
     {
@@ -53,12 +62,12 @@ namespace
         }
 
         bool operator()(IntervalPoint<string> const & a,
-                        IndexEntryV1 const & b) const
+                        IndexEntryV0 const & b) const
         {
             return lt(a, *b.startKey.row);
         }
 
-        bool operator()(IndexEntryV1 const & a,
+        bool operator()(IndexEntryV0 const & a,
                         IntervalPoint<string> const & b) const
         {
             return lt(*a.startKey.row, b);
@@ -66,12 +75,16 @@ namespace
     };
 
 
-    IndexEntryV1 const * findIndexEntry(BlockIndexV1 const * index,
+    IndexEntryV0 const * findIndexEntry(BlockIndexV0 const * index,
                                       IntervalPoint<string> const & beginRow)
     {
-        IndexEntryV1 const * ent = std::lower_bound(
+        IndexEntryV0 const * ent = std::lower_bound(
             index->blocks.begin(), index->blocks.end(),
             beginRow, RowLt());
+
+        // Really should have kept track of end row...
+        if(ent != index->blocks.begin())
+            --ent;
 
         return ent;
     }
@@ -80,9 +93,9 @@ namespace
 //----------------------------------------------------------------------------
 // DiskScanner
 //----------------------------------------------------------------------------
-namespace
+namespace 
 {
-    class DiskScanner : public CellStream
+    class DiskScannerV0 : public CellStream
     {
         FileInput::handle_t input;
 
@@ -171,8 +184,8 @@ namespace
             // Else use the index to find the position of the next
             // row segment.  If the index points us off the end,
             // we're done.
-            BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
-            IndexEntryV1 const * ent = findIndexEntry(index, *lowerBoundIt);
+            BlockIndexV0 const * index = indexRec.cast<BlockIndexV0>();
+            IndexEntryV0 const * ent = findIndexEntry(index, *lowerBoundIt);
             if(ent == index->blocks.end())
                 return false;
 
@@ -230,7 +243,7 @@ namespace
 
     public:
         /// Create a full-scan DiskScanner
-        explicit DiskScanner(FilePtr const & fp) :
+        explicit DiskScannerV0(FilePtr const & fp) :
             input(FileInput::make(fp)),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
             cellIt(0),
@@ -239,9 +252,8 @@ namespace
         }
 
         /// Create a DiskScanner over a set of rows
-        DiskScanner(FilePtr const & fp,
+        DiskScannerV0(FilePtr const & fp,
                     ScanPredicate::StringSetCPtr const & rows,
-                    //ScanPredicate::StringSetCPtr const & cols,
                     Record const & indexRec) :
             input(FileInput::make(fp)),
             rows(rows),
@@ -299,8 +311,8 @@ namespace
         Record indexRec;
         Interval<string> rows;
 
-        IndexEntryV1 const * cur;
-        IndexEntryV1 const * end;
+        IndexEntryV0 const * cur;
+        IndexEntryV0 const * end;
         size_t base;
 
     public:
@@ -311,7 +323,7 @@ namespace
             end(0),
             base(0)
         {
-            BlockIndexV1 const * index = indexRec.as<BlockIndexV1>();
+            BlockIndexV0 const * index = indexRec.as<BlockIndexV0>();
             
             cur = findIndexEntry(index, rows.getLowerBound());
             end = index->blocks.end();
@@ -350,7 +362,7 @@ namespace
 //----------------------------------------------------------------------------
 // DiskTable
 //----------------------------------------------------------------------------
-DiskTableV1::DiskTableV1(string const & fn) :
+DiskTableV0::DiskTableV0(string const & fn) :
     fn(fn)
 {
     // Open file to TableInfo record
@@ -370,27 +382,27 @@ DiskTableV1::DiskTableV1(string const & fn) :
     input->seek(indexOffset);
 
     // Read BlockIndex
-    if(!input->get(r) || !r.tryAs<BlockIndexV1>())
+    if(!input->get(r) || !r.tryAs<BlockIndexV0>())
         raise<RuntimeError>("could not read BlockIndex record: %s", fn);
 
     // Make a copy of the index
     indexRec = r.clone();
 }
 
-void DiskTableV1::set(strref_t row, strref_t column, int64_t timestamp,
+void DiskTableV0::set(strref_t row, strref_t column, int64_t timestamp,
                     strref_t value)
 {
     raise<NotImplementedError>("DiskTable::set() not implemented: "
                                "DiskTable is read-only");
 }
 
-void DiskTableV1::erase(strref_t row, strref_t column, int64_t timestamp)
+void DiskTableV0::erase(strref_t row, strref_t column, int64_t timestamp)
 {
     raise<NotImplementedError>("DiskTable::erase() not implemented: "
                                "DiskTable is read-only");
 }
 
-CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
+CellStreamPtr DiskTableV0::scan(ScanPredicate const & pred) const
 {
     FilePtr fp = File::input(fn);
 
@@ -398,15 +410,13 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
     CellStreamPtr diskScanner;
     if(ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate())
     {
-        ScanPredicate::StringSetCPtr const & cols = pred.getColumnPredicate();
-
         // Make a scanner that handles the row predicate
-        diskScanner.reset(new DiskScanner(fp, rows, indexRec));
+        diskScanner.reset(new DiskScannerV0(fp, rows, indexRec));
     }
     else
     {
         // Scan everything
-        diskScanner.reset(new DiskScanner(fp));
+        diskScanner.reset(new DiskScannerV0(fp));
     }
 
     // Filter the rest
@@ -416,7 +426,7 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
 }
 
 flux::Stream< std::pair<std::string, size_t> >::handle_t
-DiskTableV1::scanIndex(warp::Interval<std::string> const & rows) const
+DiskTableV0::scanIndex(warp::Interval<std::string> const & rows) const
 {
     flux::Stream< std::pair<std::string, size_t> >::handle_t p(
         new IndexScanner(indexRec, rows)

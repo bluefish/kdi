@@ -33,6 +33,8 @@ namespace local {
 
     /// A read-only implementation of a table served out of a file.
     class DiskTable;
+    class DiskTableV0;
+    class DiskTableV1;
 
     /// Pointer to a DiskTable
     typedef boost::shared_ptr<DiskTable> DiskTablePtr;
@@ -50,11 +52,39 @@ class kdi::local::DiskTable
     : public kdi::Table,
       private boost::noncopyable
 {
+public:
+    //explicit DiskTable(std::string const & fn);
+
+    virtual void set(strref_t row, strref_t column, int64_t timestamp,
+                     strref_t value) = 0;
+
+    virtual void erase(strref_t row, strref_t column, int64_t timestamp) = 0;
+
+    using Table::scan;
+    virtual CellStreamPtr scan(ScanPredicate const & pred) const = 0;
+
+    virtual void sync() = 0;
+
+    /// Scan the index of the fragment within the given row range,
+    /// returning (row, incremental-size) pairs.  The incremental size
+    /// approximates the on-disk size of the cells between the last
+    /// returned row key (or the given lower bound) and the current
+    /// row key.
+    virtual flux::Stream< std::pair<std::string, size_t> >::handle_t
+    scanIndex(warp::Interval<std::string> const & rows) const = 0;
+};
+
+//----------------------------------------------------------------------------
+// DiskTableV0 - DEPRECATED, backwards read compatibility only
+//----------------------------------------------------------------------------
+class kdi::local::DiskTableV0
+    : public kdi::local::DiskTable
+{
     std::string fn;
     oort::Record indexRec;
 
 public:
-    explicit DiskTable(std::string const & fn);
+    explicit DiskTableV0(std::string const & fn);
 
     virtual void set(strref_t row, strref_t column, int64_t timestamp,
                      strref_t value);
@@ -66,14 +96,37 @@ public:
 
     virtual void sync() { /* nothing to do */ }
 
-    /// Scan the index of the fragment within the given row range,
-    /// returning (row, incremental-size) pairs.  The incremental size
-    /// approximates the on-disk size of the cells between the last
-    /// returned row key (or the given lower bound) and the current
-    /// row key.
-    flux::Stream< std::pair<std::string, size_t> >::handle_t
+    virtual flux::Stream< std::pair<std::string, size_t> >::handle_t
     scanIndex(warp::Interval<std::string> const & rows) const;
 };
 
+//----------------------------------------------------------------------------
+// DiskTableV1 
+// Enhanced index format supporting:
+//   - Checksum verification
+//   - Column and timestamp filtering
+//----------------------------------------------------------------------------
+class kdi::local::DiskTableV1
+    : public kdi::local::DiskTable
+{
+    std::string fn;
+    oort::Record indexRec;
+
+public:
+    explicit DiskTableV1(std::string const & fn);
+
+    virtual void set(strref_t row, strref_t column, int64_t timestamp,
+                     strref_t value);
+
+    virtual void erase(strref_t row, strref_t column, int64_t timestampe);
+
+    using Table::scan;
+    virtual CellStreamPtr scan(ScanPredicate const & pred) const;
+
+    virtual void sync() { /* nothing to do */ }
+
+    virtual flux::Stream< std::pair<std::string, size_t> >::handle_t
+    scanIndex(warp::Interval<std::string> const & rows) const;
+};
 
 #endif // KDI_LOCAL_DISK_TABLE_H
