@@ -116,6 +116,7 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     BloomFilter colPrefixFilter;
     int64_t lowestTime;
     int64_t highestTime;
+    uint32_t numErasures;
 
     void addIndexEntry(Cell const & x);
     void addCell(Cell const & x);
@@ -164,16 +165,16 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Cell const & x)
     memcpy(colFilter.serialized, &serialized[0], serialized.size());
 
     // Append IndexEntry to array
-    index.arr->appendOffset(b, r);  // startKey.row
-    index.arr->appendOffset(b, c);  // startKey.column
-    index.arr->append(t);           // startKey.timestamp
-    index.arr->append(o);           // blockOffset
-    index.arr->append(md5);         // checkSum
-    index.arr->append(colFilter);   // colPrefixFilter
-    index.arr->append(lowestTime);  // timeRange-min
-    index.arr->append(highestTime); // timeRange-max
+    index.arr->appendOffset(b, r);   // startKey.row
+    index.arr->appendOffset(b, c);   // startKey.column
+    index.arr->append(t);            // startKey.timestamp
+    index.arr->append(o);            // blockOffset
+    index.arr->append(md5);          // checkSum
+    index.arr->append(colFilter);    // colPrefixFilter
+    index.arr->append(lowestTime);   // timeRange-min
+    index.arr->append(highestTime);  // timeRange-max
     index.arr->append(block.nItems); // numCells
-    index.arr->append(block.nItems); // numErasures
+    index.arr->append(numErasures);  // numErasures
 
     ++index.nItems;
 }
@@ -196,6 +197,7 @@ void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
     {
         size_t v = block.pool.getStringOffset(x.getValue());
         block.arr->appendOffset(b, v);     // value
+        ++numErasures;
     }
     else
     {
@@ -251,6 +253,7 @@ void DiskTableWriterV1::ImplV1::open(string const & fn)
     colPrefixFilter.clear();
     lowestTime = 0;
     highestTime = 0;
+    numErasures = 0;
 }
 
 void DiskTableWriterV1::ImplV1::close()
