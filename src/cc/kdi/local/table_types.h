@@ -55,19 +55,28 @@ namespace disk {
         uint64_t blockOffset;  // from beginning of file
     };
 
-    const size_t bloomFilterLength = 32;
+    struct Md5Digest
+    {
+        uint64_t digest[2];
+    };
+
+    // Space for a serialized bloom filter
+    struct BloomFS
+    {
+        uint8_t serialized[32]; 
+    };
 
     // Richer index format
     struct IndexEntryV1
     {
         CellKey startKey;
         uint64_t blockOffset;
-        uint64_t blockChecksum;
-        uint8_t  colPrefixFilter[bloomFilterLength];
+        Md5Digest blockChecksum;
+        BloomFS colPrefixFilter;
         int64_t lowestTime;
         int64_t highestTime;
-        uint64_t numCells;
-        uint64_t numErasures;
+        uint32_t numCells;
+        uint32_t numErasures;
     };
 
     /// Index of CellBlock records in the file.

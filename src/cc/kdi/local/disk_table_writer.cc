@@ -90,12 +90,6 @@ namespace
 
             // Reset
             reset();
-
-            /*
-            uint64_t md5digest[2];
-            Md5 md5;
-            md5.digest(md5digest, r.getData(), r.getLength());
-            */
         }
 
         size_t getDataSize() const
@@ -153,22 +147,33 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Cell const & x)
     int64_t        t = x.getTimestamp();
     uint64_t       o = fp->tell();
 
-    //std::cerr << "Adding serialized bloom filter to the block" << std::endl;
+    // Get md5 checksum for the cellback
+    disk::Md5Digest md5;
+
+    /*
+     * uint64_t md5digest[2];
+     * Md5 md5;
+     * md5.digest(md5digest, r.getData(), r.getLength());
+     * 
+     */
+
+    // Serialize the column prefix bloom filter
     vector<char> serialized;
     colPrefixFilter.serialize(serialized);
-    //std::cerr << "Length: " << serialized.size();
-            
+    disk::BloomFS colFilter;
+    memcpy(colFilter.serialized, &serialized[0], serialized.size());
+
     // Append IndexEntry to array
     index.arr->appendOffset(b, r);  // startKey.row
     index.arr->appendOffset(b, c);  // startKey.column
     index.arr->append(t);           // startKey.timestamp
     index.arr->append(o);           // blockOffset
-    index.arr->append(t);           // checkSum
-    index.arr->append(&serialized[0], disk::bloomFilterLength); // colPrefixFilter
+    index.arr->append(md5);         // checkSum
+    index.arr->append(colFilter);   // colPrefixFilter
     index.arr->append(lowestTime);  // timeRange-min
     index.arr->append(highestTime); // timeRange-max
-    index.arr->append((uint64_t)block.nItems); // numCells
-    index.arr->append(t);           // numErasures
+    index.arr->append(block.nItems); // numCells
+    index.arr->append(block.nItems); // numErasures
 
     ++index.nItems;
 }
