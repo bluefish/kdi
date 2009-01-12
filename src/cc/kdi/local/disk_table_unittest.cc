@@ -333,3 +333,37 @@ BOOST_AUTO_UNIT_TEST(timescan_test)
     );
 }
 
+BOOST_AUTO_UNIT_TEST(loader_test)
+{
+    // Verify that loadDiskTable loads correct table for each writer version
+    
+    DiskTableWriterV1 out1(128);
+    out1.open("memfs:v1");
+    out1.put(makeCell("row1", "col1", 42, "one1"));
+    out1.put(makeCell("row1", "col2", 42, "one2"));
+    out1.close();
+
+    DiskTablePtr dp = kdi::local::loadDiskTable("memfs:v1");
+
+    test_out_t s;
+    BOOST_CHECK((s << *dp).is_equal(
+        "(row1,col1,42,one1)"
+        "(row1,col2,42,one2)"
+    ));
+
+    // Disk table written with old format should still load correctly
+
+    DiskTableWriterV0 out0(128);
+    out0.open("memfs:v0");
+    out0.put(makeCell("row1", "col1", 42, "one1"));
+    out0.put(makeCell("row1", "col2", 42, "one2"));
+    out0.close();
+    
+    dp = kdi::local::loadDiskTable("memfs:v0");
+
+    BOOST_CHECK((s << *dp).is_equal(
+        "(row1,col1,42,one1)"               
+        "(row1,col2,42,one2)"                                       
+    ));
+}
+

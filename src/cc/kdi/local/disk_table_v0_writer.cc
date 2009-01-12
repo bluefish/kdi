@@ -215,7 +215,7 @@ void DiskTableWriterV0::ImplV0::close()
 
     // Write TableInfo record
     Record r;
-    alloc.construct<disk::TableInfo>(r, indexOffset);
+    alloc.construct<disk::TableInfoV0>(r, indexOffset);
     output->put(r);
 
     // Shut down

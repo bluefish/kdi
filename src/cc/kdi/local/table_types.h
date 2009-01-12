@@ -105,12 +105,28 @@ namespace disk {
         warp::ArrayOffset<IndexEntryV1> blocks;
     };
 
-    /// Trailer for a disk table file.
-    struct TableInfo
+    // Trailer for a disk table file.
+    struct TableInfoV0
     {
         enum {
             TYPECODE = WARP_PACK4('T','N','f','o'),
             VERSION = 0,
+            FLAGS = 0,
+            ALIGNMENT = 8,
+        };
+
+        uint64_t indexOffset;   // from beginning of file
+    
+        TableInfoV0() {}
+        explicit TableInfoV0(uint64_t off) : indexOffset(off) {}
+    };
+
+    // Trailer for a disk table file.
+    struct TableInfo
+    {
+        enum {
+            TYPECODE = WARP_PACK4('T','N','f','o'),
+            VERSION = 1,
             FLAGS = 0,
             ALIGNMENT = 8,
         };

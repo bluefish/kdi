@@ -367,18 +367,18 @@ DiskTableV0::DiskTableV0(string const & fn) :
 {
     // Open file to TableInfo record
     FilePtr fp = File::input(fn);
-    fp->seek(-(10+sizeof(TableInfo)), SEEK_END);
+    fp->seek(-(10+sizeof(TableInfoV0)), SEEK_END);
 
     // Make a Record reader
     FileInput::handle_t input = FileInput::make(fp);
     
     // Read TableInfo
     Record r;
-    if(!input->get(r) || !r.tryAs<TableInfo>())
+    if(!input->get(r) || !r.tryAs<TableInfoV0>())
         raise<RuntimeError>("could not read TableInfo record: %s", fn);
 
     // Seek to BlockIndex
-    uint64_t indexOffset = r.cast<TableInfo>()->indexOffset;
+    uint64_t indexOffset = r.cast<TableInfoV0>()->indexOffset;
     input->seek(indexOffset);
 
     // Read BlockIndex

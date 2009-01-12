@@ -25,6 +25,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <oort/record.h>
+#include <oort/fileio.h>
 #include <warp/interval.h>
 #include <string>
 
@@ -42,6 +43,9 @@ namespace local {
     /// Pointer to a const DiskTable
     typedef boost::shared_ptr<DiskTable const> DiskTableCPtr;
 
+    /// Loader for getting correct DiskTable version from file.
+    DiskTablePtr loadDiskTable(std::string const &fn);
+
 } // namespace local
 } // namespace kdi
 
@@ -52,6 +56,9 @@ class kdi::local::DiskTable
     : public kdi::Table,
       private boost::noncopyable
 {
+protected:
+    oort::FileInput::handle_t findIndexBlock();
+    
 public:
     //explicit DiskTable(std::string const & fn);
 
@@ -128,5 +135,10 @@ public:
     virtual flux::Stream< std::pair<std::string, size_t> >::handle_t
     scanIndex(warp::Interval<std::string> const & rows) const;
 };
+
+//----------------------------------------------------------------------------
+// loadDiskTable - instantiate correctly versioned DiskTable object
+// ---------------------------------------------------------------------------
+kdi::local::DiskTablePtr kdi::local::loadDiskTable(std::string const &fn);
 
 #endif // KDI_LOCAL_DISK_TABLE_H

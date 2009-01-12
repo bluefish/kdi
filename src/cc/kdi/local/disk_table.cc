@@ -24,6 +24,7 @@
 #include <kdi/cell_filter.h>
 #include <oort/fileio.h>
 #include <warp/file.h>
+#include <warp/md5.h>
 #include <ex/exception.h>
 
 using namespace std;
@@ -426,4 +427,31 @@ DiskTableV1::scanIndex(warp::Interval<std::string> const & rows) const
         new IndexScanner(indexRec, rows)
         );
     return p;
+}
+
+DiskTablePtr kdi::local::loadDiskTable(std::string const &fn) {
+    // Open file to TableInfo record
+    FilePtr fp = File::input(fn);
+    fp->seek(-(10+sizeof(TableInfo)), SEEK_END);
+
+    // Make a Record reader
+    FileInput::handle_t input = FileInput::make(fp);
+    
+    // Read TableInfo
+    Record r;
+    if(input->get(r) && r.getType() == TableInfo::TYPECODE) {
+        uint64_t indexOffset = r.cast<TableInfo>()->indexOffset;
+        input->seek(indexOffset);
+ 
+        switch(r.getVersion()) {
+            case 0: return DiskTablePtr(new DiskTableV0(fn));
+            case 1: return DiskTablePtr(new DiskTableV1(fn));
+            default: raise<RuntimeError>("Unknown TableInfo version: %s", fn);
+        }
+    }
+    else {
+        raise<RuntimeError>("could not read TableInfo record: %s", fn);
+    }
+
+    return DiskTablePtr();
 }
