@@ -30,7 +30,7 @@ using namespace warp;
 //----------------------------------------------------------------------------
 DiskFragment::DiskFragment(std::string const & uri) :
     uri(uri),
-    table(new kdi::local::DiskTableV0(uriPushScheme(uriPopScheme(uri), "cache")))
+    table(kdi::local::loadDiskTable(uriPushScheme(uriPopScheme(uri), "cache")))
 {
 }
 
