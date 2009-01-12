@@ -302,7 +302,7 @@ RPC: Table.apply(packedCells, commitMaxTxn, waitForSync, out commitTxn)
     - append the packedCells to log queue
       - logger.queuedSz += packedBuffer.size()
   - if waitForSync:
-    -- also need to wait until tablet confis have been committed
+    -- also need to wait until tablet configs have been committed
     - defer until sequencer.committedTxn >= commitTxn
   - else:
     - return commitTxn
@@ -317,13 +317,21 @@ RPC: Table.sync(syncAtLeastTxn, out syncTxn)
 
 RPC: Table.scan(pred)
 
+  - allocate a new scanner from LRU
+  - init scanner with predicate
+  - return scanner proxy
+
 RPC: Table.close()
 
   - no op
 
 RPC: Scanner.get(maxResponse, out packedCells, out scanTxn, out endOfScan)
 
+  - 
+
 RPC: Scanner.close()
+
+  - release scanner from LRU
 
 Callback: Tablet.onFragmentListUpdate()
 
