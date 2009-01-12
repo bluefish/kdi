@@ -36,7 +36,7 @@ using namespace warp;
 using namespace ex;
 using namespace std;
 
-using kdi::local::DiskTableWriterV0;
+using kdi::local::CurDiskTableWriter;
 using kdi::local::DiskTable;
 
 //----------------------------------------------------------------------------
@@ -96,7 +96,7 @@ void CachedLogLoader::LogInfo::serializeLog(std::string const & logUri,
     {
         log("CachedLogLoader: writing new table %s", diskFn);
 
-        DiskTableWriterV0 writer(64<<10);
+        CurDiskTableWriter writer(64<<10);
         writer.open(diskFn);
         for(; first != cells.end(); ++first)
             writer.put(*first);

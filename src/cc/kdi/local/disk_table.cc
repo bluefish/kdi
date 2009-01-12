@@ -399,12 +399,6 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
     CellStreamPtr diskScanner;
     if(ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate())
     {
-        //ScanPredicate::StringSetCPtr const & cols = pred.getColumnPredicate();
-        ScanPredicate::TimestampSetCPtr const & times = pred.getTimePredicate();
-        if(times) {
-            std::cerr << "YEAH TIMES!! " << *times << std::endl;
-        }
-
         // Make a scanner that handles the row predicate
         diskScanner.reset(new DiskScanner(fp, rows, indexRec));
     }

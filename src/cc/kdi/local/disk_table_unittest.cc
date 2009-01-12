@@ -305,6 +305,22 @@ BOOST_AUTO_UNIT_TEST(rowscan_test)
         countCells(tbl->scan("'row-442' <  row <  'row-446' or "
                              "'row-447' <= row <= 'row-450'")),
         210u);
+
+    // Need to test row scans on tiny tables as well
+    // Single block tables can be a corner case
+    
+    DiskTableWriterV1 out(256);
+    out.open("memfs:small");
+    out.put(makeCell("row1", "col1", 42, "one1"));
+    out.put(makeCell("row2", "col2", 42, "one2"));
+    out.close();
+
+    DiskTableV1 in("memfs:small");
+    BOOST_CHECK_EQUAL(
+        countCells(in.scan("row = 'row2'")), 
+        1u
+    ); 
+    
 }
 
 BOOST_AUTO_UNIT_TEST(colscan_test)

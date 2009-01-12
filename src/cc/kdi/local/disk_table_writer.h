@@ -32,6 +32,8 @@ namespace local {
     class DiskTableWriter;
     class DiskTableWriterV0;
     class DiskTableWriterV1;
+    
+    typedef DiskTableWriterV1 CurDiskTableWriter;
 
 } // namespace local
 } // namespace kdi

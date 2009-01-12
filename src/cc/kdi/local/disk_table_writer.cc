@@ -254,8 +254,12 @@ void DiskTableWriterV1::ImplV1::open(string const & fn)
 void DiskTableWriterV1::ImplV1::close()
 {
     // Flush last cell block if there's something pending
-    if(block.nItems)
+    if(block.nItems) {
         writeCellBlock();
+        // Need to be able to write the last index block, which
+        // is frankly sort of a bitch.
+        //addIndexEntry();
+    }
 
     // Remember index position
     uint64_t indexOffset = fp->tell();

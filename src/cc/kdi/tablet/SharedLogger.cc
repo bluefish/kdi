@@ -46,7 +46,7 @@ using namespace std;
 using boost::format;
 
 #include <kdi/local/disk_table_writer.h>
-using kdi::local::DiskTableWriterV0;
+using kdi::local::CurDiskTableWriter;
 
 namespace {
 
@@ -214,7 +214,7 @@ public:
             std::string fn = configMgr->getDataFile(tableName);
             
             // Write a DiskTable from the fragment
-            DiskTableWriterV0 writer(64<<10);
+            CurDiskTableWriter writer(64<<10);
             writer.open(fn);
             CellStreamPtr cells = info.fragment->scan(ScanPredicate());
             Cell x;

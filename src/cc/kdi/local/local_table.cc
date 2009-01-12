@@ -266,7 +266,7 @@ class LocalTable::Impl
         // Open output
         string name = str(format("%d") % idx);
         string fn = fs::resolve(tableDir, name);
-        DiskTableWriterV0 writer(64 << 10);
+        CurDiskTableWriter writer(64 << 10);
         writer.open(fn);
 
         // cerr << format("serialize: %s --> %s") % it->name % name << endl;
@@ -324,7 +324,7 @@ class LocalTable::Impl
         // Open output
         string name = str(format("%d") % idx);
         string fn = fs::resolve(tableDir, name);
-        DiskTableWriterV0 writer(64 << 10);
+        CurDiskTableWriter writer(64 << 10);
         writer.open(fn);
 
         ostringstream info;
