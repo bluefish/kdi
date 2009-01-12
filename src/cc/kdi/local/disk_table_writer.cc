@@ -77,19 +77,17 @@ namespace
             builder.build(r, alloc);
         }
 
+        void write(RecordStreamHandle const & output, Record const & r)
+        {
+            output->put(r);
+            reset();
+        }
+
         void write(RecordStreamHandle const & output, Allocator * alloc)
         {
-            // Finish array
-            builder.appendOffset(arr);
-            builder.append(nItems);
-
-            // Write CellBlock record
             Record r;
-            builder.build(r, alloc);
-            output->put(r);
-
-            // Reset
-            reset();
+            build(r, alloc);
+            write(output, r);
         }
 
         size_t getDataSize() const
@@ -117,6 +115,8 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     int64_t lowestTime;
     int64_t highestTime;
     uint32_t numErasures;
+    uint64_t cellBlockOff;
+    disk::Md5Digest cellBlockMd5;
 
     void addIndexEntry(Cell const & x);
     void addCell(Cell const & x);
@@ -146,17 +146,6 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Cell const & x)
     size_t         r = index.pool.getStringOffset(x.getRow());
     size_t         c = index.pool.getStringOffset(x.getColumn());
     int64_t        t = x.getTimestamp();
-    uint64_t       o = fp->tell();
-
-    // Get md5 checksum for the cellback
-    disk::Md5Digest md5;
-
-    /*
-     * uint64_t md5digest[2];
-     * Md5 md5;
-     * md5.digest(md5digest, r.getData(), r.getLength());
-     * 
-     */
 
     // Serialize the column prefix bloom filter
     vector<char> serialized;
@@ -168,8 +157,8 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Cell const & x)
     index.arr->appendOffset(b, r);   // startKey.row
     index.arr->appendOffset(b, c);   // startKey.column
     index.arr->append(t);            // startKey.timestamp
-    index.arr->append(o);            // blockOffset
-    index.arr->append(md5);          // checkSum
+    index.arr->append(cellBlockOff); // blockOffset
+    index.arr->append(cellBlockMd5); // checkSum
     index.arr->append(colFilter);    // colPrefixFilter
     index.arr->append(lowestTime);   // timeRange-min
     index.arr->append(highestTime);  // timeRange-max
@@ -221,15 +210,21 @@ void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
 
 void DiskTableWriterV1::ImplV1::writeCellBlock()
 {
-    //Record r;
-    //block.build(r, &alloc);
-    block.write(output, &alloc);
+    Record r;
+    block.build(r, &alloc);
+
+    /* Store md5 checksum for the cell block, written in index */
+    Md5 md5;
+    md5.digest(cellBlockMd5.digest, r.getData(), r.getLength());
+
+    /* Record the file position of this block before writing */
+    cellBlockOff = fp->tell();
+
+    block.write(output, r);
 }
 
 void DiskTableWriterV1::ImplV1::writeBlockIndex()
 {
-    //Record r;
-    //block.build(r, &alloc);
     index.write(output, &alloc);
 }
 
@@ -287,8 +282,8 @@ void DiskTableWriterV1::ImplV1::put(Cell const & x)
 
     // Flush block if it is big enough
     if(block.getDataSize() >= blockSize) {
-        addIndexEntry(x);
         writeCellBlock();
+        addIndexEntry(x);
     }
 }
 
