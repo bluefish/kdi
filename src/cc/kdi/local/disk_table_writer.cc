@@ -29,7 +29,7 @@
 #include <oort/recordbuffer.h>
 #include <oort/fileio.h>
 #include <warp/string_pool_builder.h>
-#include <warp/md5.h>
+#include <warp/adler.h>
 #include <warp/bloom_filter.h>
 #include <boost/static_assert.hpp>
 
@@ -116,7 +116,7 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     int64_t highestTime;
     uint32_t numErasures;
     uint64_t cellBlockOff;
-    disk::Md5Digest cellBlockMd5;
+    uint32_t cbChecksum;
 
     void addIndexEntry(Cell const & x);
     void addCell(Cell const & x);
@@ -158,12 +158,13 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Cell const & x)
     index.arr->appendOffset(b, c);   // startKey.column
     index.arr->append(t);            // startKey.timestamp
     index.arr->append(cellBlockOff); // blockOffset
-    index.arr->append(cellBlockMd5); // checkSum
     index.arr->append(colFilter);    // colPrefixFilter
     index.arr->append(lowestTime);   // timeRange-min
     index.arr->append(highestTime);  // timeRange-max
     index.arr->append(block.nItems); // numCells
     index.arr->append(numErasures);  // numErasures
+    index.arr->append(cbChecksum);   // checkSum
+    index.arr->appendPadding(8);
 
     ++index.nItems;
 }
@@ -213,10 +214,9 @@ void DiskTableWriterV1::ImplV1::writeCellBlock()
     Record r;
     block.build(r, &alloc);
 
-    /* Store md5 checksum for the cell block, written in index */
-    Md5 md5;
-    md5.digest(cellBlockMd5.digest, r.getData(), r.getLength());
-
+    /* Calculate Adler-32 checksum for the cell block, written in index */
+    cbChecksum = adler((uint8_t*)r.getData(), r.getLength());
+    
     /* Record the file position of this block before writing */
     cellBlockOff = fp->tell();
 

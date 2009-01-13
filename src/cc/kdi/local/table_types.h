@@ -55,11 +55,6 @@ namespace disk {
         uint64_t blockOffset;  // from beginning of file
     };
 
-    struct Md5Digest
-    {
-        uint64_t digest[2];
-    };
-
     // Space for a serialized bloom filter
     struct BloomFS
     {
@@ -71,12 +66,12 @@ namespace disk {
     {
         CellKey startKey;
         uint64_t blockOffset;
-        Md5Digest blockChecksum;
         BloomFS colPrefixFilter;
         int64_t lowestTime;
         int64_t highestTime;
         uint32_t numCells;
         uint32_t numErasures;
+        uint32_t blockChecksum; // Adler-32
     };
 
     /// Index of CellBlock records in the file.
