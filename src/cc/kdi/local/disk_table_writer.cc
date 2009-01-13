@@ -118,7 +118,7 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     uint64_t cellBlockOff;
     uint32_t cbChecksum;
 
-    void addIndexEntry(Cell const & x);
+    void addIndexEntry(Record const & cellBlock);
     void addCell(Cell const & x);
     void writeCellBlock();
     void writeBlockIndex();
@@ -137,15 +137,22 @@ public:
 //----------------------------------------------------------------------------
 // DiskTableWriterV1::ImplV1
 //----------------------------------------------------------------------------
-void DiskTableWriterV1::ImplV1::addIndexEntry(Cell const & x)
+void DiskTableWriterV1::ImplV1::addIndexEntry(Record const & cbRec)
 {
     BOOST_STATIC_ASSERT(disk::BlockIndexV1::VERSION == 1);
 
+    /* Get the last cell record from the cell block */
+    disk::CellBlock const * cellBlock = cbRec.cast<disk::CellBlock>();
+    disk::CellKey const & lastCellKey = cellBlock->cells[cellBlock->cells.size()-1].key;
+
+    strref_t lastRow = *lastCellKey.row;
+    strref_t lastCol = *lastCellKey.column;
+
     // Get string offsets for cell key
     BuilderBlock * b = index.pool.getStringBlock();
-    size_t         r = index.pool.getStringOffset(x.getRow());
-    size_t         c = index.pool.getStringOffset(x.getColumn());
-    int64_t        t = x.getTimestamp();
+    size_t         r = index.pool.getStringOffset(lastRow);
+    size_t         c = index.pool.getStringOffset(lastCol);
+    int64_t        t = lastCellKey.timestamp;
 
     // Serialize the column prefix bloom filter
     vector<char> serialized;
@@ -178,6 +185,10 @@ void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
     size_t         r = block.pool.getStringOffset(x.getRow());
     size_t         c = block.pool.getStringOffset(x.getColumn());
     int64_t        t = x.getTimestamp();
+
+    std::cerr << "Adding cell with row: " << x.getRow() << std::endl;
+    std::cerr << "String offset is: " << r << std::endl;
+    std::cerr << "String fetched from string pool is: " << block.pool.getStr(r) << std::endl;
 
     // Append CellData to array
     block.arr->appendOffset(b, r);         // key.row
@@ -217,9 +228,15 @@ void DiskTableWriterV1::ImplV1::writeCellBlock()
     /* Calculate Adler-32 checksum for the cell block, written in index */
     cbChecksum = adler((uint8_t*)r.getData(), r.getLength());
     
-    /* Record the file position of this block before writing */
+    /* Record the file position of this block before writing for the index block */
     cellBlockOff = fp->tell();
 
+    /* Create the index entry */
+    addIndexEntry(r);
+
+    std::cerr << "Added the index entry!!" << std::endl;
+
+    /* Write out the block */
     block.write(output, r);
 }
 
@@ -287,7 +304,7 @@ void DiskTableWriterV1::ImplV1::put(Cell const & x)
     // Flush block if it is big enough
     if(block.getDataSize() >= blockSize) {
         writeCellBlock();
-        addIndexEntry(x);
+        //addIndexEntry(x);
     }
 }
 
