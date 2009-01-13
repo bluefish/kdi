@@ -123,7 +123,68 @@ namespace {
         }
     };
 
+    
 }
+
+//----------------------------------------------------------------------------
+// ReadAheadImpl
+//----------------------------------------------------------------------------
+class SharedCompactor::ReadAheadImpl
+{
+    boost::scoped_ptr<warp::WorkerPool> pool;
+    size_t readAhead;
+    size_t readUpTo;
+
+public:
+    ReadAheadImpl() :
+        readAhead(4 << 20),
+        readUpTo(512 << 10)
+        
+    {
+        if(char * s = getenv("KDI_TABLET_READ_AHEAD"))
+            readAhead = parseSize(s);
+
+        if(char * s = getenv("KDI_TABLET_READ_UP_TO"))
+            readUpTo = parseSize(s);
+
+        size_t nThreads = 4;
+        if(char * s = getenv("KDI_TABLET_READ_THREADS"))
+            nThreads = parseSize(s);
+
+        if(readAhead && readUpTo && nThreads)
+        {
+            log("Compaction read-ahead: nThreads=%d, readAhead=%s, "
+                "readUpTo=%s", nThreads, sizeString(readAhead),
+                sizeString(readUpTo));
+
+            pool.reset(
+                new WorkerPool(
+                    nThreads,
+                    "Compaction read-ahead thread",
+                    true)
+                );
+        }
+        else
+        {
+            log("Compaction read-ahead: disabled");
+        }
+    }
+
+    ~ReadAheadImpl() {}
+
+    CellStreamPtr wrap(CellStreamPtr const & base) const
+    {
+        if(!pool)
+            return base;
+
+        CellStreamPtr p = flux::makeThreadedReader<Cell>(
+            *pool, readAhead, readUpTo, SizeOfCell());
+
+        p->pipeFrom(base);
+        return p;
+    }
+};
+
 
 
 //----------------------------------------------------------------------------
@@ -534,12 +595,8 @@ void SharedCompactor::compact(fragment_set const & fragments)
     // should now return cells in the new range, and build a new merge
     // in the order necessary for the new range.
 
-    if(!readAheadPool)
-    {
-        readAheadPool.reset(
-            new WorkerPool(4, "Compaction Read-Ahead", true)
-            );
-    }
+    if(!readAhead)
+        readAhead.reset(new ReadAheadImpl());
 
     // When reading from fragments, only scan adjRange
     //   for fragment,adjRange in invRangeMap:
@@ -568,14 +625,12 @@ void SharedCompactor::compact(fragment_set const & fragments)
         log("Compact thread: merging from %s (%s)",
             fragment->getFragmentUri(), pred);
 
-        // Read-ahead 4 MB in 512 KB chunks
-        CellStreamPtr readAhead = flux::makeThreadedReader<Cell>(
-            *readAheadPool, 4 << 20, 512 << 10, SizeOfCell());
-
         CellCutoffStreamPtr cutoff(new CellCutoffStream);
-
-        readAhead->pipeFrom(fragment->scan(pred));
-        cutoff->pipeFrom(readAhead);
+        cutoff->pipeFrom(
+            readAhead->wrap(
+                fragment->scan(pred)
+                )
+            );
 
         inputMap[fragment] = cutoff;
     }
