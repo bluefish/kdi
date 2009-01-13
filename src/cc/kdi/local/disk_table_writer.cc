@@ -116,7 +116,6 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     int64_t highestTime;
     uint32_t numErasures;
     uint64_t cellBlockOff;
-    uint32_t cbChecksum;
 
     void addIndexEntry(Record const & cellBlock);
     void addCell(Cell const & x);
@@ -159,6 +158,9 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Record const & cbRec)
     colPrefixFilter.serialize(serialized);
     disk::BloomFS colFilter;
     memcpy(colFilter.serialized, &serialized[0], serialized.size());
+
+    /* Calculate Adler-32 checksum for the cell block, written in index */
+    uint32_t cbChecksum = adler((uint8_t*)cbRec.getData(), cbRec.getLength());
 
     // Append IndexEntry to array
     index.arr->appendOffset(b, r);   // startKey.row
@@ -225,9 +227,6 @@ void DiskTableWriterV1::ImplV1::writeCellBlock()
     Record r;
     block.build(r, &alloc);
 
-    /* Calculate Adler-32 checksum for the cell block, written in index */
-    cbChecksum = adler((uint8_t*)r.getData(), r.getLength());
-    
     /* Record the file position of this block before writing for the index block */
     cellBlockOff = fp->tell();
 
@@ -273,9 +272,6 @@ void DiskTableWriterV1::ImplV1::close()
     // Flush last cell block if there's something pending
     if(block.nItems) {
         writeCellBlock();
-        // Need to be able to write the last index block, which
-        // is frankly sort of a bitch.
-        //addIndexEntry();
     }
 
     // Remember index position
@@ -304,7 +300,6 @@ void DiskTableWriterV1::ImplV1::put(Cell const & x)
     // Flush block if it is big enough
     if(block.getDataSize() >= blockSize) {
         writeCellBlock();
-        //addIndexEntry(x);
     }
 }
 
