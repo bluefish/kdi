@@ -26,11 +26,13 @@
 #include <kdi/cell_merge.h>
 #include <kdi/scan_predicate.h>
 #include <flux/cutoff.h>
+#include <flux/threaded_reader.h>
 #include <warp/functional.h>
 #include <warp/uri.h>
 #include <warp/log.h>
 #include <warp/call_or_die.h>
 #include <warp/timer.h>
+#include <warp/WorkerPool.h>
 #include <ex/exception.h>
 #include <boost/bind.hpp>
 #include <iostream>
@@ -110,6 +112,16 @@ namespace {
     };
 
     typedef std::vector<CompactRangePtr> range_vec;
+
+
+    struct SizeOfCell
+    {
+        size_t operator()(Cell const & x) const
+        {
+            return sizeof(Cell) + x.getRow().size() + x.getColumn().size()
+                + x.getValue().size();
+        }
+    };
 
 }
 
@@ -255,6 +267,7 @@ namespace {
         {
             // Finalize output and reset to indicate we do not have an
             // active output
+            outputSize += writer.size();
             writer.close();
             ++nFragments;
             string uri = uriPushScheme(writerFn, "disk");
@@ -262,7 +275,6 @@ namespace {
 
             // Open the newly written fragment
             FragmentPtr frag = configMgr->openFragment(uri);
-            outputSize += frag->getDiskSize(Interval<string>().setInfinite());
 
 #ifdef COMPACTOR_DEBUG
             newFragments.insert(frag);
@@ -522,6 +534,12 @@ void SharedCompactor::compact(fragment_set const & fragments)
     // should now return cells in the new range, and build a new merge
     // in the order necessary for the new range.
 
+    if(!readAheadPool)
+    {
+        readAheadPool.reset(
+            new WorkerPool(4, "Compaction Read-Ahead", true)
+            );
+    }
 
     // When reading from fragments, only scan adjRange
     //   for fragment,adjRange in invRangeMap:
@@ -550,10 +568,16 @@ void SharedCompactor::compact(fragment_set const & fragments)
         log("Compact thread: merging from %s (%s)",
             fragment->getFragmentUri(), pred);
 
-        CellCutoffStreamPtr p(new CellCutoffStream);
-        p->pipeFrom(fragment->scan(pred));
+        // Read-ahead 4 MB in 512 KB chunks
+        CellStreamPtr readAhead = flux::makeThreadedReader<Cell>(
+            *readAheadPool, 4 << 20, 512 << 10, SizeOfCell());
 
-        inputMap[fragment] = p;
+        CellCutoffStreamPtr cutoff(new CellCutoffStream);
+
+        readAhead->pipeFrom(fragment->scan(pred));
+        cutoff->pipeFrom(readAhead);
+
+        inputMap[fragment] = cutoff;
     }
 
     // Prepare output

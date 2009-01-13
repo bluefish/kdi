@@ -36,6 +36,8 @@ namespace tablet {
 } // namespace tablet
 } // namespace kdi
 
+namespace warp { class WorkerPool; }
+
 //----------------------------------------------------------------------------
 // SharedCompactor
 //----------------------------------------------------------------------------
@@ -47,6 +49,7 @@ class kdi::tablet::SharedCompactor :
     boost::mutex mutex;
     boost::condition wakeCond;
     boost::scoped_ptr<boost::thread> thread;
+    boost::scoped_ptr<warp::WorkerPool> readAheadPool;
     size_t disabled;
     bool cancel;
 
