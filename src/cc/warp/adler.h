@@ -5,4 +5,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-uint32_t adler(const uint8_t *data, size_t len);
+namespace warp {
+    uint32_t adler(const uint8_t *data, size_t len);
+}

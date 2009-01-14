@@ -6,7 +6,7 @@
 
 #define MOD_ADLER 65521
  
-uint32_t adler(const uint8_t *data, size_t len) /* data: Pointer to the data to be summed; len is in bytes */
+uint32_t warp::adler(const uint8_t *data, size_t len) /* data: Pointer to the data to be summed; len is in bytes */
 {
     uint32_t a = 1, b = 0;
        
