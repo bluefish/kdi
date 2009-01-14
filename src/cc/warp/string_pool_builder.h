@@ -136,7 +136,7 @@ public:
     }
 
     /// Get the string from the builder for given offset
-    StringRange getStr(size_t pos) const {
+    StringRange getString(size_t pos) const {
         StringData const * s = reinterpret_cast<StringData const *>(block->begin() + pos);
         return StringRange(s->begin(), s->end());    
     }

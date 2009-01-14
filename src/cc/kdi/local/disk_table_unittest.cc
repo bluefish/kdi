@@ -347,6 +347,16 @@ BOOST_AUTO_UNIT_TEST(timescan_test)
         countCells(tbl->scan("row > 'a' and time = @1")),
         1000u
     );
+
+    BOOST_CHECK_EQUAL(
+        countCells(tbl->scan("row > 'a' and @0 <= time <= @666")),
+        30000u
+    );
+
+    BOOST_CHECK_EQUAL( 
+        countCells(tbl->scan("row > 'a' and time = @1 or time = @23")),
+        2000u
+    );
 }
 
 BOOST_AUTO_UNIT_TEST(loader_test)

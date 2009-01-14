@@ -93,6 +93,10 @@ namespace
         IntervalSet<string>::const_iterator nextRowIt;
         IntervalPoint<string> upperBound;
 
+        // Column and timestamp ranges for filtering blocks
+        ScanPredicate::StringSetCPtr columns;
+        ScanPredicate::TimestampSetCPtr times;
+
         // Index data
         Record indexRec;
         IndexEntryV1 const * indexIt;
@@ -110,13 +114,31 @@ namespace
         /// available
         bool readNextBlock(IndexEntryV1 const *nextIndexIt = 0)
         {
+            nextBlock:
+
             // Advance to the index entry for the next block
             if(nextIndexIt) {
+                if(nextIndexIt >= indexRec.cast<BlockIndexV1>()->blocks.end()) return false;
+                input->seek(nextIndexIt->blockOffset);
                 indexIt = nextIndexIt;
+                nextIndexIt = 0;
             } else if(indexIt) {
                 ++indexIt;
             } else {
                 indexIt = indexRec.cast<BlockIndexV1>()->blocks.begin();
+            }
+
+            if(times) {
+                IntervalPoint<int64_t> lowTime(indexIt->lowestTime, PT_INCLUSIVE_LOWER_BOUND);
+                IntervalPoint<int64_t> highTime(indexIt->highestTime, PT_INCLUSIVE_UPPER_BOUND);
+                Interval<int64_t> timeInterval(lowTime, highTime);
+
+                // If there is no overlap between the time ranges we are looking for and the 
+                // interval of times in this block, skip to the next block
+                if(!times->overlaps(timeInterval)) {
+                    nextIndexIt = indexIt+1;
+                    goto nextBlock;
+                }
             }
 
             // Read the next record and make sure it is a CellBlock
@@ -126,7 +148,7 @@ namespace
                 uint32_t checksum = adler((uint8_t*)blockRec.getData(), blockRec.getLength());
                 if(indexIt->blockChecksum != checksum) {
                     log("BAD CHECKSUM: skipping block");
-                    // Or *should* skip the block, haven't gotton the skipping part yet
+                    goto nextBlock;
                 }
 
                 // Got one -- reset Cell iterators
@@ -192,14 +214,13 @@ namespace
             // Else use the index to find the position of the next
             // row segment.  If the index points us off the end,
             // we're done.
-            std::cerr << "Using the index record" << std::endl;
             BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
             IndexEntryV1 const * ent = findIndexEntry(index, *lowerBoundIt);
             if(ent == index->blocks.end())
                 return false;
 
             // Seek to the next block position and load the block.
-            input->seek(ent->blockOffset);
+            //input->seek(ent->blockOffset);
             if(!readNextBlock(ent))
                 return false;
 
@@ -266,10 +287,12 @@ namespace
         DiskScanner(FilePtr const & fp,
                     ScanPredicate::StringSetCPtr const & rows,
                     //ScanPredicate::StringSetCPtr const & cols,
+                    ScanPredicate::TimestampSetCPtr const & times,
                     Record const & indexRec) :
             input(FileInput::make(fp)),
             rows(rows),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
+            times(times),
             indexRec(indexRec),
             indexIt(0),
             cellIt(0),
@@ -425,8 +448,10 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
     CellStreamPtr diskScanner;
     if(ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate())
     {
+        ScanPredicate::TimestampSetCPtr const & times = pred.getTimePredicate();
+
         // Make a scanner that handles the row predicate
-        diskScanner.reset(new DiskScanner(fp, rows, indexRec));
+        diskScanner.reset(new DiskScanner(fp, rows, times, indexRec));
     }
     else
     {
