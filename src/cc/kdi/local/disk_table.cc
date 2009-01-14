@@ -346,9 +346,24 @@ namespace
     };
 }
 
+//------------------------------------------------------------------------------
+// DiskTable - Always immutable
+//------------------------------------------------------------------------------
+void DiskTable::set(strref_t row, strref_t column, int64_t timestamp,
+                    strref_t value)
+{
+    raise<NotImplementedError>("DiskTable::set() not implemented: "
+                               "DiskTable is read-only");
+}
+
+void DiskTable::erase(strref_t row, strref_t column, int64_t timestamp)
+{
+    raise<NotImplementedError>("DiskTable::erase() not implemented: "
+                               "DiskTable is read-only");
+}
 
 //----------------------------------------------------------------------------
-// DiskTable
+// DiskTableV1
 //----------------------------------------------------------------------------
 DiskTableV1::DiskTableV1(string const & fn) :
     fn(fn)
@@ -375,19 +390,6 @@ DiskTableV1::DiskTableV1(string const & fn) :
 
     // Make a copy of the index
     indexRec = r.clone();
-}
-
-void DiskTableV1::set(strref_t row, strref_t column, int64_t timestamp,
-                    strref_t value)
-{
-    raise<NotImplementedError>("DiskTable::set() not implemented: "
-                               "DiskTable is read-only");
-}
-
-void DiskTableV1::erase(strref_t row, strref_t column, int64_t timestamp)
-{
-    raise<NotImplementedError>("DiskTable::erase() not implemented: "
-                               "DiskTable is read-only");
 }
 
 CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
@@ -433,9 +435,6 @@ DiskTablePtr kdi::local::loadDiskTable(std::string const &fn) {
     // Read TableInfo
     Record r;
     if(input->get(r) && r.getType() == TableInfo::TYPECODE) {
-        uint64_t indexOffset = r.cast<TableInfo>()->indexOffset;
-        input->seek(indexOffset);
- 
         switch(r.getVersion()) {
             case 0: return DiskTablePtr(new DiskTableV0(fn));
             case 1: return DiskTablePtr(new DiskTableV1(fn));

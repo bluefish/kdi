@@ -389,19 +389,6 @@ DiskTableV0::DiskTableV0(string const & fn) :
     indexRec = r.clone();
 }
 
-void DiskTableV0::set(strref_t row, strref_t column, int64_t timestamp,
-                    strref_t value)
-{
-    raise<NotImplementedError>("DiskTable::set() not implemented: "
-                               "DiskTable is read-only");
-}
-
-void DiskTableV0::erase(strref_t row, strref_t column, int64_t timestamp)
-{
-    raise<NotImplementedError>("DiskTable::erase() not implemented: "
-                               "DiskTable is read-only");
-}
-
 CellStreamPtr DiskTableV0::scan(ScanPredicate const & pred) const
 {
     FilePtr fp = File::input(fn);

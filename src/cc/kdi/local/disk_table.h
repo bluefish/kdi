@@ -60,17 +60,12 @@ protected:
     oort::FileInput::handle_t findIndexBlock();
     
 public:
-    //explicit DiskTable(std::string const & fn);
-
     virtual void set(strref_t row, strref_t column, int64_t timestamp,
-                     strref_t value) = 0;
+                     strref_t value);
 
-    virtual void erase(strref_t row, strref_t column, int64_t timestamp) = 0;
+    virtual void erase(strref_t row, strref_t column, int64_t timestamp);
 
-    using Table::scan;
-    virtual CellStreamPtr scan(ScanPredicate const & pred) const = 0;
-
-    virtual void sync() = 0;
+    virtual void sync() { /* Nothing to do */ }
 
     /// Scan the index of the fragment within the given row range,
     /// returning (row, incremental-size) pairs.  The incremental size
@@ -93,15 +88,8 @@ class kdi::local::DiskTableV0
 public:
     explicit DiskTableV0(std::string const & fn);
 
-    virtual void set(strref_t row, strref_t column, int64_t timestamp,
-                     strref_t value);
-
-    virtual void erase(strref_t row, strref_t column, int64_t timestamp);
-
     using Table::scan;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
-
-    virtual void sync() { /* nothing to do */ }
 
     virtual flux::Stream< std::pair<std::string, size_t> >::handle_t
     scanIndex(warp::Interval<std::string> const & rows) const;
@@ -122,15 +110,8 @@ class kdi::local::DiskTableV1
 public:
     explicit DiskTableV1(std::string const & fn);
 
-    virtual void set(strref_t row, strref_t column, int64_t timestamp,
-                     strref_t value);
-
-    virtual void erase(strref_t row, strref_t column, int64_t timestampe);
-
     using Table::scan;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
-
-    virtual void sync() { /* nothing to do */ }
 
     virtual flux::Stream< std::pair<std::string, size_t> >::handle_t
     scanIndex(warp::Interval<std::string> const & rows) const;
