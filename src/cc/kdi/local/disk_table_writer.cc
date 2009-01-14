@@ -115,7 +115,6 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     int64_t lowestTime;
     int64_t highestTime;
     uint32_t numErasures;
-    uint64_t cellBlockOff;
 
     void addIndexEntry(Record const & cellBlock);
     void addCell(Cell const & x);
@@ -159,14 +158,14 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Record const & cbRec)
     disk::BloomFS colFilter;
     memcpy(colFilter.serialized, &serialized[0], serialized.size());
 
-    /* Calculate Adler-32 checksum for the cell block, written in index */
+    // Calculate Adler-32 checksum for the cell block, written in index 
     uint32_t cbChecksum = adler((uint8_t*)cbRec.getData(), cbRec.getLength());
 
     // Append IndexEntry to array
     index.arr->appendOffset(b, r);   // startKey.row
     index.arr->appendOffset(b, c);   // startKey.column
     index.arr->append(t);            // startKey.timestamp
-    index.arr->append(cellBlockOff); // blockOffset
+    index.arr->append(fp->tell()); // blockOffset
     index.arr->append(colFilter);    // colPrefixFilter
     index.arr->append(lowestTime);   // timeRange-min
     index.arr->append(highestTime);  // timeRange-max
@@ -187,10 +186,6 @@ void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
     size_t         r = block.pool.getStringOffset(x.getRow());
     size_t         c = block.pool.getStringOffset(x.getColumn());
     int64_t        t = x.getTimestamp();
-
-    std::cerr << "Adding cell with row: " << x.getRow() << std::endl;
-    std::cerr << "String offset is: " << r << std::endl;
-    std::cerr << "String fetched from string pool is: " << block.pool.getStr(r) << std::endl;
 
     // Append CellData to array
     block.arr->appendOffset(b, r);         // key.row
@@ -227,13 +222,8 @@ void DiskTableWriterV1::ImplV1::writeCellBlock()
     Record r;
     block.build(r, &alloc);
 
-    /* Record the file position of this block before writing for the index block */
-    cellBlockOff = fp->tell();
-
     /* Create the index entry */
     addIndexEntry(r);
-
-    std::cerr << "Added the index entry!!" << std::endl;
 
     /* Write out the block */
     block.write(output, r);
