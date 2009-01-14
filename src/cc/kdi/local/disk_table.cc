@@ -24,7 +24,6 @@
 #include <kdi/cell_filter.h>
 #include <oort/fileio.h>
 #include <warp/file.h>
-#include <warp/md5.h>
 #include <ex/exception.h>
 
 using namespace std;
