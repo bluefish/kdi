@@ -56,9 +56,6 @@ class kdi::local::DiskTable
     : public kdi::Table,
       private boost::noncopyable
 {
-protected:
-    oort::FileInput::handle_t findIndexBlock();
-    
 public:
     virtual void set(strref_t row, strref_t column, int64_t timestamp,
                      strref_t value);

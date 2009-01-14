@@ -24,6 +24,8 @@
 #include <kdi/cell_filter.h>
 #include <oort/fileio.h>
 #include <warp/file.h>
+#include <warp/adler.h>
+#include <warp/log.h>
 #include <ex/exception.h>
 
 using namespace std;
@@ -90,7 +92,10 @@ namespace
         ScanPredicate::StringSetCPtr rows;
         IntervalSet<string>::const_iterator nextRowIt;
         IntervalPoint<string> upperBound;
+
+        // Index data
         Record indexRec;
+        IndexEntryV1 const * indexIt;
 
         // Current CellBlock
         Record blockRec;
@@ -103,11 +108,27 @@ namespace
         /// cell iterators to an empty range.
         /// @returns true if a block was read, false if no block was
         /// available
-        bool readNextBlock()
+        bool readNextBlock(IndexEntryV1 const *nextIndexIt = 0)
         {
+            // Advance to the index entry for the next block
+            if(nextIndexIt) {
+                indexIt = nextIndexIt;
+            } else if(indexIt) {
+                ++indexIt;
+            } else {
+                indexIt = indexRec.cast<BlockIndexV1>()->blocks.begin();
+            }
+
             // Read the next record and make sure it is a CellBlock
             if(input->get(blockRec) && blockRec.tryAs<CellBlock>())
             {
+                // Verify the checksum
+                uint32_t checksum = adler((uint8_t*)blockRec.getData(), blockRec.getLength());
+                if(indexIt->blockChecksum != checksum) {
+                    log("BAD CHECKSUM: skipping block");
+                    // Or *should* skip the block, haven't gotton the skipping part yet
+                }
+
                 // Got one -- reset Cell iterators
                 CellBlock const * block = blockRec.cast<CellBlock>();
                 cellIt = block->cells.begin();
@@ -171,6 +192,7 @@ namespace
             // Else use the index to find the position of the next
             // row segment.  If the index points us off the end,
             // we're done.
+            std::cerr << "Using the index record" << std::endl;
             BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
             IndexEntryV1 const * ent = findIndexEntry(index, *lowerBoundIt);
             if(ent == index->blocks.end())
@@ -178,7 +200,7 @@ namespace
 
             // Seek to the next block position and load the block.
             input->seek(ent->blockOffset);
-            if(!readNextBlock())
+            if(!readNextBlock(ent))
                 return false;
 
             // Set the start cell iterator
@@ -230,9 +252,11 @@ namespace
 
     public:
         /// Create a full-scan DiskScanner
-        explicit DiskScanner(FilePtr const & fp) :
+        explicit DiskScanner(FilePtr const & fp, Record const & indexRec) :
             input(FileInput::make(fp)),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
+            indexRec(indexRec),
+            indexIt(0),
             cellIt(0),
             cellEnd(0)
         {
@@ -247,6 +271,7 @@ namespace
             rows(rows),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
             indexRec(indexRec),
+            indexIt(0),
             cellIt(0),
             cellEnd(0)
         {
@@ -406,7 +431,7 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
     else
     {
         // Scan everything
-        diskScanner.reset(new DiskScanner(fp));
+        diskScanner.reset(new DiskScanner(fp, indexRec));
     }
 
     // Filter the rest
