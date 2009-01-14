@@ -28,7 +28,7 @@ using namespace warp;
 
 void WorkerPool::workerLoop()
 {
-    Runnable * task;
+    Runnable * task = 0;
     while(tasks.pop(task))
         task->run();
 }

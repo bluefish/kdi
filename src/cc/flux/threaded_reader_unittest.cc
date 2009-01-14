@@ -38,7 +38,7 @@ BOOST_AUTO_UNIT_TEST(int_reader)
     warp::WorkerPool pool(3, "TestPool", false);
 
     // Threaded reader -- read ahead 4
-    Stream<int>::handle_t r(new ThreadedReader<int>(pool, 4));
+    Stream<int>::handle_t r = makeThreadedReader<int>(pool, 4);
     r->pipeFrom(s);
 
     int x;

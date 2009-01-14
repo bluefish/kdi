@@ -36,6 +36,8 @@ namespace tablet {
 } // namespace tablet
 } // namespace kdi
 
+namespace warp { class WorkerPool; }
+
 //----------------------------------------------------------------------------
 // SharedCompactor
 //----------------------------------------------------------------------------
@@ -43,10 +45,12 @@ class kdi::tablet::SharedCompactor :
     private boost::noncopyable
 {
     typedef boost::mutex::scoped_lock lock_t;
+    class ReadAheadImpl;
 
     boost::mutex mutex;
     boost::condition wakeCond;
     boost::scoped_ptr<boost::thread> thread;
+    boost::scoped_ptr<ReadAheadImpl> readAhead;
     size_t disabled;
     bool cancel;
 
