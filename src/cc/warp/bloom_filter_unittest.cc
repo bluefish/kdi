@@ -252,3 +252,40 @@ BOOST_AUTO_UNIT_TEST(inplace_bloom_contains)
     BOOST_CHECK_EQUAL(f.contains("toaster")     , BloomFilter::contains(s, "toaster"));
     BOOST_CHECK_EQUAL(f.contains("oven")        , BloomFilter::contains(s, "oven"));
 }
+
+BOOST_AUTO_UNIT_TEST(inplace_bloom_contains_known_params)
+{
+    // Test the static contains() function with known params
+    
+    uint32_t nb = 1024;
+    vector<uint32_t> seeds;
+    seeds.push_back(232323u);
+    seeds.push_back(666666u);
+    seeds.push_back(129389u);
+    uint32_t ns = seeds.size();
+    uint32_t const *s = &seeds[0];
+    
+    // First build a BloomFilter
+    BloomFilter f(nb, seeds);
+    f.insert("banjo");
+    f.insert("guitar");
+    f.insert("mandolin");
+    f.insert("pianoforte");
+    f.insert("harpsichord");
+    
+    // Get raw bits out
+    uint8_t const *b = f.getBits();
+    
+    // Make sure they both contain the same things
+    BOOST_CHECK_EQUAL(f.contains("banjo")       , BloomFilter::contains(ns, s, nb, b, "banjo"));
+    BOOST_CHECK_EQUAL(f.contains("guitar")      , BloomFilter::contains(ns, s, nb, b, "guitar"));
+    BOOST_CHECK_EQUAL(f.contains("mandolin")    , BloomFilter::contains(ns, s, nb, b, "mandolin"));
+    BOOST_CHECK_EQUAL(f.contains("pianoforte")  , BloomFilter::contains(ns, s, nb, b, "pianoforte"));
+    BOOST_CHECK_EQUAL(f.contains("harpsichord") , BloomFilter::contains(ns, s, nb, b, "harpsichord"));
+    
+    BOOST_CHECK_EQUAL(f.contains("blender")     , BloomFilter::contains(ns, s, nb, b, "blender"));
+    BOOST_CHECK_EQUAL(f.contains("sink")        , BloomFilter::contains(ns, s, nb, b, "sink"));
+    BOOST_CHECK_EQUAL(f.contains("spatula")     , BloomFilter::contains(ns, s, nb, b, "spatula"));
+    BOOST_CHECK_EQUAL(f.contains("toaster")     , BloomFilter::contains(ns, s, nb, b, "toaster"));
+    BOOST_CHECK_EQUAL(f.contains("oven")        , BloomFilter::contains(ns, s, nb, b, "oven"));
+}
