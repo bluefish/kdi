@@ -95,8 +95,7 @@ namespace
         IntervalPoint<string> upperBound;
 
         // Column and timestamp ranges for filtering blocks
-        // ScanPredicate::StringSetCPtr columns;
-        vector<StringRange> columnFamilies;
+        boost::shared_ptr< vector<string> > columnFamilies;
         ScanPredicate::TimestampSetCPtr times;
 
         // Index data
@@ -143,13 +142,13 @@ namespace
                 }
             }
 
-            if(!columnFamilies.empty()) {
-                vector<StringRange>::const_iterator it = columnFamilies.begin();
-                while(it != columnFamilies.end()) {
+            if(columnFamilies) {
+                vector<string>::const_iterator it = columnFamilies->begin();
+                while(it != columnFamilies->end()) {
                     if(indexIt->hasColPrefix(*it)) break;
                     ++it;
                 }
-                if(it == columnFamilies.end()) {
+                if(it == columnFamilies->end()) {
                     // None of the required column prefixes are in this block
                     nextIndexIt = indexIt+1; 
                     goto nextBlock;
@@ -301,14 +300,12 @@ namespace
         /// Create a DiskScanner over a set of rows
         DiskScanner(FilePtr const & fp,
                     ScanPredicate::StringSetCPtr const & rows,
-                    //ScanPredicate::StringSetCPtr const & columns,
-                    vector<StringRange> const &columnFamilies,
+                    boost::shared_ptr< vector<string> > const & columnFamilies,
                     ScanPredicate::TimestampSetCPtr const & times,
                     Record const & indexRec) :
             input(FileInput::make(fp)),
             rows(rows),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
-            //columns(columns),
             columnFamilies(columnFamilies),
             times(times),
             indexRec(indexRec),
@@ -469,11 +466,21 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
         //ScanPredicate::StringSetCPtr const & columns = pred.getColumnPredicate();
         ScanPredicate::TimestampSetCPtr const & times = pred.getTimePredicate();
 
-        vector<StringRange> columnFamilies;
-        pred.getColumnFamilies(columnFamilies);
+        boost::shared_ptr< vector<string> > famsCopy;
+        vector<StringRange> fams;
+        if(pred.getColumnFamilies(fams))
+        {
+            // Make a copy so the families don't get invalidated after
+            // the predicate goes out of scope.
+            famsCopy.reset(new vector<string>(fams.size()));
+            for(size_t i = 0; i < fams.size(); ++i)
+            {
+                (*famsCopy)[i] = fams[i].toString();
+            }
+        }
 
         // Make a scanner that handles the row predicate
-        diskScanner.reset(new DiskScanner(fp, rows, columnFamilies, times, indexRec));
+        diskScanner.reset(new DiskScanner(fp, rows, famsCopy, times, indexRec));
     }
     else
     {
