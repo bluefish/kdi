@@ -40,6 +40,8 @@ class kdi::net::ScannerLocator
     : public Ice::ServantLocator
 {
     warp::LruCache<size_t,Ice::ObjectPtr> cache;
+
+    Ice::ObjectPtr * mark;
     boost::mutex mutex;
 
     typedef boost::mutex::scoped_lock lock_t;
@@ -52,6 +54,10 @@ public:
 
     /// Remove a scanner from the cache
     void remove(size_t id);
+
+    /// Purge everything that has not been used since the last mark
+    /// and set a new mark.
+    void purgeAndMark();
 
     // ServantLocator API
     virtual Ice::ObjectPtr locate(Ice::Current const & cur,

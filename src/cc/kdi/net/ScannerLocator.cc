@@ -20,9 +20,11 @@
 
 #include <kdi/net/ScannerLocator.h>
 #include <warp/strutil.h>
+#include <ex/exception.h>
 
 using namespace kdi;
 using namespace kdi::net;
+using namespace ex;
 
 namespace {
 
@@ -38,21 +40,42 @@ namespace {
 // ScannerLocator
 //----------------------------------------------------------------------------
 ScannerLocator::ScannerLocator(size_t nObjects) :
-    cache(nObjects) {}
+    cache(nObjects+1),
+    mark(0)
+{
+}
 
 size_t ScannerLocator::add(size_t id, Ice::ObjectPtr const & ptr)
 {
+    if(id == size_t(-1))
+        raise<RuntimeError>("can't have scanner ID -1");
+
     lock_t lock(mutex);
     Ice::ObjectPtr * p = cache.get(id);
     *p = ptr;
     cache.release(p);
-    return cache.size();
+    return cache.size() - 1;
 }
 
 void ScannerLocator::remove(size_t id)
 {
+    if(id == size_t(-1))
+        raise<RuntimeError>("can't have scanner ID -1");
+
     lock_t lock(mutex);
     cache.remove(id);
+}
+
+void ScannerLocator::purgeAndMark()
+{
+    lock_t lock(mutex);
+    if(mark)
+    {
+        cache.removeUntil(mark);
+        cache.release(mark);
+        mark = 0;
+    }
+    mark = cache.get(size_t(-1));
 }
 
 Ice::ObjectPtr ScannerLocator::locate(Ice::Current const & cur,
@@ -86,5 +109,10 @@ void ScannerLocator::finished(Ice::Current const & cur,
 void ScannerLocator::deactivate(std::string const & category)
 {
     lock_t lock(mutex);
+    if(mark)
+    {
+        cache.release(mark);
+        mark = 0;
+    }
     cache.removeAll();
 }
