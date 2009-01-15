@@ -54,7 +54,7 @@ size_t ScannerLocator::add(size_t id, Ice::ObjectPtr const & ptr)
     Ice::ObjectPtr * p = cache.get(id);
     *p = ptr;
     cache.release(p);
-    return cache.size() - 1;
+    return cache.size() - (mark ? 1 : 0);
 }
 
 void ScannerLocator::remove(size_t id)
