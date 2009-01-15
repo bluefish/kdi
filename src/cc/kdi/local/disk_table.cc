@@ -25,6 +25,7 @@
 #include <oort/fileio.h>
 #include <warp/file.h>
 #include <warp/adler.h>
+#include <warp/bloom_filter.h>
 #include <warp/log.h>
 #include <ex/exception.h>
 
@@ -94,7 +95,8 @@ namespace
         IntervalPoint<string> upperBound;
 
         // Column and timestamp ranges for filtering blocks
-        ScanPredicate::StringSetCPtr columns;
+        // ScanPredicate::StringSetCPtr columns;
+        vector<StringRange> columnFamilies;
         ScanPredicate::TimestampSetCPtr times;
 
         // Index data
@@ -137,6 +139,19 @@ namespace
                 // interval of times in this block, skip to the next block
                 if(!times->overlaps(timeInterval)) {
                     nextIndexIt = indexIt+1;
+                    goto nextBlock;
+                }
+            }
+
+            if(!columnFamilies.empty()) {
+                vector<StringRange>::const_iterator it = columnFamilies.begin();
+                while(it != columnFamilies.end()) {
+                    if(indexIt->hasColPrefix(*it)) break;
+                    ++it;
+                }
+                if(it == columnFamilies.end()) {
+                    // None of the required column prefixes are in this block
+                    nextIndexIt = indexIt+1; 
                     goto nextBlock;
                 }
             }
@@ -286,12 +301,15 @@ namespace
         /// Create a DiskScanner over a set of rows
         DiskScanner(FilePtr const & fp,
                     ScanPredicate::StringSetCPtr const & rows,
-                    //ScanPredicate::StringSetCPtr const & cols,
+                    //ScanPredicate::StringSetCPtr const & columns,
+                    vector<StringRange> const &columnFamilies,
                     ScanPredicate::TimestampSetCPtr const & times,
                     Record const & indexRec) :
             input(FileInput::make(fp)),
             rows(rows),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
+            //columns(columns),
+            columnFamilies(columnFamilies),
             times(times),
             indexRec(indexRec),
             indexIt(0),
@@ -448,10 +466,14 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
     CellStreamPtr diskScanner;
     if(ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate())
     {
+        //ScanPredicate::StringSetCPtr const & columns = pred.getColumnPredicate();
         ScanPredicate::TimestampSetCPtr const & times = pred.getTimePredicate();
 
+        vector<StringRange> columnFamilies;
+        pred.getColumnFamilies(columnFamilies);
+
         // Make a scanner that handles the row predicate
-        diskScanner.reset(new DiskScanner(fp, rows, times, indexRec));
+        diskScanner.reset(new DiskScanner(fp, rows, columnFamilies, times, indexRec));
     }
     else
     {

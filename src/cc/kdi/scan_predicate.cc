@@ -637,7 +637,7 @@ bool ScanPredicate::getColumnFamilies(vector<warp::StringRange> &fams) const
         }
     }
     
-    return true;
+    return !fams.empty();
 }
 
 //----------------------------------------------------------------------------

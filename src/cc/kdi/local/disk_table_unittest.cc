@@ -50,7 +50,7 @@ namespace {
             memTable(MemoryTable::create(false)),
             blockSz(blockSz)
         {
-            DiskTableWriterV1 out(128);
+            DiskTableWriterV1 out(blockSz);
             out.open("memfs:cheater");
             out.close();
 
@@ -325,14 +325,19 @@ BOOST_AUTO_UNIT_TEST(rowscan_test)
 
 BOOST_AUTO_UNIT_TEST(colscan_test)
 {
-    TablePtr tbl(new CheaterDiskTable(256));
-    fillColFamilyTestTable(tbl, 1000, 2, 30, 1, "%03d");
+    TablePtr tbl(new CheaterDiskTable(33));
+    fillColFamilyTestTable(tbl, 30, 30, 2, 1, "%03d");
 
-    BOOST_CHECK_EQUAL(countCells(tbl->scan()), 60000u);
+    BOOST_CHECK_EQUAL(countCells(tbl->scan()), 1800u);
+
+    BOOST_CHECK_EQUAL(
+        countCells(tbl->scan("row > 'a' and column ~= 'not-a-fam:'")),
+        0u
+    );
 
     BOOST_CHECK_EQUAL(
         countCells(tbl->scan("row > 'a' and column ~= 'fam-001:'")),
-        30000u
+        60u
     );
 }
 
