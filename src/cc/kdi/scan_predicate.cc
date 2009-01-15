@@ -597,27 +597,20 @@ StringRange ScanPredicate::getColumnFamily(IntervalPoint<string> const & colPoin
     if(colPoint.isLowerBound()) {
         if(sep < s.end()) {
             return StringRange(s.begin(), sep);
-        } else {
-            return StringRange();
         }
-    } 
-
-    if(colPoint.isUpperBound()) {
+    } else { // Upper bound
         if(sep == s.end()-1 && colPoint.isExclusive()) {
             return StringRange();
         } else if(sep < s.end()) {
             return StringRange(s.begin(), sep);
         } else if(colPoint.isExclusive()) {
             sep = find(s.begin(), s.end(), ';');
-            if(sep == s.end()-1) { 
+            if(sep == s.end()-1) {
                 return StringRange(s.begin(), sep);
             }
-        } else {
-            return StringRange();
         }
     }
-
-    return colPoint.getValue();
+    return StringRange();
 }
 
 bool ScanPredicate::getColumnFamilies(vector<warp::StringRange> &fams) const
@@ -640,7 +633,6 @@ bool ScanPredicate::getColumnFamilies(vector<warp::StringRange> &fams) const
 
         // Add to the column families if not already there
         if(find(fams.begin(), fams.end(), upper) == fams.end()) {
-            std::cerr << "adding column family!! -- " << upper << std::endl;
             fams.push_back(upper);
         }
     }
