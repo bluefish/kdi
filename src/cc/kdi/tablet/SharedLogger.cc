@@ -411,7 +411,7 @@ void SharedLogger::flush(lock_t & lock)
     //log("Flushing commit buffer");
 
     // Push the buffer into the Commit thread.  If this fails, it's
-    // because the queue is full and waits have been canceled due to
+    // because the queue is full and waits have been cancelled due to
     // an error.
     if(!commitQueue.push(commitBuffer))
         raise<RuntimeError>("push to commit queue failed");
@@ -461,7 +461,7 @@ void SharedLogger::commitLoop()
 
             // Push the group to the Serialize thread.  If this
             // fails, it's because the queue is full and waits
-            // have been canceled due to an error.  However, the
+            // have been cancelled due to an error.  However, the
             // program should terminate before we hit this.
             if(!serializeQueue.push(tableGroup))
                 raise<RuntimeError>("push to serialize queue failed");
