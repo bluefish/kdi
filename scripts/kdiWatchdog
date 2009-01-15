@@ -202,7 +202,8 @@ def keepServerUp(pidFile, startCmd):
 def main():
     import optparse
     op = optparse.OptionParser()
-    op.add_option('-T','--table',default='kdi:WATCHDOG',help='Watchdog table URI')
+    op.add_option('-n','--name',default='WATCHDOG',help='Watchdog table name (not URI!)')
+    op.add_option('-P','--port',default='34177',help='Watchdog table port')
     op.add_option('-k','--kdi',help='Path to KDI control script')
     op.add_option('-s','--kdiScan',help='Path to kdiScan binary')
     op.add_option('-l','--kdiLoad',help='Path to kdiLoad binary')
@@ -238,9 +239,12 @@ def main():
     if not opt.pidfile:
         op.error('need --pidfile')
 
-    scanCmd = "ulimit -c 0; %s -c '%s' >/dev/null 2>&1 </dev/null" % (opt.kdiScan, opt.table)
-    loadCmd = "ulimit -c 0; echo '(\"a\",\"b\",@0,\"c\")' | %s -t '%s' - >/dev/null 2>&1" % (opt.kdiLoad, opt.table)
-    startCmd = "%s start" % opt.kdi
+    table = 'kdi://localhost:%s/%s' % (opt.port, opt.name)
+    instanceDir = os.path.dirname(opt.pidfile)
+
+    scanCmd = "ulimit -c 0; %s -c '%s' >/dev/null 2>&1 </dev/null" % (opt.kdiScan, table)
+    loadCmd = "ulimit -c 0; echo '(\"a\",\"b\",@0,\"c\")' | %s -t '%s' - >/dev/null 2>&1" % (opt.kdiLoad, table)
+    startCmd = "%s -d %s -p %s start" % (opt.kdi, instanceDir, opt.port)
 
     log('scan: %s' % scanCmd)
     log('load: %s' % loadCmd)

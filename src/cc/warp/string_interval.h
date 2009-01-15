@@ -28,6 +28,11 @@
 
 namespace warp {
 
+    /// Get the next string in a lexicographical ordering that is no
+    /// longer than the given prefix.
+    /// @returns true if such a string exists
+    bool getPrefixSuccessor(strref_t prefix, std::string & result);
+
     /// Return an interval that contains all the strings that start
     /// with the given prefix.
     Interval<std::string> makePrefixInterval(strref_t prefix);

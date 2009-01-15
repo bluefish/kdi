@@ -80,7 +80,6 @@ class warp::LruCache
     pool_t pool;
     lru_t lru;
 
-    size_t nItems;
     size_t maxItems;
 
     /// Flush least recently used items with no outstanding
@@ -89,7 +88,7 @@ class warp::LruCache
     void flushToSize(size_t targetSize)
     {
         typename lru_t::iterator i = lru.begin();
-        while(i != lru.end() && nItems > targetSize)
+        while(i != lru.end() && index.size() > targetSize)
         {
             if(i->refCount == 0)
                 removeItem(&*i++);
@@ -105,9 +104,6 @@ class warp::LruCache
         
         // Release item
         pool.release(item);
-
-        // Decrement item count
-        --nItems;
     }
 
 public:
@@ -115,8 +111,23 @@ public:
     /// can temporarily grow larger than the maxSize if clients are
     /// slow in releasing cached objects.
     explicit LruCache(size_t maxItems) :
-        nItems(0), maxItems(maxItems)
+        maxItems(maxItems)
     {
+    }
+
+    /// Return true iff the cache contains an element for the given
+    /// key.  This will not change the LRU ordering or insert new
+    /// items.  It just indicates that a call to get() for the same
+    /// item will return a previously existing item.
+    bool contains(key_t const & key) const
+    {
+        return index.find(key) != index.end();
+    }
+
+    /// Return the number of items in the cache.
+    size_t size() const
+    {
+        return index.size();
     }
 
     /// Get an item out of the cache.  If the key is already in the
@@ -133,13 +144,12 @@ public:
         if(i == index.end())
         {
             // Release unused items until cache is under budget
-            if(nItems >= maxItems)
+            if(index.size() >= maxItems)
                 flushToSize(maxItems-1);
 
             // Create a new item
-            i = index.insert(make_pair(key, pool.get())).first;
+            i = index.insert(std::make_pair(key, pool.get())).first;
             i->second->indexIt = i;
-            ++nItems;
         }
 
         // Increment reference count
@@ -187,8 +197,39 @@ public:
             item->removed = true;
 
         // Decrement reference count and maybe remove item
-        if(--item->refCount == 0 && (item->removed || nItems > maxItems))
+        if(--item->refCount == 0 && (item->removed || index.size() > maxItems))
             removeItem(item);
+    }
+
+    /// Remove all items from the cache.  This is equivalent to
+    /// calling remove() on every key in the cache.  Like remove(),
+    /// the items will not actually be removed until all references to
+    /// it have been released.  Subsequent get() calls will clear the
+    /// removal flag.
+    void removeAll()
+    {
+        flushToSize(0);
+    }
+
+    /// Mark items for removal which are less recently used than the
+    /// given mark.
+    void removeUntil(value_t * mark)
+    {
+        // Recover the item pointer from the value
+        Item * item = Item::castFromValue(mark);
+        
+        // Remove items until we find the mark
+        typename lru_t::iterator i = lru.begin();
+        while(i != lru.end() && &*i != item)
+        {
+            if(i->refCount == 0)
+                removeItem(&*i++);
+            else
+            {
+                i->removed = true;
+                ++i;
+            }
+        }
     }
 };
 

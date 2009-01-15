@@ -19,7 +19,8 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/net/TableManagerI.h>
-#include <kdi/net/TimeoutLocator.h>
+#include <kdi/net/TableLocator.h>
+#include <kdi/net/ScannerLocator.h>
 #include <warp/options.h>
 #include <warp/fs.h>
 #include <warp/filestream.h>
@@ -77,6 +78,7 @@ namespace {
         tablet::WorkQueuePtr workQueue;
         TablePtr metaTable;
         std::string server;
+        ScannerLocator * locator;
 
         boost::scoped_ptr<tablet::TabletGc> gc;
         boost::scoped_ptr<boost::thread> gcThread;
@@ -91,24 +93,33 @@ namespace {
             while(!gcExit)
             {
                 gcCond.timed_wait(lock, makeTimeout(15*60)); // 15 min
+
                 if(gcExit)
                     break;
 
                 lock.unlock();
+
+                // Run Tablet GC
                 gc->run();
+
+                // Run Scanner GC
+                locator->purgeAndMark();
+
                 lock.lock();
             }
         }
 
     public:
         SuperTabletServer(std::string const & root,
-                          std::string const & server) :
+                          std::string const & server,
+                          ScannerLocator * locator) :
             metaConfigMgr(new tablet::MetaConfigManager(root, server)),
             tracker(new tablet::FileTracker),
             logger(new tablet::SharedLogger(metaConfigMgr, tracker)),
             compactor(new tablet::SharedCompactor),
             workQueue(new tablet::WorkQueue(1)),
             server(server),
+            locator(locator),
             gcExit(false)
         {
             log("SuperTabletServer %p: created", this);
@@ -253,25 +264,35 @@ namespace {
                 pid.close();
             }
 
+            // Make scanner locator
+            ScannerLocator * scannerLocator = new ScannerLocator(200);
+
             // Create table server
+            //   -- hack: tossing the scannerLocator in here so we can
+            //   -- have it expire old scanners on the same thread as
+            //   -- the Tablet GC.  It doesn't really belong here.
             boost::shared_ptr<SuperTabletServer> server(
                 new SuperTabletServer(
-                    tableRoot, getHostName()));
+                    tableRoot, getHostName(), scannerLocator));
 
             // Create adapter
             Ice::CommunicatorPtr ic = communicator();
             Ice::ObjectAdapterPtr adapter
                 = ic->createObjectAdapter("TableAdapter");
 
-            // Create locator
-            TimeoutLocatorPtr locator = new TimeoutLocator(
+            // Create table locator
+            TableLocator * tableLocator = new TableLocator(
                 boost::bind(
                     &SuperTabletServer::makeTable,
-                    server, _1));
-            adapter->addServantLocator(locator, "");
+                    server, _1),
+                scannerLocator);
+
+            // Install locators
+            adapter->addServantLocator(scannerLocator, "scan");
+            adapter->addServantLocator(tableLocator, "table");
 
             // Create TableManager object
-            Ice::ObjectPtr object = new ::kdi::net::details::TableManagerI(locator);
+            Ice::ObjectPtr object = new ::kdi::net::details::TableManagerI;
             adapter->add(object, ic->stringToIdentity("TableManager"));
 
             // Run server

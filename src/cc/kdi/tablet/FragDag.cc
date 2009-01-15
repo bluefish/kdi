@@ -313,32 +313,32 @@ FragDag::replaceInternal(Tablet * tablet,
                          fragment_vec const & adjFragments,
                          FragmentPtr const & newFragment)
 {
-    log("FragDag: updating %s", tablet->getPrettyName());
+    //log("FragDag: updating %s", tablet->getPrettyName());
 
     assert(!adjFragments.empty());
     assert(filterTabletFragments(adjFragments, tablet).size() == adjFragments.size());
 
-    FragmentPtr parent = getParent(adjFragments.front(), tablet);
-    FragmentPtr child = getChild(adjFragments.back(), tablet);
+    //FragmentPtr parent = getParent(adjFragments.front(), tablet);
+    //FragmentPtr child = getChild(adjFragments.back(), tablet);
 
     // Remove fragments and tablet from each other's active sets.
-    log("FragDag: parent: %s", parent ? parent->getFragmentUri() : "NULL");
+    //log("FragDag: parent: %s", parent ? parent->getFragmentUri() : "NULL");
     for(fragment_vec::const_iterator f = adjFragments.begin();
         f != adjFragments.end(); ++f)
     {
-        log("FragDag: .. %d: %s", f - adjFragments.begin(), (*f)->getFragmentUri());
+        //log("FragDag: .. %d: %s", f - adjFragments.begin(), (*f)->getFragmentUri());
 
         activeTablets[*f].erase(tablet);
         activeFragments[tablet].erase(*f);
     }
-    log("FragDag:  child: %s", child ? child->getFragmentUri() : "NULL");
+    //log("FragDag:  child: %s", child ? child->getFragmentUri() : "NULL");
 
     // Are we doing a replacement or deletion?
     if(newFragment)
     {
         // Replacement: update graph by splicing fragment into place
-        log("FragDag: replacing %d fragment(s) with %s",
-            adjFragments.size(), newFragment->getFragmentUri());
+        //log("FragDag: replacing %d fragment(s) with %s",
+        //    adjFragments.size(), newFragment->getFragmentUri());
 
         // Add new fragment to active lists
         activeFragments[tablet].insert(newFragment);
@@ -351,7 +351,7 @@ FragDag::replaceInternal(Tablet * tablet,
     else
     {
         // Deletion: update graph by splicing nothing into place
-        log("FragDag: removing %d fragment(s)", adjFragments.size());
+        //log("FragDag: removing %d fragment(s)", adjFragments.size());
 
         // Internal graph should be consistent now.  Update the
         // tablet.

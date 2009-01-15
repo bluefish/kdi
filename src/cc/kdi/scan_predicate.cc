@@ -659,6 +659,24 @@ namespace {
     }
 
     template <class T>
+    bool isPrefixBound(IntervalPoint<T> const & lb,
+                       IntervalPoint<T> const & ub)
+    {
+        return false;
+    }
+
+    template <>
+    bool isPrefixBound(IntervalPoint<std::string> const & lb,
+                       IntervalPoint<std::string> const & ub)
+    {
+        std::string successor;
+        return (lb.isInclusive() &&
+                ub.isExclusive() &&
+                getPrefixSuccessor(lb.getValue(), successor) &&
+                ub.getValue() == successor);
+    }
+
+    template <class T>
     bool outputInterval(ostream & out, string const & field,
                         IntervalPoint<T> const & lb,
                         IntervalPoint<T> const & ub)
@@ -680,6 +698,12 @@ namespace {
                lb.isInclusive() && ub.isInclusive())
             {
                 out << field << " = ";
+                outputValue(out, lb.getValue());
+                return true;
+            }
+            else if(isPrefixBound(lb, ub))
+            {
+                out << field << " ~= ";
                 outputValue(out, lb.getValue());
                 return true;
             }

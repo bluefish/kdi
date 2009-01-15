@@ -56,7 +56,7 @@ bool Scanner::get(Cell & x)
     // Check to see if we need to open the scanner
     if(!cells)
     {
-        log("Scanner: reopening scan on table %s: %s", tablet->getPrettyName(), pred);
+        //log("Scanner: reopening scan on table %s: %s", tablet->getPrettyName(), pred);
 
         // If we have a last cell, we need to clip our scan predicate
         // to last row, then fast forward the scan to the last cell.

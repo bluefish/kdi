@@ -648,6 +648,15 @@ void SharedCompactor::compact(fragment_set const & fragments)
     for(range_vec::const_iterator i = rangeMap.begin();
         i != rangeMap.end(); ++i)
     {
+        {
+            lock_t lock(mutex);
+            if(cancel)
+            {
+                log("Compact thread: cancelled");
+                return;
+            }
+        }
+
         Interval<string> const & range = (*i)->range;
         fragment_vec const & adjSeq = (*i)->fragments;
         bool filterErasures = (*i)->isRooted;
