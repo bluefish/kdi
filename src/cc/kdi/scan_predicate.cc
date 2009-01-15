@@ -587,6 +587,67 @@ ScanPredicate ScanPredicate::clipRows(Interval<string> const & span) const
     return pred;
 }
 
+StringRange ScanPredicate::getColumnFamily(IntervalPoint<string> const & colPoint) const {
+    if(colPoint.isInfinite())
+        return StringRange();
+
+    strref_t s = colPoint.getValue();
+    char const *sep = find(s.begin(), s.end(), ':');
+
+    if(colPoint.isLowerBound()) {
+        if(sep < s.end()) {
+            return StringRange(s.begin(), sep);
+        } else {
+            return StringRange();
+        }
+    } 
+
+    if(colPoint.isUpperBound()) {
+        if(sep == s.end()-1 && colPoint.isExclusive()) {
+            return StringRange();
+        } else if(sep < s.end()) {
+            return StringRange(s.begin(), sep);
+        } else if(colPoint.isExclusive()) {
+            sep = find(s.begin(), s.end(), ';');
+            if(sep == s.end()-1) { 
+                return StringRange(s.begin(), sep);
+            }
+        } else {
+            return StringRange();
+        }
+    }
+
+    return colPoint.getValue();
+}
+
+bool ScanPredicate::getColumnFamilies(vector<warp::StringRange> &fams) const
+{
+    if(!columns) return false;
+
+    IntervalSet<string>::const_iterator colIt = columns->begin();
+    while(colIt != columns->end()) {
+        strref_t lower = getColumnFamily(*colIt++);
+        if(lower.empty()) {
+            fams.clear();
+            return false;
+        }
+
+        strref_t upper = getColumnFamily(*colIt++);
+        if(upper != lower) {
+            fams.clear();
+            return false;
+        }
+
+        // Add to the column families if not already there
+        if(find(fams.begin(), fams.end(), upper) == fams.end()) {
+            std::cerr << "adding column family!! -- " << upper << std::endl;
+            fams.push_back(upper);
+        }
+    }
+    
+    return true;
+}
+
 //----------------------------------------------------------------------------
 // Output
 //----------------------------------------------------------------------------

@@ -207,6 +207,10 @@ public:
     /// Return a copy of this ScanPredicate with the row predicate
     /// clipped to the given span.
     ScanPredicate clipRows(warp::Interval<std::string> const & span) const;
+
+    warp::StringRange getColumnFamily(warp::IntervalPoint<std::string> const & colPoint) const;
+
+    bool getColumnFamilies(std::vector<warp::StringRange> &families) const;
 };
 
 namespace kdi {
