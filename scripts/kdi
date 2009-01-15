@@ -114,7 +114,7 @@ EOF
 	export LD_LIBRARY_PATH=$BASE/bin:$LD_LIBRARY_PATH
 	export PATH=$BASE/bin:$PATH
 
-	kdiWatchdog --table kdi://localhost:$PORT/WATCHDOG --pidfile $BASE/kdi.pid \
+	kdiWatchdog --port $PORT --pidfile $BASE/kdi.pid \
 	    >> $BASE/watchdog.log 2>&1 </dev/null &
 	echo $! > $BASE/watchdog.pid
 	;;
