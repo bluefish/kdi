@@ -23,11 +23,9 @@
 
 #include <warp/builder.h>
 #include <warp/call_queue.h>
-#include <kdi/net/TimeoutLocator.h>
 #include <kdi/marshal/cell_block_builder.h>
 #include <kdi/table.h>
 #include <kdi/scan_predicate.h>
-#include <kdi/timestamp.h>
 #include <kdi/LimitedScanner.h>
 #include <boost/noncopyable.hpp>
 #include <Ice/Identity.h>
@@ -48,6 +46,10 @@ namespace details {
     typedef IceUtil::Handle<TableManagerI> TableManagerIPtr;
 
 } // namespace details
+
+    // Forward
+    class ScannerLocator;
+
 } // namespace net
 } // namespace kdi
 
@@ -64,21 +66,18 @@ class kdi::net::details::ScannerI
     warp::Builder builder;
     kdi::marshal::CellBlockBuilder cellBuilder;
 
-    kdi::Timestamp lastAccess;
-    TimeoutLocatorPtr locator;
+    ScannerLocator * locator;
 
 public:
     ScannerI(kdi::TablePtr const & table,
              kdi::ScanPredicate const & pred,
-             TimeoutLocatorPtr const & locator);
+             ScannerLocator * locator);
     ~ScannerI();
 
     virtual void getBulk(Ice::ByteSeq & cells, bool & lastBlock,
                          Ice::Current const & cur);
 
     virtual void close(Ice::Current const & cur);
-
-    kdi::Timestamp const & getLastAccess() const { return lastAccess; }
 };
 
 
@@ -90,13 +89,14 @@ class kdi::net::details::TableI
       private boost::noncopyable
 {
     kdi::TablePtr table;
+    std::string tablePath;
 
-    kdi::Timestamp lastAccess;
-    TimeoutLocatorPtr locator;
+    ScannerLocator * locator;
 
 public:
     TableI(kdi::TablePtr const & table,
-           TimeoutLocatorPtr const & locator);
+           std::string const & tablePath,
+           ScannerLocator * locator);
     ~TableI();
 
     virtual void applyMutations(Ice::ByteSeq const & cells,
@@ -106,8 +106,6 @@ public:
 
     virtual ScannerPrx scan(std::string const & predicate,
                             Ice::Current const & cur);
-
-    kdi::Timestamp const & getLastAccess() const { return lastAccess; }
 };
 
 
@@ -118,10 +116,8 @@ class kdi::net::details::TableManagerI
     : virtual public kdi::net::details::TableManager,
       private boost::noncopyable
 {
-    TimeoutLocatorPtr locator;
-
 public:
-    explicit TableManagerI(TimeoutLocatorPtr const & locator);
+    TableManagerI();
     ~TableManagerI();
 
     virtual TablePrx openTable(std::string const & path,

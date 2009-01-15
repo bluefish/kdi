@@ -19,7 +19,8 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/net/TableManagerI.h>
-#include <kdi/net/TimeoutLocator.h>
+#include <kdi/net/TableLocator.h>
+#include <kdi/net/ScannerLocator.h>
 #include <warp/options.h>
 #include <warp/fs.h>
 #include <warp/filestream.h>
@@ -263,15 +264,18 @@ namespace {
             Ice::ObjectAdapterPtr adapter
                 = ic->createObjectAdapter("TableAdapter");
 
-            // Create locator
-            TimeoutLocatorPtr locator = new TimeoutLocator(
+            // Create locators
+            ScannerLocator * scannerLocator = new ScannerLocator(200);
+            TableLocator * tableLocator = new TableLocator(
                 boost::bind(
                     &SuperTabletServer::makeTable,
-                    server, _1));
-            adapter->addServantLocator(locator, "");
+                    server, _1),
+                scannerLocator);
+            adapter->addServantLocator(scannerLocator, "scan");
+            adapter->addServantLocator(tableLocator, "table");
 
             // Create TableManager object
-            Ice::ObjectPtr object = new ::kdi::net::details::TableManagerI(locator);
+            Ice::ObjectPtr object = new ::kdi::net::details::TableManagerI;
             adapter->add(object, ic->stringToIdentity("TableManager"));
 
             // Run server

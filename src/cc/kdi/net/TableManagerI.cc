@@ -19,6 +19,7 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/net/TableManagerI.h>
+#include <kdi/net/ScannerLocator.h>
 #include <kdi/cell_filter.h>
 #include <kdi/marshal/cell_block.h>
 #include <kdi/marshal/cell_block_builder.h>
@@ -31,9 +32,9 @@
 #include <boost/bind.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/format.hpp>
+#include <boost/thread/mutex.hpp>
+#include <boost/lexical_cast.hpp>
 #include <Ice/ObjectAdapter.h>
-#include <Ice/ServantLocator.h>
-#include <IceUtil/UUID.h>
 #include <iostream>
 #include <map>
 
@@ -59,6 +60,14 @@ namespace
         SCAN_THRESHOLD  =   2 << 20       //   2 MB
     };
 
+    size_t getScannerId()
+    {
+        static boost::mutex mutex;
+        boost::mutex::scoped_lock lock(mutex);
+
+        static size_t nextId = 0;
+        return nextId++;
+    }
 }
 
 
@@ -67,10 +76,9 @@ namespace
 //----------------------------------------------------------------------------
 ScannerI::ScannerI(kdi::TablePtr const & table,
                    kdi::ScanPredicate const & pred,
-                   TimeoutLocatorPtr const & locator) :
+                   kdi::net::ScannerLocator * locator) :
     limit(new LimitedScanner(SCAN_THRESHOLD)),
     cellBuilder(&builder),
-    lastAccess(kdi::Timestamp::now()),
     locator(locator)
 {
     //log("ScannerI %p: created", this);
@@ -99,8 +107,6 @@ ScannerI::~ScannerI()
 void ScannerI::getBulk(Ice::ByteSeq & cells, bool & lastBlock,
                        Ice::Current const & cur)
 {
-    lastAccess = kdi::Timestamp::now();
-
     builder.reset();
     cellBuilder.reset();
 
@@ -130,7 +136,9 @@ void ScannerI::getBulk(Ice::ByteSeq & cells, bool & lastBlock,
 
 void ScannerI::close(Ice::Current const & cur)
 {
-    locator->remove(cur.id);
+    size_t id;
+    if(parseInt(id, cur.id.name))
+        locator->remove(id);
 }
 
 
@@ -138,13 +146,13 @@ void ScannerI::close(Ice::Current const & cur)
 // TableI
 //----------------------------------------------------------------------------
 TableI::TableI(kdi::TablePtr const & table,
-               TimeoutLocatorPtr const & locator) :
+               std::string const & tablePath,
+               kdi::net::ScannerLocator * locator) :
     table(table),
-    lastAccess(kdi::Timestamp::now()),
+    tablePath(tablePath),
     locator(locator)
 {
     //log("TableI %p: created", this);
-
     assert(table);
     assert(locator);
 }
@@ -169,8 +177,6 @@ void TableI::applyMutations(Ice::ByteSeq const & cells,
 {
     using kdi::marshal::CellBlock;
     using kdi::marshal::CellData;
-
-    lastAccess = kdi::Timestamp::now();
 
     assert(!cells.empty());
 
@@ -197,29 +203,29 @@ void TableI::applyMutations(Ice::ByteSeq const & cells,
 
 void TableI::sync(Ice::Current const & cur)
 {
-    lastAccess = kdi::Timestamp::now();
-
     table->sync();
 }
 
 ScannerPrx TableI::scan(std::string const & predicate,
                         Ice::Current const & cur)
 {
-    //log("TableI::scan(%s)", predicate);
-
-    lastAccess = kdi::Timestamp::now();
-
     // Parse predicate
     ScanPredicate pred(predicate);
+
+    // Get unique scanner ID
+    size_t scannerId = getScannerId();
+
+    // Report
+    log("Scanner %d (%s): %s", scannerId, tablePath, pred);
 
     // Make identity
     Ice::Identity id;
     id.category = "scan";
-    id.name = IceUtil::generateUUID();
+    id.name = boost::lexical_cast<string>(scannerId);
 
     // Make ICE object for scanner
     ScannerIPtr obj = new ScannerI(table, pred, locator);
-    locator->add(id, obj, 7200);
+    locator->add(scannerId, obj);
 
     return ScannerPrx::uncheckedCast(cur.adapter->createProxy(id));
 }
@@ -228,8 +234,7 @@ ScannerPrx TableI::scan(std::string const & predicate,
 //----------------------------------------------------------------------------
 // TableManagerI
 //----------------------------------------------------------------------------
-TableManagerI::TableManagerI(TimeoutLocatorPtr const & locator) :
-    locator(locator)
+TableManagerI::TableManagerI()
 {
     //log("TableManagerI %p: created", this);
 }
