@@ -40,12 +40,13 @@ namespace {
 ScannerLocator::ScannerLocator(size_t nObjects) :
     cache(nObjects) {}
 
-void ScannerLocator::add(size_t id, Ice::ObjectPtr const & ptr)
+size_t ScannerLocator::add(size_t id, Ice::ObjectPtr const & ptr)
 {
     lock_t lock(mutex);
     Ice::ObjectPtr * p = cache.get(id);
     *p = ptr;
     cache.release(p);
+    return cache.size();
 }
 
 void ScannerLocator::remove(size_t id)

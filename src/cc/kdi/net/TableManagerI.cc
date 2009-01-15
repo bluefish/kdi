@@ -138,7 +138,10 @@ void ScannerI::close(Ice::Current const & cur)
 {
     size_t id;
     if(parseInt(id, cur.id.name))
+    {
+        log("Scan: close scanner %d", id);
         locator->remove(id);
+    }
 }
 
 
@@ -215,9 +218,6 @@ ScannerPrx TableI::scan(std::string const & predicate,
     // Get unique scanner ID
     size_t scannerId = getScannerId();
 
-    // Report
-    log("Scanner %d (%s): %s", scannerId, tablePath, pred);
-
     // Make identity
     Ice::Identity id;
     id.category = "scan";
@@ -225,7 +225,11 @@ ScannerPrx TableI::scan(std::string const & predicate,
 
     // Make ICE object for scanner
     ScannerIPtr obj = new ScannerI(table, pred, locator);
-    locator->add(scannerId, obj);
+    size_t nActive = locator->add(scannerId, obj);
+
+    // Report
+    log("Scan: open scanner %d on %s pred=(%s), %d active",
+        scannerId, tablePath, pred, nActive);
 
     return ScannerPrx::uncheckedCast(cur.adapter->createProxy(id));
 }

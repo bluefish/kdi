@@ -47,8 +47,8 @@ class kdi::net::ScannerLocator
 public:
     explicit ScannerLocator(size_t nObjects);
 
-    /// Add a scanner to the cache
-    void add(size_t id, Ice::ObjectPtr const & ptr);
+    /// Add a scanner to the cache -- returns the number of active scanners
+    size_t add(size_t id, Ice::ObjectPtr const & ptr);
 
     /// Remove a scanner from the cache
     void remove(size_t id);
