@@ -54,15 +54,15 @@ BOOST_AUTO_UNIT_TEST(parse_test)
 
     // Row predicates
     BOOST_CHECK_EQUAL(p("  row < 'foo'  "), "row < \"foo\"");
-    BOOST_CHECK_EQUAL(p("row ~= 'foo'"), "\"foo\" <= row < \"fop\"");
-    BOOST_CHECK_EQUAL(p("row ~= 'foo\\xff'"), "\"foo\\xff\" <= row < \"fop\"");
+    BOOST_CHECK_EQUAL(p("row ~= 'foo'"), "row ~= \"foo\"");
+    BOOST_CHECK_EQUAL(p("row ~= 'foo\\xff'"), "row ~= \"foo\\xff\"");
     BOOST_CHECK_EQUAL(p("row ~= ''"), "row >= \"\"");
 
     // Documentation examples
     BOOST_CHECK_EQUAL(p("row = 'com.foo.www/index.html' and history = 1"),
                       "row = \"com.foo.www/index.html\" and history = 1");
     BOOST_CHECK_EQUAL(p("row ~= 'com.foo' and time >= 1999-01-02T03:04:05.678901Z"),
-                      "\"com.foo\" <= row < \"com.fop\" and time >= 1999-01-02T03:04:05.678901Z");
+                      "row ~= \"com.foo\" and time >= 1999-01-02T03:04:05.678901Z");
     BOOST_CHECK_EQUAL(p("\"word:cat\" < column <= \"word:dog\" or column >= \"word:fish\""),
                       "\"word:cat\" < column <= \"word:dog\" or column >= \"word:fish\"");
     BOOST_CHECK_EQUAL(p("time = @0"), "time = @0");
@@ -72,7 +72,7 @@ BOOST_AUTO_UNIT_TEST(parse_test)
     BOOST_CHECK_THROW(p("row = 'foo\\'"), ValueError);
 
     // Check basic escapes
-    BOOST_CHECK_EQUAL(p("row ~= '\\x00'"), "\"\\x00\" <= row < \"\\x01\"");
+    BOOST_CHECK_EQUAL(p("row ~= '\\x00'"), "row ~= \"\\x00\"");
     BOOST_CHECK_EQUAL(p("'com.v\\xe0' <= row < 'com.xp'"), "\"com.v\\xe0\" <= row < \"com.xp\"");
 
     // This is hardly an exhaustive test suite...
