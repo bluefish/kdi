@@ -111,30 +111,32 @@ BOOST_AUTO_UNIT_TEST(clip_test)
 }
 
 namespace {
-    bool testColumnFamily(strref_t expr, size_t num_families) {
-        std::vector<warp::StringRange> families;
+    bool testColumnFamily(strref_t expr, bool has_families, size_t num_families) {
+        std::vector<StringRange> families;
         ScanPredicate pred(expr);
-        pred.getColumnFamilies(families);
-        return num_families == families.size();
+        bool got = pred.getColumnFamilies(families);
+        return (got == has_families &&
+                num_families == families.size());
     }
 }
 
 BOOST_AUTO_UNIT_TEST(column_family_test)
 {
-    BOOST_CHECK(testColumnFamily("", 0));
-    BOOST_CHECK(testColumnFamily("column = 'source:whitelist'", 1));
-    BOOST_CHECK(testColumnFamily("column = 'source:whitelist' or column = 'source:deepcrawl'", 1));
-    BOOST_CHECK(testColumnFamily("column = 'source:whitelist' or column = 'depth:1'", 2));
-    BOOST_CHECK(testColumnFamily("column ~= 'source:deepcrawl'", 1));
-    BOOST_CHECK(testColumnFamily("column ~= 'source:'", 1));
-    BOOST_CHECK(testColumnFamily("column ~= 'source'", 0));
-    BOOST_CHECK(testColumnFamily("column < 'source;'", 0));
-    BOOST_CHECK(testColumnFamily("'source:' < column < 'source;'", 1));
-    BOOST_CHECK(testColumnFamily("'source:a' < column < 'source:d'", 1));
-    BOOST_CHECK(testColumnFamily("'source:a' <= column < 'source:d'", 1));
-    BOOST_CHECK(testColumnFamily("'source:a' < column <= 'source:d'", 1));
-    BOOST_CHECK(testColumnFamily("'source:a' <= column <= 'source:d'", 1));
-    BOOST_CHECK(testColumnFamily("'source1:a' <= column <= 'source2:d'", 0));
-    BOOST_CHECK(testColumnFamily("column = 'source:whitelist' or column > 'source:whitelist'", 0));
-    BOOST_CHECK(testColumnFamily("column = 'source:whitelist' or column > 'zeta'", 0));
+    BOOST_CHECK(testColumnFamily("", false, 0));
+    BOOST_CHECK(testColumnFamily("'b' < column < 'a'", true, 0));
+    BOOST_CHECK(testColumnFamily("column = 'source:whitelist'", true, 1));
+    BOOST_CHECK(testColumnFamily("column = 'source:whitelist' or column = 'source:deepcrawl'", true, 1));
+    BOOST_CHECK(testColumnFamily("column = 'source:whitelist' or column = 'depth:1'", true, 2));
+    BOOST_CHECK(testColumnFamily("column ~= 'source:deepcrawl'", true, 1));
+    BOOST_CHECK(testColumnFamily("column ~= 'source:'", true, 1));
+    BOOST_CHECK(testColumnFamily("column ~= 'source'", false, 0));
+    BOOST_CHECK(testColumnFamily("column < 'source;'", false, 0));
+    BOOST_CHECK(testColumnFamily("'source:' < column < 'source;'", true, 1));
+    BOOST_CHECK(testColumnFamily("'source:a' < column < 'source:d'", true, 1));
+    BOOST_CHECK(testColumnFamily("'source:a' <= column < 'source:d'", true, 1));
+    BOOST_CHECK(testColumnFamily("'source:a' < column <= 'source:d'", true, 1));
+    BOOST_CHECK(testColumnFamily("'source:a' <= column <= 'source:d'", true, 1));
+    BOOST_CHECK(testColumnFamily("'source1:a' <= column <= 'source2:d'", false, 0));
+    BOOST_CHECK(testColumnFamily("column = 'source:whitelist' or column > 'source:whitelist'", false, 0));
+    BOOST_CHECK(testColumnFamily("column = 'source:whitelist' or column > 'zeta'", false, 0));
 }

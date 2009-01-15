@@ -1,18 +1,18 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
 // Created 2008-02-27
-// 
+//
 // This file is part of KDI.
-// 
+//
 // KDI is free software; you can redistribute it and/or modify it under the
 // terms of the GNU General Public License as published by the Free Software
 // Foundation; either version 2 of the License, or any later version.
-// 
+//
 // KDI is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -88,12 +88,12 @@ class StringIntervalParser
 {
 public:
     typedef std::pair<std::string, warp::Interval<string> > result_t;
-    
+
     template <typename ScannerT>
     std::ptrdiff_t
     operator()(ScannerT const & scan, result_t & r) const
     {
-        // STRING_INTERVAL := 
+        // STRING_INTERVAL :=
         //    STRING_FIELD INEQUALITY STRING_LITERAL |
         //    STRING_LITERAL INEQUALITY STRING_FIELD INEQUALITY STRING_LITERAL |
         //    STRING_FIELD EQUALS STRING_LITERAL |
@@ -109,7 +109,7 @@ public:
                   quoted_str_p[assign_a(s1)]
                 ) [ Assign1(r.second, i1, s1) ] |
                 ( quoted_str_p[assign_a(s1)] >>
-                  inequality_p[assign_a(i1)] >> 
+                  inequality_p[assign_a(i1)] >>
                   (str_p("row") | str_p("column"))[assign_a(r.first)] >>
                   inequality_p[assign_a(i2)] >>
                   quoted_str_p[assign_a(s2)]
@@ -136,9 +136,9 @@ private:
 
         Assign1(Interval<string> & ival, OperatorType const & op, string const & val) :
             ival(ival), op(op), val(val)
-        {            
+        {
         }
-        
+
         void operator()(char const * begin, char const * end) const
         {
             switch(op)
@@ -185,9 +185,9 @@ private:
                 Interval<string> & ival,
                 OperatorType const & op2, string const & val2) :
             ival(ival), op1(op1), op2(op2), val1(val1), val2(val2)
-        {            
+        {
         }
-        
+
         void operator()(char const * begin, char const * end) const
         {
             switch(op1)
@@ -254,12 +254,12 @@ class TimeIntervalParser
 {
 public:
     typedef std::pair<std::string, warp::Interval<int64_t> > result_t;
-    
+
     template <typename ScannerT>
     std::ptrdiff_t
     operator()(ScannerT const & scan, result_t & r) const
     {
-        // TIME_INTERVAL := 
+        // TIME_INTERVAL :=
         //    TIME_FIELD INEQUALITY TIME_LITERAL |
         //    TIME_LITERAL INEQUALITY TIME_FIELD INEQUALITY TIME_LITERAL |
         //    TIME_FIELD EQUALS TIME_LITERAL |
@@ -274,7 +274,7 @@ public:
                   timestamp_p[assign_a(t1)]
                 ) [ Assign1(r.second, i1, t1) ] |
                 ( timestamp_p[assign_a(t1)] >>
-                  inequality_p[assign_a(i1)] >> 
+                  inequality_p[assign_a(i1)] >>
                   str_p("time")[assign_a(r.first)] >>
                   inequality_p[assign_a(i2)] >>
                   timestamp_p[assign_a(t2)]
@@ -297,9 +297,9 @@ private:
 
         Assign1(Interval<int64_t> & ival, OperatorType const & op, int64_t const & val) :
             ival(ival), op(op), val(val)
-        {            
+        {
         }
-        
+
         void operator()(char const * begin, char const * end) const
         {
             switch(op)
@@ -342,9 +342,9 @@ private:
                 Interval<int64_t> & ival,
                 OperatorType const & op2, int64_t const & val2) :
             ival(ival), op1(op1), op2(op2), val1(val1), val2(val2)
-        {            
+        {
         }
-        
+
         void operator()(char const * begin, char const * end) const
         {
             switch(op1)
@@ -429,11 +429,11 @@ public:
 
 private:
     P const interval_p;
-    
+
     struct Union
     {
         result_t & result;
-        
+
         Union(result_t & result) :
             result(result) {}
 
@@ -443,7 +443,7 @@ private:
                 result.first = interval.first;
             else if(result.first != interval.first)
                 raise<ValueError>("cannot form disjunction of different field predicates");
-            
+
             result.second.add(interval.second);
         }
     };
@@ -587,34 +587,39 @@ ScanPredicate ScanPredicate::clipRows(Interval<string> const & span) const
     return pred;
 }
 
-StringRange ScanPredicate::getColumnFamily(IntervalPoint<string> const & colPoint) const {
-    if(colPoint.isInfinite())
-        return StringRange();
+namespace {
 
-    strref_t s = colPoint.getValue();
-    char const *sep = find(s.begin(), s.end(), ':');
-
-    if(colPoint.isLowerBound()) {
-        if(sep < s.end()) {
-            return StringRange(s.begin(), sep);
-        }
-    } else { // Upper bound
-        if(sep == s.end()-1 && colPoint.isExclusive()) {
+    StringRange getColumnFamily(IntervalPoint<string> const & colPoint) {
+        if(colPoint.isInfinite())
             return StringRange();
-        } else if(sep < s.end()) {
-            return StringRange(s.begin(), sep);
-        } else if(colPoint.isExclusive()) {
-            sep = find(s.begin(), s.end(), ';');
-            if(sep == s.end()-1) {
+
+        strref_t s = colPoint.getValue();
+        char const *sep = find(s.begin(), s.end(), ':');
+
+        if(colPoint.isLowerBound()) {
+            if(sep < s.end()) {
                 return StringRange(s.begin(), sep);
             }
+        } else { // Upper bound
+            if(sep == s.end()-1 && colPoint.isExclusive()) {
+                return StringRange();
+            } else if(sep < s.end()) {
+                return StringRange(s.begin(), sep);
+            } else if(colPoint.isExclusive()) {
+                sep = find(s.begin(), s.end(), ';');
+                if(sep == s.end()-1) {
+                    return StringRange(s.begin(), sep);
+                }
+            }
         }
+        return StringRange();
     }
-    return StringRange();
+
 }
 
-bool ScanPredicate::getColumnFamilies(vector<warp::StringRange> &fams) const
+bool ScanPredicate::getColumnFamilies(vector<StringRange> & fams) const
 {
+    fams.clear();
     if(!columns) return false;
 
     IntervalSet<string>::const_iterator colIt = columns->begin();
@@ -632,12 +637,13 @@ bool ScanPredicate::getColumnFamilies(vector<warp::StringRange> &fams) const
         }
 
         // Add to the column families if not already there
-        if(find(fams.begin(), fams.end(), upper) == fams.end()) {
+        if(fams.empty() || fams.back() != upper)
             fams.push_back(upper);
-        }
     }
-    
-    return !fams.empty();
+
+    // We have a containing set of families.  Note that the set may be
+    // empty if the column predicate was empty.
+    return true;
 }
 
 //----------------------------------------------------------------------------
@@ -685,7 +691,7 @@ namespace {
         {
             if(lb.isInfinite())
                 return false;
-            
+
             out << field
                 << (lb.isExclusive() ? " > " : " >= ");
             outputValue(out, lb.getValue());
