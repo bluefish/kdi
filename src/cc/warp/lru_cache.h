@@ -210,6 +210,27 @@ public:
     {
         flushToSize(0);
     }
+
+    /// Mark items for removal which are less recently used than the
+    /// given mark.
+    void removeUntil(value_t * mark)
+    {
+        // Recover the item pointer from the value
+        Item * item = Item::castFromValue(mark);
+        
+        // Remove items until we find the mark
+        typename lru_t::iterator i = lru.begin();
+        while(i != lru.end() && &*i != item)
+        {
+            if(i->refCount == 0)
+                removeItem(&*i++);
+            else
+            {
+                i->removed = true;
+                ++i;
+            }
+        }
+    }
 };
 
 #endif // WARP_LRU_CACHE_H
