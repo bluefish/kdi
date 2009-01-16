@@ -96,7 +96,7 @@ FragmentPtr DiskFragmentLoader::load(std::string const & uri) const
     log("DiskFragmentLoader: loading %s", uri);
     FragmentPtr ptr;
     try {
-        ptr.reset(new DiskFragment(uri));
+        ptr.reset(new DiskFragment(uri, tracker));
     }
     catch(std::exception const & ex) {
         // Load failed -- make an empty placeholder

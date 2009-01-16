@@ -59,6 +59,37 @@ using namespace warp;
 using namespace std;
 using namespace ex;
 
+#include <warp/StatTracker.h>
+#include <tr1/unordered_map>
+#include <boost/thread/mutex.hpp>
+
+namespace {
+
+    class MyTracker
+        : public warp::StatTracker
+    {
+        typedef tr1::unordered_map<std::string, int64_t> map_t;
+
+        map_t stats;
+        boost::mutex mutex;
+
+    public:
+        int64_t add(strref_t name, int64_t delta)
+        {
+            boost::mutex::scoped_lock lock(mutex);
+            return stats[name.toString()] += delta;
+        }
+
+        void report()
+        {
+            boost::mutex::scoped_lock lock(mutex);
+            for(map_t::const_iterator i = stats.begin();
+                i != stats.end(); ++i)
+                log("Stat: %s %d", i->first, i->second);
+        }
+    };
+
+}
 
 #include <kdi/tablet/CachedFragmentLoader.h>
 #include <kdi/tablet/CachedLogLoader.h>
@@ -79,9 +110,10 @@ namespace {
         SwitchedFragmentLoader                  switchedLoader;
 
     public:
-        LoaderAssembly(ConfigManagerPtr const & configMgr)
+        LoaderAssembly(warp::StatTracker * tracker,
+                       ConfigManagerPtr const & configMgr)
         {
-            diskLoader.reset(new DiskFragmentLoader);
+            diskLoader.reset(new DiskFragmentLoader(tracker));
             cachedDiskLoader.reset(new CachedFragmentLoader(diskLoader.get()));
             logWriter.reset(new DiskFragmentWriter(configMgr));
             cachedLogLoader.reset(
@@ -111,6 +143,8 @@ namespace {
 
     class SuperTabletServer
     {
+        MyTracker myTracker;
+
         tablet::MetaConfigManagerPtr metaConfigMgr;
         tablet::FileTrackerPtr tracker;
 
@@ -126,29 +160,36 @@ namespace {
         ScannerLocator * locator;
 
         boost::scoped_ptr<tablet::TabletGc> gc;
-        boost::scoped_ptr<boost::thread> gcThread;
-        boost::mutex gcMutex;
-        boost::condition gcCond;
-        bool gcExit;
 
-        void gcLoop()
+        boost::scoped_ptr<boost::thread> maintThread;
+        boost::mutex maintMutex;
+        boost::condition maintCond;
+        bool maintExit;
+
+        void maintLoop()
         {
-            boost::mutex::scoped_lock lock(gcMutex);
+            boost::mutex::scoped_lock lock(maintMutex);
 
-            while(!gcExit)
+            for(size_t iter = 1; !maintExit; ++iter)
             {
-                gcCond.timed_wait(lock, makeTimeout(15*60)); // 15 min
+                maintCond.timed_wait(lock, makeTimeout(60));
 
-                if(gcExit)
+                if(maintExit)
                     break;
 
                 lock.unlock();
 
-                // Run Tablet GC
-                gc->run();
+                if(iter % 15 == 0)
+                    // Run Tablet GC
+                    gc->run();
 
-                // Run Scanner GC
-                locator->purgeAndMark();
+                if(iter % 15 == 0)
+                    // Run Scanner GC
+                    locator->purgeAndMark();
+
+                if(iter % 1 == 0)
+                    // Run stat report
+                    myTracker.report();
 
                 lock.lock();
             }
@@ -160,7 +201,7 @@ namespace {
                           ScannerLocator * locator) :
             metaConfigMgr(new tablet::MetaConfigManager(root, server)),
             tracker(new tablet::FileTracker),
-            loader(new LoaderAssembly(metaConfigMgr)),
+            loader(new LoaderAssembly(&myTracker, metaConfigMgr)),
             loggerWriter(new DiskFragmentWriter(metaConfigMgr)),
             compactorWriter(new DiskFragmentWriter(metaConfigMgr)),
             logger(
@@ -176,7 +217,7 @@ namespace {
             workQueue(new tablet::WorkQueue(1)),
             server(server),
             locator(locator),
-            gcExit(false)
+            maintExit(false)
         {
             log("SuperTabletServer %p: created", this);
 
@@ -205,14 +246,14 @@ namespace {
             gc.reset(
                 new tablet::TabletGc(
                     root, metaTable, Timestamp::now(), server));
-            gcThread.reset(
+            maintThread.reset(
                 new boost::thread(
                     callOrDie(
                         boost::bind(
-                            &SuperTabletServer::gcLoop,
+                            &SuperTabletServer::maintLoop,
                             this
                             ),
-                        "GC thread", true)));
+                        "Maintenance thread", true)));
         }
 
         ~SuperTabletServer()
@@ -263,16 +304,16 @@ namespace {
         void shutdown()
         {
             {
-                boost::mutex::scoped_lock lock(gcMutex);
-                gcExit = true;
-                gcCond.notify_all();
+                boost::mutex::scoped_lock lock(maintMutex);
+                maintExit = true;
+                maintCond.notify_all();
             }
 
             compactor->shutdown();
             workQueue->shutdown();
             logger->shutdown();
 
-            gcThread->join();
+            maintThread->join();
         }
     };
 

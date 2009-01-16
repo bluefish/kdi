@@ -31,7 +31,12 @@ namespace tablet {
     class DiskFragmentLoader
         : public FragmentLoader
     {
+        warp::StatTracker * tracker;
+
     public:
+        explicit DiskFragmentLoader(warp::StatTracker * tracker) :
+            tracker(tracker) {}
+
         FragmentPtr load(std::string const & uri) const;
     };
 

@@ -33,6 +33,8 @@ namespace tablet {
 } // namespace tablet
 } // namespace kdi
 
+namespace warp { class StatTracker; }
+
 //----------------------------------------------------------------------------
 // DiskFragment
 //----------------------------------------------------------------------------
@@ -41,9 +43,11 @@ class kdi::tablet::DiskFragment
 {
     std::string uri;
     kdi::local::DiskTable table;
+    warp::StatTracker * tracker;
 
 public:
-    explicit DiskFragment(std::string const & uri);
+    DiskFragment(std::string const & uri, warp::StatTracker * tracker);
+    ~DiskFragment();
 
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
 

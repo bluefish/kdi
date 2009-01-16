@@ -74,6 +74,9 @@ public:
     /// row key.
     flux::Stream< std::pair<std::string, size_t> >::handle_t
     scanIndex(warp::Interval<std::string> const & rows) const;
+
+    size_t getIndexSize() const { return indexRec.getLength(); }
+    size_t getDataSize() const { return dataSize; }
 };
 
 

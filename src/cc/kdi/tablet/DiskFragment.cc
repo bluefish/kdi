@@ -20,6 +20,7 @@
 
 #include <kdi/tablet/DiskFragment.h>
 #include <warp/uri.h>
+#include <warp/StatTracker.h>
 
 using namespace kdi;
 using namespace kdi::tablet;
@@ -28,10 +29,25 @@ using namespace warp;
 //----------------------------------------------------------------------------
 // DiskFragment
 //----------------------------------------------------------------------------
-DiskFragment::DiskFragment(std::string const & uri) :
+DiskFragment::DiskFragment(std::string const & uri,
+                           warp::StatTracker * tracker) :
     uri(uri),
-    table(uriPushScheme(uriPopScheme(uri), "cache"))
+    table(uriPushScheme(uriPopScheme(uri), "cache")),
+    tracker(tracker)
 {
+    EX_CHECK_NULL(tracker);
+
+    tracker->add("DiskFragment.indexSize", table.getIndexSize());
+    tracker->add("DiskFragment.dataSize", table.getDataSize());
+    tracker->add("DiskFragment.nActive", 1);
+    tracker->add("DiskFragment.nTotal", 1);
+}
+
+DiskFragment::~DiskFragment()
+{
+    tracker->add("DiskFragment.indexSize", -int64_t(table.getIndexSize()));
+    tracker->add("DiskFragment.dataSize", -int64_t(table.getDataSize()));
+    tracker->add("DiskFragment.nActive", -1);
 }
 
 CellStreamPtr DiskFragment::scan(ScanPredicate const & pred) const
