@@ -66,14 +66,14 @@ namespace disk {
     // Richer index format
     struct IndexEntryV1
     {
-        CellKey startKey;
+        uint32_t blockChecksum; // Adler-32
+        warp::StringOffset lastRow;
         uint64_t blockOffset;
         uint8_t colPrefixFilter[BLOOM_DISK_SIZE];
         int64_t lowestTime;
         int64_t highestTime;
         uint32_t numCells;
         uint32_t numErasures;
-        uint32_t blockChecksum; // Adler-32
 
         bool hasColPrefix(strref_t x) const {
             return warp::BloomFilter::contains(BLOOM_N_SEEDS, BLOOM_SEEDS, 

@@ -220,8 +220,9 @@ namespace
             {
                 CellBlock const * block = blockRec.cast<CellBlock>();
                 CellData const * cell = std::lower_bound(
-                    block->cells.begin(), block->cells.end(),
+                    cellIt, block->cells.end(),
                     *lowerBoundIt, RowLt());
+
                 if(cell != block->cells.end())
                 {
                     cellIt = cell;
