@@ -20,7 +20,6 @@
 
 #include <kdi/tablet/SharedCompactor.h>
 #include <kdi/tablet/Tablet.h>
-#include <kdi/tablet/ConfigManager.h>
 #include <kdi/tablet/FileTracker.h>
 #include <kdi/tablet/Fragment.h>
 #include <kdi/cell_merge.h>
@@ -37,9 +36,6 @@
 #include <boost/bind.hpp>
 #include <iostream>
 #include <vector>
-
-#include <kdi/local/disk_table_writer.h>
-using kdi::local::DiskTableWriter;
 
 //#define COMPACTOR_DEBUG
 #ifdef COMPACTOR_DEBUG
@@ -113,7 +109,6 @@ namespace {
 
     typedef std::vector<CompactRangePtr> range_vec;
 
-
     struct SizeOfCell
     {
         size_t operator()(Cell const & x) const
@@ -123,7 +118,6 @@ namespace {
         }
     };
 
-    
 }
 
 //----------------------------------------------------------------------------
@@ -196,16 +190,15 @@ namespace {
     {
         typedef boost::mutex::scoped_lock lock_t;
 
-        ConfigManagerPtr configMgr;
+        FragmentLoader * loader;
+        FragmentWriter * writer;
+
         FileTrackerPtr tracker;
         boost::mutex & dagMutex;
         FragDag & fragDag;
         string table;
         fragment_set const & fragments;
         range_vec const & rangeMap;
-
-        DiskTableWriter writer;
-        string writerFn;
 
         Interval<string> outputRange;
         bool outputOpen;
@@ -224,10 +217,6 @@ namespace {
     public:
         // Future refactor notes:
         //
-        //   ConfigManager and table name could be rolled into
-        //   FragmentWriter interface.  That would take away our
-        //   internal disk writer, writerFn, etc.
-        //
         //   Instead of having the fragment set, we might want some
         //   kind of SplitFinder interface encapsulating the mutex,
         //   fragDag, and fragment set.
@@ -236,7 +225,8 @@ namespace {
         //   done, which would encapsulate the tracker, dagMutex, and
         //   fragDag.
 
-        CompactionOutput(ConfigManagerPtr const & configMgr,
+        CompactionOutput(FragmentLoader * loader,
+                         FragmentWriter * writer,
                          FileTrackerPtr const & tracker,
                          boost::mutex & dagMutex,
                          FragDag & fragDag,
@@ -244,14 +234,14 @@ namespace {
                          fragment_set const & fragments,
                          range_vec const & rangeMap
             ) :
-            configMgr(configMgr),
+            loader(loader),
+            writer(writer),
             tracker(tracker),
             dagMutex(dagMutex),
             fragDag(fragDag),
             table(table),
             fragments(fragments),
             rangeMap(rangeMap),
-            writer(64<<10),
             outputOpen(false),
             readyToSplit(false),
             nFragments(0),
@@ -267,7 +257,7 @@ namespace {
             if(readyToSplit && lt(outputRange.getUpperBound(), x.getRow()))
             {
                 log("Compact thread: splitting output (sz=%s) at %s",
-                    sizeString(writer.size()),
+                    sizeString(writer->size()),
                     reprString(outputRange.getUpperBound().getValue()));
 
                 finalizeOutput();
@@ -277,17 +267,16 @@ namespace {
             if(!outputOpen)
             {
                 // Start an output file for the compacting table
-                writerFn = configMgr->getDataFile(table);
-                writer.open(writerFn);
+                writer->start(table);
                 outputOpen = true;
             }
 
             // Add another cell to the output
-            writer.put(x);
+            writer->put(x);
 
             // Check to see if the output is large enough to split if
             // haven't already chosen one.
-            if(!readyToSplit && writer.size() > OUTPUT_SPLIT_SIZE)
+            if(!readyToSplit && writer->size() > OUTPUT_SPLIT_SIZE)
             {
                 // Choose a split point on a tablet boundary and restrict
                 // outputRange.  The last row we added to the output forms
@@ -315,7 +304,7 @@ namespace {
         {
             if(outputOpen)
             {
-                log("Compact thread: last output (sz=%s)", sizeString(writer.size()));
+                log("Compact thread: last output (sz=%s)", sizeString(writer->size()));
                 finalizeOutput();
             }
         }
@@ -328,14 +317,13 @@ namespace {
         {
             // Finalize output and reset to indicate we do not have an
             // active output
-            outputSize += writer.size();
-            writer.close();
+            outputSize += writer->size();
+            string uri = writer->finish();
             ++nFragments;
-            string uri = uriPushScheme(writerFn, "disk");
             outputOpen = false;
 
             // Open the newly written fragment
-            FragmentPtr frag = configMgr->openFragment(uri);
+            FragmentPtr frag = loader->load(uri);
 
 #ifdef COMPACTOR_DEBUG
             newFragments.insert(frag);
@@ -393,10 +381,16 @@ namespace {
 //----------------------------------------------------------------------------
 // SharedCompactor
 //----------------------------------------------------------------------------
-SharedCompactor::SharedCompactor() :
+SharedCompactor::SharedCompactor(FragmentLoader * loader,
+                                 FragmentWriter * writer) :
+    loader(loader),
+    writer(writer),
     disabled(0),
     cancel(false)
 {
+    EX_CHECK_NULL(loader);
+    EX_CHECK_NULL(writer);
+
     thread.reset(
         new boost::thread(
             callOrDie(
@@ -480,7 +474,6 @@ void SharedCompactor::compact(fragment_set const & fragments)
     // Random stuff we need to operate.  It probably should be
     // abstracted away or passed in, but since we're in hack mode,
     // we'll just pull it from the first Tablet we see.
-    ConfigManagerPtr configMgr;
     FileTrackerPtr tracker;
     string table;
 
@@ -530,7 +523,6 @@ void SharedCompactor::compact(fragment_set const & fragments)
         if(!active.empty())
         {
             Tablet * t = *active.begin();
-            configMgr = t->getConfigManager();
             tracker = t->getFileTracker();
             table = t->getTableName();
         }
@@ -636,7 +628,8 @@ void SharedCompactor::compact(fragment_set const & fragments)
     }
 
     // Prepare output
-    CompactionOutput output(configMgr,
+    CompactionOutput output(loader,
+                            writer,
                             tracker,
                             dagMutex,
                             fragDag,

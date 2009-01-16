@@ -23,6 +23,8 @@
 
 #include <kdi/tablet/forward.h>
 #include <kdi/tablet/FragDag.h>
+#include <kdi/tablet/FragmentLoader.h>
+#include <kdi/tablet/FragmentWriter.h>
 #include <boost/thread.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/noncopyable.hpp>
@@ -47,6 +49,9 @@ class kdi::tablet::SharedCompactor :
     typedef boost::mutex::scoped_lock lock_t;
     class ReadAheadImpl;
 
+    FragmentLoader * loader;
+    FragmentWriter * writer;
+
     boost::mutex mutex;
     boost::condition wakeCond;
     boost::scoped_ptr<boost::thread> thread;
@@ -61,7 +66,7 @@ public:
     FragDag fragDag;
 
 public:
-    SharedCompactor();
+    SharedCompactor(FragmentLoader * loader, FragmentWriter * writer);
     ~SharedCompactor();
 
     void disableCompactions();

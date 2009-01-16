@@ -56,6 +56,10 @@ class kdi::tablet::SharedLogger
     typedef mutex_t::scoped_lock lock_t;
 
     ConfigManagerPtr configMgr;
+
+    FragmentLoader * loader;
+    FragmentWriter * writer;
+
     FileTrackerPtr tracker;
 
     CommitBufferPtr commitBuffer;
@@ -69,6 +73,8 @@ class kdi::tablet::SharedLogger
 
 public:
     SharedLogger(ConfigManagerPtr const & configMgr,
+                 FragmentLoader * loader,
+                 FragmentWriter * writer,
                  FileTrackerPtr const & tracker);
     ~SharedLogger();
 

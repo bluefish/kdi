@@ -44,6 +44,9 @@ namespace tablet {
     class LogWriter;
     class TabletConfig;
 
+    class FragmentLoader;
+    class FragmentWriter;
+
     typedef boost::shared_ptr<Tablet> TabletPtr;
     typedef boost::shared_ptr<Tablet const> TabletCPtr;
 

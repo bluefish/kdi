@@ -1,18 +1,18 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
 // Created 2008-11-04
-// 
+//
 // This file is part of KDI.
-// 
+//
 // KDI is free software; you can redistribute it and/or modify it under the
 // terms of the GNU General Public License as published by the Free Software
 // Foundation; either version 2 of the License, or any later version.
-// 
+//
 // KDI is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -46,9 +46,10 @@ struct CachedLogLoader::LogInfo
 {
     std::string diskUri;
     boost::mutex mutex;
-    
+
     void serializeLog(std::string const & logUri,
-                      ConfigManager * configManager);
+                      boost::mutex & writerMutex,
+                      FragmentWriter * writer);
 };
 
 
@@ -56,7 +57,8 @@ struct CachedLogLoader::LogInfo
 // CachedLogLoader::LogInfo
 //----------------------------------------------------------------------------
 void CachedLogLoader::LogInfo::serializeLog(std::string const & logUri,
-                                            ConfigManager * configManager)
+                                            boost::mutex & writerMutex,
+                                            FragmentWriter * writer)
 {
     // Get the tablet name from the URI.
     string tableName = uriDecode(
@@ -92,31 +94,41 @@ void CachedLogLoader::LogInfo::serializeLog(std::string const & logUri,
         ).base();
 
     // Write the remaining cells to a disk table
-    std::string diskFn = configManager->getDataFile(tableName);
     {
-        log("CachedLogLoader: writing new table %s", diskFn);
+        boost::mutex::scoped_lock writerLock(writerMutex);
 
-        DiskTableWriter writer(64<<10);
-        writer.open(diskFn);
+        writer->start(tableName);
         for(; first != cells.end(); ++first)
-            writer.put(*first);
-        writer.close();
+            writer->put(*first);
+        diskUri = writer->finish();
     }
 
-    // Set diskUri
-    diskUri = uriPushScheme(diskFn, "disk");
+    log("CachedLogLoader: wrote new table %s", diskUri);
 }
 
 
 //----------------------------------------------------------------------------
 // CachedLogLoader
 //----------------------------------------------------------------------------
-std::string const & CachedLogLoader::getDiskUri(std::string const & logUri,
-                                                ConfigManager * configManager)
+CachedLogLoader::CachedLogLoader(FragmentLoader * loader,
+                                 FragmentWriter * writer) :
+    loader(loader),
+    writer(writer)
 {
-    if(uriTopScheme(logUri) != "sharedlog")
-        raise<ValueError>("unknown log scheme: %s", logUri);
+    EX_CHECK_NULL(loader);
+    EX_CHECK_NULL(writer);
+}
 
+FragmentPtr CachedLogLoader::load(std::string const & uri) const
+{
+    if(uriTopScheme(uri) != "sharedlog")
+        raise<ValueError>("invalid URI for CachedLogLoader: %s", uri);
+
+    return loader->load(getDiskUri(uri));
+}
+
+std::string const & CachedLogLoader::getDiskUri(std::string const & logUri) const
+{
     boost::mutex::scoped_lock mapLock(mutex);
     boost::shared_ptr<LogInfo> & info = logMap[logUri];
     if(!info)
@@ -125,7 +137,7 @@ std::string const & CachedLogLoader::getDiskUri(std::string const & logUri,
 
     boost::mutex::scoped_lock logLock(info->mutex);
     if(info->diskUri.empty())
-        info->serializeLog(logUri, configManager);
+        info->serializeLog(logUri, writerMutex, writer);
 
     return info->diskUri;
 }

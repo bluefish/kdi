@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
-// Created 2008-11-20
+// Created 2008-12-05
 // 
 // This file is part of KDI.
 // 
@@ -18,42 +18,46 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_TABLET_DISKFRAGMENTCACHE_H
-#define KDI_TABLET_DISKFRAGMENTCACHE_H
+#ifndef KDI_TABLET_FRAGMENTWRITER_H
+#define KDI_TABLET_FRAGMENTWRITER_H
 
-#include <kdi/tablet/forward.h>
-#include <map>
-#include <boost/noncopyable.hpp>
-#include <boost/thread/mutex.hpp>
+#include <kdi/cell.h>
+#include <string>
 
 namespace kdi {
 namespace tablet {
 
-    /// A cache for loading disk fragments.  If a fragment has already
-    /// been loaded, it should be reused.
-    class DiskFragmentCache;
+    class FragmentWriter;
 
 } // namespace tablet
 } // namespace kdi
 
+
 //----------------------------------------------------------------------------
-// DiskFragmentCache
+// FragmentWriter
 //----------------------------------------------------------------------------
-class kdi::tablet::DiskFragmentCache
-    : private boost::noncopyable
+class kdi::tablet::FragmentWriter
 {
-    typedef std::map<std::string, FragmentWeakPtr> map_t;
-
-    map_t fragmentMap;
-    size_t nextPurgeSize;
-    boost::mutex mutex;
-
 public:
-    DiskFragmentCache();
-    FragmentPtr getDiskFragment(std::string const & uri);
+    /// Start a new fragment file for the given table (or locality
+    /// group).
+    virtual void start(std::string const & table) = 0;
 
-private:
-    void purgeStaleEntries();
+    /// Put more data in the output.  Cells must be added in strictly
+    /// increasing cell order.
+    virtual void put(Cell const & x) = 0;
+
+    /// Finalize the output file and return the URI to newly created
+    /// fragment.  Nothing more can be added before a new call to
+    /// open().
+    virtual std::string finish() = 0;
+
+    /// Get an estimate of the output file size if finish() were to be
+    /// called without adding any more data with put().
+    virtual size_t size() const = 0;
+
+protected:
+    ~FragmentWriter() {}
 };
 
-#endif // KDI_TABLET_DISKFRAGMENTCACHE_H
+#endif // KDI_TABLET_FRAGMENTWRITER_H

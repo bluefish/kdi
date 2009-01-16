@@ -96,6 +96,7 @@ private:
 private:
     Tablet(std::string const & tableName,
            ConfigManagerPtr const & configMgr,
+           FragmentLoader * loader,
            SharedLoggerPtr const & logger,
            SharedCompactorPtr const & compactor,
            FileTrackerPtr const & tracker,
@@ -106,6 +107,7 @@ private:
 public:
     static TabletPtr make(std::string const & tableName,
                           ConfigManagerPtr const & configMgr,
+                          FragmentLoader * loader,
                           SharedLoggerPtr const & logger,
                           SharedCompactorPtr const & compactor,
                           FileTrackerPtr const & tracker,

@@ -100,6 +100,7 @@ void Tablet::validateRows(ScanPredicate const & pred) const
 //----------------------------------------------------------------------------
 Tablet::Tablet(std::string const & tableName,
                ConfigManagerPtr const & configMgr,
+               FragmentLoader * loader,
                SharedLoggerPtr const & logger,
                SharedCompactorPtr const & compactor,
                FileTrackerPtr const & tracker,
@@ -124,6 +125,7 @@ Tablet::Tablet(std::string const & tableName,
     log("Tablet %p %s: created", this, getPrettyName());
 
     EX_CHECK_NULL(configMgr);
+    EX_CHECK_NULL(loader);
     EX_CHECK_NULL(logger);
     EX_CHECK_NULL(compactor);
     EX_CHECK_NULL(tracker);
@@ -137,7 +139,7 @@ Tablet::Tablet(std::string const & tableName,
         i != uris.end(); ++i)
     {
         // Load the fragment from the config manager
-        FragmentPtr frag = configMgr->openFragment(*i);
+        FragmentPtr frag = loader->load(*i);
         tracker->addReference(frag->getDiskUri());
         fragments.push_back(frag);
 
@@ -161,6 +163,7 @@ Tablet::Tablet(std::string const & tableName,
 
 TabletPtr Tablet::make(std::string const & tableName,
                        ConfigManagerPtr const & configMgr,
+                       FragmentLoader * loader,
                        SharedLoggerPtr const & logger,
                        SharedCompactorPtr const & compactor,
                        FileTrackerPtr const & tracker,
@@ -175,6 +178,7 @@ TabletPtr Tablet::make(std::string const & tableName,
         new Tablet(
             tableName,
             configMgr,
+            loader,
             logger,
             compactor,
             tracker,

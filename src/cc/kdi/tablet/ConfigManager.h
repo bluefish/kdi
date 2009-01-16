@@ -34,8 +34,6 @@ namespace tablet {
 
     // Forward declarations
     class TabletConfig;
-    class CachedLogLoader;
-    class DiskFragmentCache;
 
 } // namespace tablet
 } // namespace kdi
@@ -46,11 +44,7 @@ namespace tablet {
 //----------------------------------------------------------------------------
 class kdi::tablet::ConfigManager
 {
-    boost::shared_ptr<CachedLogLoader> logLoader;
-    boost::shared_ptr<DiskFragmentCache> diskCache;
-
 public:
-    ConfigManager();
     virtual ~ConfigManager() {}
 
     /// Load all configs for all tablets in the given table that
@@ -66,9 +60,6 @@ public:
     /// namespace.  If the returned path exists, it will be a file
     /// that should be overwritten.
     virtual std::string getDataFile(std::string const & tableName) = 0;
-
-    /// Open a fragment by URI.
-    virtual FragmentPtr openFragment(std::string const & uri);
 };
 
 #endif // KDI_TABLET_CONFIGMANAGER_H

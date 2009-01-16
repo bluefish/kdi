@@ -20,6 +20,8 @@
 
 #include <kdi/tablet/SharedLogger.h>
 #include <kdi/tablet/LogWriter.h>
+#include <kdi/tablet/FragmentWriter.h>
+#include <kdi/tablet/FragmentLoader.h>
 #include <kdi/tablet/Tablet.h>
 #include <kdi/tablet/ConfigManager.h>
 #include <kdi/tablet/FileTracker.h>
@@ -44,9 +46,6 @@ using namespace warp;
 using namespace ex;
 using namespace std;
 using boost::format;
-
-#include <kdi/local/disk_table_writer.h>
-using kdi::local::DiskTableWriter;
 
 namespace {
 
@@ -197,7 +196,7 @@ public:
         tbl->sync();
     }
 
-    void serialize(ConfigManagerPtr const & configMgr, FileTrackerPtr const & tracker) const
+    void serialize(FragmentLoader * loader, FragmentWriter * writer, FileTrackerPtr const & tracker) const
     {
         log("Serializing %d fragments", tableInfoMap.size());
 
@@ -210,24 +209,17 @@ public:
             // We should have at least one Tablet
             assert(!info.tablets.empty());
 
-            // Get an output file
-            std::string fn = configMgr->getDataFile(tableName);
-            
             // Write a DiskTable from the fragment
-            DiskTableWriter writer(64<<10);
-            writer.open(fn);
             CellStreamPtr cells = info.fragment->scan(ScanPredicate());
+
+            writer->start(tableName);
             Cell x;
             while(cells->get(x))
-                writer.put(x);
-            writer.close();     // XXX should sync file
-
-            // Reopen the fragment for reading
-            std::string diskUri = uriPushScheme(fn, "disk");
-            FragmentPtr newFragment = configMgr->openFragment(diskUri);
+                writer->put(x);
+            FragmentPtr frag = loader->load(writer->finish());
 
             // Track the new disk file for automatic deletion
-            FileTracker::AutoTracker autoTrack(*tracker, fn);
+            FileTracker::AutoTracker autoTrack(*tracker, frag->getDiskUri());
 
             // Notify Tablets of the fragment change
             vector<FragmentPtr> oldFragments;
@@ -235,7 +227,7 @@ public:
             for(vector<TabletPtr>::const_iterator fi = info.tablets.begin();
                 fi != info.tablets.end(); ++fi)
             {
-                (*fi)->replaceFragments(oldFragments, newFragment);
+                (*fi)->replaceFragments(oldFragments, frag);
             }
 
             // XXX maybe should release memTable.  if a later
@@ -314,14 +306,23 @@ public:
 // SharedLogger
 //----------------------------------------------------------------------------
 SharedLogger::SharedLogger(ConfigManagerPtr const & configMgr,
+                           FragmentLoader * loader,
+                           FragmentWriter * writer,
                            FileTrackerPtr const & tracker) :
     configMgr(configMgr),
+    loader(loader),
+    writer(writer),
     tracker(tracker),
     commitBuffer(new CommitBuffer),
     tableGroup(new TableGroup),
     commitQueue(4),
     serializeQueue(2)
 {
+    EX_CHECK_NULL(configMgr);
+    EX_CHECK_NULL(loader);
+    EX_CHECK_NULL(writer);
+    EX_CHECK_NULL(tracker);
+
     threads.create_thread(
         callOrDie(
             boost::bind(&SharedLogger::commitLoop, this),
@@ -398,7 +399,6 @@ void SharedLogger::shutdown()
         commitBuffer.reset();
         logWriter.reset();
         tableGroup.reset();
-        configMgr.reset();
     }
 }
 
@@ -497,6 +497,6 @@ void SharedLogger::serializeLoop()
         serializeQueue.pop(group);
         group.reset())
     {
-        group->serialize(configMgr, tracker);
+        group->serialize(loader, writer, tracker);
     }
 }

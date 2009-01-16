@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
-// Created 2008-08-07
+// Created 2008-12-05
 // 
 // This file is part of KDI.
 // 
@@ -18,44 +18,35 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include <kdi/tablet/ConfigManager.h>
-#include <kdi/tablet/CachedLogLoader.h>
-#include <kdi/tablet/DiskFragmentCache.h>
-#include <warp/uri.h>
-#include <warp/log.h>
-#include <ex/exception.h>
+#ifndef KDI_TABLET_FRAGMENTLOADER_H
+#define KDI_TABLET_FRAGMENTLOADER_H
 
-using namespace kdi;
-using namespace kdi::tablet;
-using namespace warp;
-using namespace ex;
+#include <boost/shared_ptr.hpp>
+#include <string>
+
+namespace kdi {
+namespace tablet {
+
+    class FragmentLoader;
+
+    class Fragment;
+    typedef boost::shared_ptr<Fragment> FragmentPtr;
+
+} // namespace tablet
+} // namespace kdi
+
 
 //----------------------------------------------------------------------------
-// ConfigManager
+// FragmentLoader
 //----------------------------------------------------------------------------
-ConfigManager::ConfigManager() :
-    logLoader(new CachedLogLoader),
-    diskCache(new DiskFragmentCache)
+class kdi::tablet::FragmentLoader
 {
-}
+public:
+    /// Load a Fragment from a fragment URI.
+    virtual FragmentPtr load(std::string const & fragmentUri) const = 0;
 
-FragmentPtr ConfigManager::openFragment(std::string const & uri)
-{
-    log("ConfigManager: openFragment %s", uri);
+protected:
+    ~FragmentLoader() {}
+};
 
-    std::string scheme = uriTopScheme(uri);
-    if(scheme == "disk")
-    {
-        // Disk table: open from cache and return
-        return diskCache->getDiskFragment(uri);
-    }
-    else if(scheme == "sharedlog")
-    {
-        // Log table: serialize to a disk table and return that.
-        std::string diskUri = logLoader->getDiskUri(uri, this);
-        return openFragment(diskUri);
-    }
-
-    // Unknown scheme
-    raise<RuntimeError>("unknown fragment scheme %s: %s", scheme, uri);
-}
+#endif // KDI_TABLET_FRAGMENTLOADER_H

@@ -59,6 +59,45 @@ using namespace warp;
 using namespace std;
 using namespace ex;
 
+
+#include <kdi/tablet/CachedFragmentLoader.h>
+#include <kdi/tablet/CachedLogLoader.h>
+#include <kdi/tablet/DiskFragmentLoader.h>
+#include <kdi/tablet/DiskFragmentWriter.h>
+#include <kdi/tablet/SwitchedFragmentLoader.h>
+
+namespace {
+
+    using namespace kdi::tablet;
+
+    class LoaderAssembly
+    {
+        boost::scoped_ptr<DiskFragmentLoader>   diskLoader;
+        boost::scoped_ptr<CachedFragmentLoader> cachedDiskLoader;
+        boost::scoped_ptr<DiskFragmentWriter>   logWriter;
+        boost::scoped_ptr<CachedLogLoader>      cachedLogLoader;
+        SwitchedFragmentLoader                  switchedLoader;
+
+    public:
+        LoaderAssembly(ConfigManagerPtr const & configMgr)
+        {
+            diskLoader.reset(new DiskFragmentLoader);
+            cachedDiskLoader.reset(new CachedFragmentLoader(diskLoader.get()));
+            logWriter.reset(new DiskFragmentWriter(configMgr));
+            cachedLogLoader.reset(
+                new CachedLogLoader(cachedDiskLoader.get(), logWriter.get()));
+
+            switchedLoader.setLoader("disk", cachedDiskLoader.get());
+            switchedLoader.setLoader("sharedlog", cachedLogLoader.get());
+        }
+
+        ~LoaderAssembly() {}
+
+        FragmentLoader * getLoader() { return &switchedLoader; }
+    };
+}
+
+
 namespace {
 
     inline boost::xtime makeTimeout(int64_t sec)
@@ -69,10 +108,16 @@ namespace {
         return xt;
     }
 
+
     class SuperTabletServer
     {
         tablet::MetaConfigManagerPtr metaConfigMgr;
         tablet::FileTrackerPtr tracker;
+
+        boost::scoped_ptr<LoaderAssembly> loader;
+        boost::scoped_ptr<DiskFragmentWriter> loggerWriter;
+        boost::scoped_ptr<DiskFragmentWriter> compactorWriter;
+
         tablet::SharedLoggerPtr logger;
         tablet::SharedCompactorPtr compactor;
         tablet::WorkQueuePtr workQueue;
@@ -115,8 +160,19 @@ namespace {
                           ScannerLocator * locator) :
             metaConfigMgr(new tablet::MetaConfigManager(root, server)),
             tracker(new tablet::FileTracker),
-            logger(new tablet::SharedLogger(metaConfigMgr, tracker)),
-            compactor(new tablet::SharedCompactor),
+            loader(new LoaderAssembly(metaConfigMgr)),
+            loggerWriter(new DiskFragmentWriter(metaConfigMgr)),
+            compactorWriter(new DiskFragmentWriter(metaConfigMgr)),
+            logger(
+                new tablet::SharedLogger(
+                    metaConfigMgr,
+                    loader->getLoader(),
+                    loggerWriter.get(),
+                    tracker)),
+            compactor(
+                new tablet::SharedCompactor(
+                    loader->getLoader(),
+                    compactorWriter.get())),
             workQueue(new tablet::WorkQueue(1)),
             server(server),
             locator(locator),
@@ -137,6 +193,7 @@ namespace {
             metaTable = tablet::Tablet::make(
                 "META",
                 fixedMgr,
+                loader->getLoader(),
                 logger,
                 compactor,
                 tracker,
@@ -176,8 +233,8 @@ namespace {
                     log("Load table: %s", name);
                     TablePtr p(
                         new tablet::SuperTablet(
-                            name, metaConfigMgr, logger,
-                            compactor, tracker, workQueue
+                            name, metaConfigMgr, loader->getLoader(),
+                            logger, compactor, tracker, workQueue
                             )
                         );
                     return p;
@@ -194,8 +251,8 @@ namespace {
                     log("Load table again: %s", name);
                     TablePtr p(
                         new tablet::SuperTablet(
-                            name, metaConfigMgr, logger,
-                            compactor, tracker, workQueue
+                            name, metaConfigMgr, loader->getLoader(),
+                            logger, compactor, tracker, workQueue
                             )
                         );
                     return p;
