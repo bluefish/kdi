@@ -354,7 +354,7 @@ namespace
 // DiskTable
 //----------------------------------------------------------------------------
 DiskTable::DiskTable(string const & fn) :
-    fn(fn)
+    fn(fn), dataSize(0)
 {
     // Open file to TableInfo record
     FilePtr fp = File::input(fn);
@@ -378,6 +378,9 @@ DiskTable::DiskTable(string const & fn) :
 
     // Make a copy of the index
     indexRec = r.clone();
+
+    // Remember how big the data section is
+    dataSize = indexOffset;
 }
 
 void DiskTable::set(strref_t row, strref_t column, int64_t timestamp,

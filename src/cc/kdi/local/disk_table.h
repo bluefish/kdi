@@ -52,6 +52,7 @@ class kdi::local::DiskTable
 {
     std::string fn;
     oort::Record indexRec;
+    size_t dataSize;
 
 public:
     explicit DiskTable(std::string const & fn);
