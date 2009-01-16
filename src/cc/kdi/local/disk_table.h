@@ -57,6 +57,10 @@ class kdi::local::DiskTable
 public:
     explicit DiskTable(std::string const & fn);
 
+    /// Load the index Record from the given file
+    /// @returns offset to index from start of file
+    static off_t loadIndex(std::string const & fn, oort::Record & r);
+
     virtual void set(strref_t row, strref_t column, int64_t timestamp,
                      strref_t value);
 

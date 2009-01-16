@@ -356,6 +356,15 @@ namespace
 DiskTable::DiskTable(string const & fn) :
     fn(fn), dataSize(0)
 {
+    Record r;
+    dataSize = loadIndex(fn, r);
+
+    // Make a copy of the index
+    indexRec = r.clone();
+}
+
+off_t DiskTable::loadIndex(std::string const & fn, oort::Record & r)
+{
     // Open file to TableInfo record
     FilePtr fp = File::input(fn);
     fp->seek(-(10+sizeof(TableInfo)), SEEK_END);
@@ -364,7 +373,6 @@ DiskTable::DiskTable(string const & fn) :
     FileInput::handle_t input = FileInput::make(fp);
     
     // Read TableInfo
-    Record r;
     if(!input->get(r) || !r.tryAs<TableInfo>())
         raise<RuntimeError>("could not read TableInfo record: %s", fn);
 
@@ -376,11 +384,7 @@ DiskTable::DiskTable(string const & fn) :
     if(!input->get(r) || !r.tryAs<BlockIndex>())
         raise<RuntimeError>("could not read BlockIndex record: %s", fn);
 
-    // Make a copy of the index
-    indexRec = r.clone();
-
-    // Remember how big the data section is
-    dataSize = indexOffset;
+    return indexOffset;
 }
 
 void DiskTable::set(strref_t row, strref_t column, int64_t timestamp,
