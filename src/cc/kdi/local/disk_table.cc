@@ -191,11 +191,6 @@ namespace
         /// end of stream
         bool getNextRowSegment()
         {
-            // First time through, start at the beginning of the index
-            //if(!indexIt) {
-            //    indexIt = indexRec.cast<BlockIndexV1>()->blocks.begin();
-            //}
-
             // If we have no row set, then we're reading everything.
             // The first time we get here we'll read the first block
             // of the file.  The next time we come back, we'll be at
@@ -235,7 +230,18 @@ namespace
             // row segment.  If the index points us off the end,
             // we're done.
             BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
-            IndexEntryV1 const * ent = findIndexEntry(index, *lowerBoundIt);
+            IndexEntryV1 const * ent;
+            
+            if(indexIt) {
+                ent = std::lower_bound( 
+                    indexIt, index->blocks.end(),
+                    *lowerBoundIt, RowLt());
+            } else {
+                ent = std::lower_bound(
+                    index->blocks.begin(), index->blocks.end(),
+                    *lowerBoundIt, RowLt());
+            }
+
             if(ent == index->blocks.end())
                 return false;
 
