@@ -55,30 +55,16 @@ namespace disk {
         uint64_t blockOffset;  // from beginning of file
     };
 
-    uint32_t const BLOOM_N_BITS = 1024;
-    size_t const BLOOM_DISK_SIZE = BLOOM_N_BITS/8;
-    uint32_t const BLOOM_SEEDS[] = { 
-        1016839685u, 2408313752u, 
-        1822408320u, 1850600840u 
-    };
-    size_t const BLOOM_N_SEEDS = sizeof(BLOOM_SEEDS) / sizeof(*BLOOM_SEEDS);
-
     // Richer index format
     struct IndexEntryV1
     {
         uint32_t blockChecksum; // Adler-32
         warp::StringOffset lastRow;
         uint64_t blockOffset;
-        uint8_t colPrefixFilter[BLOOM_DISK_SIZE];
         int64_t lowestTime;
         int64_t highestTime;
         uint32_t numCells;
         uint32_t numErasures;
-
-        bool hasColPrefix(strref_t x) const {
-            return warp::BloomFilter::contains(BLOOM_N_SEEDS, BLOOM_SEEDS, 
-                BLOOM_N_BITS, colPrefixFilter, x);
-        }
     };
 
     /// Index of CellBlock records in the file.

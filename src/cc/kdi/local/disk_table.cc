@@ -143,16 +143,7 @@ namespace
             }
 
             if(columnFamilies) {
-                vector<string>::const_iterator it = columnFamilies->begin();
-                while(it != columnFamilies->end()) {
-                    if(indexIt->hasColPrefix(*it)) break;
-                    ++it;
-                }
-                if(it == columnFamilies->end()) {
-                    // None of the required column prefixes are in this block
-                    nextIndexIt = indexIt+1; 
-                    goto nextBlock;
-                }
+                // Change the column filtering!
             }
 
             // Read the next record and make sure it is a CellBlock

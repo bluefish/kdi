@@ -111,7 +111,6 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     PooledBuilder block;
     PooledBuilder index;
 
-    BloomFilter colPrefixFilter;
     int64_t lowestTime;
     int64_t highestTime;
     uint32_t numErasures;
@@ -148,9 +147,6 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Record const & cbRec)
     BuilderBlock * b = index.pool.getStringBlock();
     size_t         r = index.pool.getStringOffset(lastRow);
 
-    // Raw bits from column prefix bloom filter, nBits and seeds are pre-chosen
-    uint8_t const *colFilter = colPrefixFilter.getBits();
-
     // Calculate Adler-32 checksum for the cell block, written in index 
     uint32_t cbChecksum = adler((uint8_t*)cbRec.getData(), cbRec.getLength());
 
@@ -158,15 +154,11 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Record const & cbRec)
     index.arr->append(cbChecksum);   // checkSum
     index.arr->appendOffset(b, r);   // row
     index.arr->append(fp->tell());   // blockOffset
-    index.arr->append(colFilter, disk::BLOOM_DISK_SIZE); // colPrefixFilter
     index.arr->append(lowestTime);   // timeRange-min
     index.arr->append(highestTime);  // timeRange-max
     index.arr->append(block.nItems); // numCells
     index.arr->append(numErasures);  // numErasures
     index.arr->appendPadding(8);
-
-    // Clear out the prefix filter
-    colPrefixFilter.clear();
 
     ++index.nItems;
 }
@@ -198,9 +190,6 @@ void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
     block.arr->append<uint32_t>(0);        // __pad
     ++block.nItems;
 
-    // Remember what column families have been added
-    colPrefixFilter.insert(x.getColumnFamily());
-
     // Remember range of timestamps added
     if(block.nItems == 1) {
         lowestTime = t;
@@ -230,13 +219,7 @@ void DiskTableWriterV1::ImplV1::writeBlockIndex()
 
 DiskTableWriterV1::ImplV1::ImplV1(size_t blockSize) :
     alloc(),
-    blockSize(blockSize),
-    colPrefixFilter(    
-        disk::BLOOM_N_BITS, 
-        vector<uint32_t>(
-            disk::BLOOM_SEEDS, 
-            disk::BLOOM_SEEDS + disk::BLOOM_N_SEEDS
-        ))
+    blockSize(blockSize)
 {
     block.builder.setHeader<disk::CellBlock>();
     index.builder.setHeader<disk::BlockIndexV1>();
@@ -250,7 +233,6 @@ void DiskTableWriterV1::ImplV1::open(string const & fn)
     block.reset();
     index.reset();
 
-    colPrefixFilter.clear();
     lowestTime = 0;
     highestTime = 0;
     numErasures = 0;
