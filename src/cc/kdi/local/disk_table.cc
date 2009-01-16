@@ -58,13 +58,13 @@ namespace
         bool operator()(IntervalPoint<string> const & a,
                         IndexEntryV1 const & b) const
         {
-            return lt(a, *b.startKey.row);
+            return lt(a, *b.lastRow);
         }
 
         bool operator()(IndexEntryV1 const & a,
                         IntervalPoint<string> const & b) const
         {
-            return lt(*a.startKey.row, b);
+            return lt(*a.lastRow, b);
         }
     };
 
@@ -191,6 +191,11 @@ namespace
         /// end of stream
         bool getNextRowSegment()
         {
+            // First time through, start at the beginning of the index
+            //if(!indexIt) {
+            //    indexIt = indexRec.cast<BlockIndexV1>()->blocks.begin();
+            //}
+
             // If we have no row set, then we're reading everything.
             // The first time we get here we'll read the first block
             // of the file.  The next time we come back, we'll be at
@@ -198,7 +203,7 @@ namespace
             if(!rows)
                 return readNextBlock();
 
-            // If we're at the last rowthere is no next row segment, we're done.
+            // If we're at the last row, there is no next row segment, we're done.
             if(nextRowIt == rows->end())
                 return false;
 
@@ -234,7 +239,6 @@ namespace
                 return false;
 
             // Seek to the next block position and load the block.
-            //input->seek(ent->blockOffset);
             if(!readNextBlock(ent))
                 return false;
 
@@ -380,7 +384,7 @@ namespace
             end = index->blocks.end();
 
             IntervalPointOrder<warp::less> lt;
-            while(cur != end && !lt(rows.getLowerBound(), *cur->startKey.row))
+            while(cur != end && !lt(rows.getLowerBound(), *cur->lastRow))
             {
                 base = cur->blockOffset;
                 ++cur;
@@ -393,13 +397,13 @@ namespace
                 return false;
 
             IntervalPointOrder<warp::less> lt;
-            if(lt(rows.getUpperBound(), *cur->startKey.row))
+            if(lt(rows.getUpperBound(), *cur->lastRow))
             {
                 end = cur;
                 return false;
             }
 
-            x.first.assign(cur->startKey.row->begin(), cur->startKey.row->end());
+            x.first.assign(cur->lastRow->begin(), cur->lastRow->end());
             x.second = cur->blockOffset - base;
             base = cur->blockOffset;
             ++cur;

@@ -100,7 +100,6 @@ namespace {
 
 }
 
-
 BOOST_AUTO_TEST_CASE(empty_test)
 {
     // Make empty table
@@ -396,5 +395,42 @@ BOOST_AUTO_UNIT_TEST(loader_test)
         "(row1,col1,42,one1)"               
         "(row1,col2,42,one2)"                                       
     ));
+}
+
+BOOST_AUTO_UNIT_TEST(filtering_test)
+{
+    // Try to make verify that filtering blocks doesn't skip data it shouldn't
+    
+    // Column filtering of the last block of a row predicate with subsequent row predicate
+    DiskTableWriterV1 out1(1); // Force one cell per block
+    out1.open("memfs:filtering");
+    out1.put(makeCell("row-A", "fam-1:col", 1, "val"));
+    out1.put(makeCell("row-A", "fam-2:col", 1, "val"));
+    out1.put(makeCell("row-Z", "fam-3:col", 1, "val"));
+    out1.put(makeCell("row-Z", "fam-4:col", 1, "val"));
+    out1.close();
+
+    DiskTablePtr dp = kdi::local::loadDiskTable("memfs:filtering");
+
+    BOOST_CHECK_EQUAL(
+        countCells(dp->scan("row = 'row-A' or row = 'row-Z' and column = 'fam-1:col'")),
+        1u
+    );
+
+    BOOST_CHECK_EQUAL(
+        countCells(dp->scan("row = 'row-A' or row = 'row-Z' and column = 'fam-2:col'")),
+        1u
+    );
+
+/*
+    DiskTableWriterV1 out1(1);
+    out1.open("memfs:filtering2");
+    out1.put(makeCell("row-A", "fam-1:col", 1, "val"));
+    out1.put(makeCell("row-A", "fam-2:col", 1, "val"));
+    out1.put(makeCell("row-Z", "fam-1:col", 1, "val"));
+    out1.put(makeCell("row-Z", "fam-1:col", 1, "val"));
+    out1.close();
+*/
+
 }
 

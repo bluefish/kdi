@@ -142,15 +142,11 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Record const & cbRec)
     // Get the last cell record from the cell block 
     disk::CellBlock const * cellBlock = cbRec.cast<disk::CellBlock>();
     disk::CellKey const & lastCellKey = cellBlock->cells[cellBlock->cells.size()-1].key;
-
     strref_t lastRow = *lastCellKey.row;
-    strref_t lastCol = *lastCellKey.column;
 
-    // Get string offsets for cell key
+    // Get string offset for cell key (just the last row)
     BuilderBlock * b = index.pool.getStringBlock();
     size_t         r = index.pool.getStringOffset(lastRow);
-    size_t         c = index.pool.getStringOffset(lastCol);
-    int64_t        t = lastCellKey.timestamp;
 
     // Raw bits from column prefix bloom filter, nBits and seeds are pre-chosen
     uint8_t const *colFilter = colPrefixFilter.getBits();
@@ -159,16 +155,14 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Record const & cbRec)
     uint32_t cbChecksum = adler((uint8_t*)cbRec.getData(), cbRec.getLength());
 
     // Append IndexEntry to array
-    index.arr->appendOffset(b, r);   // startKey.row
-    index.arr->appendOffset(b, c);   // startKey.column
-    index.arr->append(t);            // startKey.timestamp
+    index.arr->append(cbChecksum);   // checkSum
+    index.arr->appendOffset(b, r);   // row
     index.arr->append(fp->tell());   // blockOffset
     index.arr->append(colFilter, disk::BLOOM_DISK_SIZE); // colPrefixFilter
     index.arr->append(lowestTime);   // timeRange-min
     index.arr->append(highestTime);  // timeRange-max
     index.arr->append(block.nItems); // numCells
     index.arr->append(numErasures);  // numErasures
-    index.arr->append(cbChecksum);   // checkSum
     index.arr->appendPadding(8);
 
     // Clear out the prefix filter
