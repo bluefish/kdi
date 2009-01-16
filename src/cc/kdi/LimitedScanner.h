@@ -67,7 +67,8 @@ public:
 
         scanSz += ( x.getRow().size()     +
                     x.getColumn().size()  +
-                    x.getValue().size()   );
+                    x.getValue().size()   +
+                    sizeof(int64_t)       );
         return true;
     }
 
