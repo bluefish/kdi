@@ -68,7 +68,7 @@ def formatHeader(prefix, projectName, author, copyrightYear, creationDate=''):
         initial_indent=prefix,
         subsequent_indent=prefix)
     lines = getHeaderLines(projectName, author, copyrightYear, creationDate)
-    return '\n'.join(w.fill(line) or prefix for line in lines)
+    return '\n'.join(w.fill(line).rstrip() or prefix.rstrip() for line in lines)
 
 def getFileType(path):
     ext = os.path.splitext(path)[1]
@@ -122,7 +122,9 @@ def extractCreated(header):
     if m:
         return m.group(2),m.group(1).replace('/','-')
     else:
-        return '2008',''
+        import time
+        y = str(time.localtime().tm_year)
+        return y,''
 
 def getCppHeader(oldHeader, projectName, author):
     copyrightYear,creationDate = extractCreated(oldHeader)
@@ -146,16 +148,21 @@ _headerReplacement = {
 def replaceHeader(path, projectName, author):
     type = getFileType(path)
     if type in _headerExtractors:
-        print path
+        #print path
         content = file(path).read()
         header = _headerExtractors[type](content)
         rest = content[len(header):]
         newHeader = _headerReplacement[type](content, projectName, author)
         newPath = path+'.krom'
         file(newPath,'w').write(newHeader + rest)
-        os.rename(newPath, path)
+        if 0 != os.system('diff -qw "%s" "%s" >/dev/null' % (path, newPath)):
+            print 'updating',path
+            os.rename(newPath, path)
+        else:
+            os.remove(newPath)
     else:
-        print 'skipping',path
+        pass
+        #print 'skipping',path
 
 def processArg(path, projectName, author):
     if os.path.isfile(path):
