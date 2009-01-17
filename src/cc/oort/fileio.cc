@@ -27,6 +27,7 @@
 #include <assert.h>
 #include <boost/format.hpp>
 #include <minilzo/minilzo.h>
+#include <string.h>
 
 using namespace oort;
 using namespace warp;
@@ -266,15 +267,19 @@ void FileOutput::put(Record const & r)
     assert(hdrBuf);
 
     HeaderSpec::Fields f(r);
-    char const * outputData = r.getData();
+    void const * outputData = r.getData();
 
     // Did the record header request compression?
-    if(r.getFlags() & HeaderSpec::LZO_COMPRESSED) {
+    if(f.flags & HeaderSpec::LZO_COMPRESSED) {
         // Make sure LZO is ready to roll
         initLzo();
 
         // Working memory for LZO compression
-        unsigned char lzoWorkingMemory[LZO1X_MEM_COMPRESS];
+        if(!lzoWork)
+        {
+            lzoWork.reset(new uint8_t[LZO1X_MEM_COMPRESS]);
+            memset(&lzoWork[0], 0, LZO1X_MEM_COMPRESS);
+        }
 
         // In the worst case, LZO may bloat the input data instead of compressing
         // Docs say an extra 16 bytes per 1024 bytes of input should be safe
@@ -283,17 +288,15 @@ void FileOutput::put(Record const & r)
         // Reserve space for compression buffer + originalSize field
         lzoBuffer.clear();
         lzoBuffer.resize(bufferSize + sizeof(uint32_t));
-        lzo_bytep compressedData = reinterpret_cast<lzo_bytep>(
-            &lzoBuffer[sizeof(uint32_t)]);
 
         // Compress into lzoBuffer (after originalSize field)
         lzo_uint compressedSize;
         lzo1x_1_compress(
-            reinterpret_cast<const lzo_bytep>(outputData),
-            static_cast<lzo_uint>(f.length),
-            compressedData,
+            static_cast<const lzo_bytep>(outputData),
+            f.length,
+            &lzoBuffer[sizeof(uint32_t)],
             &compressedSize,
-            lzoWorkingMemory);
+            lzoWork.get());
 
         // See if resulting compression ratio is worth keeping.  We'll
         // only use compression if we get better than 1/16th

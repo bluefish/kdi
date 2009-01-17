@@ -25,6 +25,7 @@
 #include <oort/record.h>
 #include <flux/stream.h>
 #include <vector>
+#include <boost/scoped_array.hpp>
 
 namespace oort
 {
@@ -106,7 +107,9 @@ private:
     file_t file;
     HeaderSpec const * spec;
     char * hdrBuf;
-    std::vector<char> lzoBuffer;
+
+    std::vector<uint8_t> lzoBuffer;
+    boost::scoped_array<uint8_t> lzoWork;
 
 public:
     explicit FileOutput(file_t const & file = file_t(),
