@@ -108,8 +108,10 @@ private:
     /// basePtr will be zeroed.
     inline void dumpBlock(char * basePtr);
 
-    /// Grow the block to contain at least minSz bytes.
-    inline void grow(size_t minSz);
+    /// Grow the block to contain at least minSz bytes.  If growing
+    /// makes an uninitialized hole between the old bufSz and clearTo,
+    /// fill the hole with zeros.
+    inline void grow(size_t minSz, size_t clearTo);
 
 public:
     /// Create a floating subblock within the resource that can be
@@ -295,7 +297,7 @@ namespace warp
         memcpy(&basePtr[baseAddr], buf, bufSz);
     }
 
-    void BuilderBlock::grow(size_t minSz)
+    void BuilderBlock::grow(size_t minSz, size_t clearTo)
     {
         assert(!isFinalized());
         if(minSz > bufSz)
@@ -308,6 +310,10 @@ namespace warp
                 std::swap(buf, newBuf);
                 delete[] newBuf;
             }
+
+            if(bufSz < clearTo)
+                memset(&buf[bufSz], 0, clearTo - bufSz);
+
             bufSz = minSz;
         }
     }
@@ -328,7 +334,7 @@ namespace warp
 
     void BuilderBlock::write(size_t pos, void const * ptr, size_t len)
     {
-        grow(pos + len);
+        grow(pos + len, pos);
         memcpy(&buf[pos], ptr, len);
     }
 
@@ -373,7 +379,8 @@ namespace warp
 
     void BuilderBlock::appendPadding(size_t toAlignment)
     {
-        grow(alignUp(bufSz, toAlignment));
+        size_t targetSz = alignUp(bufSz, toAlignment);
+        grow(targetSz, targetSz);
     }
 
     size_t BuilderBlock::size() const
