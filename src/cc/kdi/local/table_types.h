@@ -65,6 +65,7 @@ namespace disk {
         int64_t highestTime;
         uint32_t numCells;
         uint32_t numErasures;
+        uint32_t colFamilyMask;
     };
 
     /// Index of CellBlock records in the file.
@@ -91,6 +92,7 @@ namespace disk {
         };
 
         warp::ArrayOffset<IndexEntryV1> blocks;
+        warp::ArrayOffset<warp::StringOffset> colFamilies;
     };
 
     // Trailer for a disk table file.

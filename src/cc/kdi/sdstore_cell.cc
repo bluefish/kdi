@@ -36,7 +36,11 @@ StringRange CellInterpreter::getColumnFamily(void const * data) const
 {
     StringRange c = this->getColumn(data);
     char const * sep = find(c.begin(), c.end(), ':');
-    return StringRange(c.begin(), sep);
+    if(sep != c.end()) {
+        return StringRange(c.begin(), sep);
+    } else {
+        return StringRange();
+    }
 }
 
 StringRange CellInterpreter::getColumnQualifier(void const * data) const

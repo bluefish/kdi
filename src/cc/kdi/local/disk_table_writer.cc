@@ -22,6 +22,7 @@
 #include <kdi/local/table_types.h>
 
 #include <warp/file.h>
+#include <warp/log.h>
 #include <ex/exception.h>
 #include <oort/record.h>
 #include <oort/recordstream.h>
@@ -32,6 +33,9 @@
 #include <warp/adler.h>
 #include <warp/bloom_filter.h>
 #include <boost/static_assert.hpp>
+
+#include <set>
+#include <map>
 
 using namespace kdi;
 using namespace kdi::local;
@@ -50,13 +54,17 @@ namespace
         RecordBuilder builder;
         StringPoolBuilder pool;
         BuilderBlock * arr;
+        BuilderBlock * fams;
         uint32_t nItems;
+        bool addFams;
+        uint32_t nFams;
 
         PooledBuilder() :
             builder(),
             pool(&builder),
             arr(builder.subblock(8)),
-            nItems(0)
+            nItems(0),
+            addFams(false)
         {
         }
 
@@ -65,6 +73,7 @@ namespace
             builder.reset();
             pool.reset(&builder);
             arr = builder.subblock(8);
+            fams = builder.subblock(8);
             nItems = 0;
         }
 
@@ -72,6 +81,11 @@ namespace
             // Finish array
             builder.appendOffset(arr);
             builder.append(nItems);
+
+            if(addFams) {
+                builder.appendOffset(fams);
+                builder.append(nFams);
+            }
 
             // Construct record
             builder.build(r, alloc);
@@ -114,6 +128,11 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     int64_t lowestTime;
     int64_t highestTime;
     uint32_t numErasures;
+
+    // Maps string offsets in the index header to col family bitmasks
+    map<size_t, uint32_t> colFamilyMasks; 
+    uint32_t nextColMask; // Mask to assign to the next column family
+    uint32_t curColMask;  // Computed mask for the current cell block
 
     void addIndexEntry(Record const & cellBlock);
     void addCell(Cell const & x);
@@ -158,6 +177,10 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Record const & cbRec)
     index.arr->append(highestTime);  // timeRange-max
     index.arr->append(block.nItems); // numCells
     index.arr->append(numErasures);  // numErasures
+    index.arr->append(curColMask);   // column family mask
+    curColMask = 0;
+
+    // Pad record out to full alignment
     index.arr->appendPadding(8);
 
     ++index.nItems;
@@ -198,6 +221,16 @@ void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
         if(t < lowestTime) lowestTime = t;
         if(t > highestTime) highestTime = t;
     }
+
+    // Update the column family lookup and mask
+    size_t colFamily = index.pool.getStringOffset(x.getColumnFamily());
+    if(colFamilyMasks.count(colFamily) == 1) {
+        curColMask |= colFamilyMasks[colFamily];
+    } else if(colFamilyMasks.size() < 32) {
+        colFamilyMasks[colFamily] = nextColMask;
+        curColMask |= nextColMask;
+        nextColMask = nextColMask << 1;
+    }
 }
 
 void DiskTableWriterV1::ImplV1::writeCellBlock()
@@ -214,6 +247,18 @@ void DiskTableWriterV1::ImplV1::writeCellBlock()
 
 void DiskTableWriterV1::ImplV1::writeBlockIndex()
 {
+    BuilderBlock * b = index.pool.getStringBlock();
+    uint32_t nFams = 0;
+    
+    map<size_t, uint32_t>::const_iterator mi;
+    for(mi = colFamilyMasks.begin(); mi != colFamilyMasks.end(); ++mi) {
+        pair<size_t, uint32_t> const & p = *mi;
+        index.fams->appendOffset(b, p.first);
+        ++nFams;
+    }
+
+    index.addFams = true;
+    index.nFams = nFams;
     index.write(output, &alloc);
 }
 
@@ -236,6 +281,10 @@ void DiskTableWriterV1::ImplV1::open(string const & fn)
     lowestTime = 0;
     highestTime = 0;
     numErasures = 0;
+
+    colFamilyMasks.clear();
+    nextColMask = 1;
+    curColMask = 0;
 }
 
 void DiskTableWriterV1::ImplV1::close()
