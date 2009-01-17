@@ -23,6 +23,7 @@
 #define FLUX_THREADED_READER_H
 
 #include <warp/WorkerPool.h>
+#include <warp/functional.h>
 #include <flux/stream.h>
 #include <vector>
 #include <deque>
@@ -32,15 +33,9 @@
 
 namespace flux {
 
-    namespace details {
-        template <class T>
-        struct SizeIsOne
-        {
-            size_t operator()(T const & x) const { return 1; }
-        };
-    }
-
-    template <class T, class SizeOfT=details::SizeIsOne<T> >
+    template <class T,
+              class SizeOfT=warp::unary_constant<size_t,1>
+              >
     class ThreadedReader : public Stream<T>
     {
     public:
