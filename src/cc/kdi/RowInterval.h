@@ -36,6 +36,8 @@ namespace kdi {
     public:
         RowInterval() : super() {}
         explicit RowInterval(super const & rows) : super(rows) {}
+        explicit RowInterval(point_t const & lower, point_t const & upper) :
+            super(lower, upper) {}
 
         /// Return the interval as a row predicate string
         std::string toRowPredicate() const;
