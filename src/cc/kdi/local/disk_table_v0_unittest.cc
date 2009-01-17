@@ -50,11 +50,11 @@ namespace {
             memTable(MemoryTable::create(false)),
             blockSz(blockSz)
         {
-            DiskTableWriterV1 out(blockSz);
+            DiskTableWriterV0 out(128);
             out.open("memfs:cheater");
             out.close();
 
-            diskTable.reset(new DiskTableV1("memfs:cheater"));
+            diskTable.reset(new DiskTableV0("memfs:cheater"));
         }
 
         void set(strref_t row, strref_t column,
@@ -82,7 +82,7 @@ namespace {
                 if(diskTable)
                     merge->pipeFrom(diskTable->scan());
 
-                DiskTableWriterV1 out(blockSz);
+                DiskTableWriterV0 out(blockSz);
                 out.open("memfs:cheater.tmp");
                 Cell x;
                 while(merge->get(x))
@@ -91,7 +91,7 @@ namespace {
 
                 diskTable.reset();
                 fs::rename("memfs:cheater.tmp", "memfs:cheater", true);
-                diskTable.reset(new DiskTableV1("memfs:cheater"));
+                diskTable.reset(new DiskTableV0("memfs:cheater"));
 
                 memTable = MemoryTable::create(false);
             }
@@ -100,18 +100,19 @@ namespace {
 
 }
 
+
 BOOST_AUTO_TEST_CASE(empty_test)
 {
     // Make empty table
     {
-        DiskTableWriterV1 out(128);
+        DiskTableWriterV0 out(128);
         out.open("memfs:empty");
         out.close();
     }
 
     // Make sure result is empty
     {
-        DiskTableV1 t("memfs:empty");
+        DiskTableV0 t("memfs:empty");
         test_out_t s;
         BOOST_CHECK((s << t).is_empty());
     }
@@ -121,7 +122,7 @@ BOOST_AUTO_TEST_CASE(basic_test)
 {
     // Write some cells
     {
-        DiskTableWriterV1 out(128);
+        DiskTableWriterV0 out(128);
         out.open("memfs:simple");
         out.put(makeCell("row1", "col1", 42, "val1"));
         out.put(makeCell("row1", "col2", 42, "val2"));
@@ -135,7 +136,7 @@ BOOST_AUTO_TEST_CASE(basic_test)
 
     // Make sure those cells are in the table
     {
-        DiskTableV1 t("memfs:simple");
+        DiskTableV0 t("memfs:simple");
         test_out_t s;
         BOOST_CHECK((s << t).is_equal(
                         "(row1,col1,42,val1)"
@@ -152,7 +153,7 @@ BOOST_AUTO_TEST_CASE(basic_test)
 
 BOOST_AUTO_TEST_CASE(rewrite_test)
 {
-    DiskTableWriterV1 out(128);
+    DiskTableWriterV0 out(128);
 
     // Write some cells
     {
@@ -172,7 +173,7 @@ BOOST_AUTO_TEST_CASE(rewrite_test)
 
     // Make sure the cells are in the first table
     {
-        DiskTableV1 t("memfs:one");
+        DiskTableV0 t("memfs:one");
         test_out_t s;
         BOOST_CHECK((s << t).is_equal(
                         "(row1,col1,42,one1)"
@@ -183,7 +184,7 @@ BOOST_AUTO_TEST_CASE(rewrite_test)
 
     // Make sure the cells are in the second table
     {
-        DiskTableV1 t("memfs:two");
+        DiskTableV0 t("memfs:two");
         test_out_t s;
         BOOST_CHECK((s << t).is_equal(
                         "(row1,col1,42,two1)"
@@ -236,7 +237,7 @@ BOOST_AUTO_TEST_CASE(coarse_test)
     // Write it to a file
     size_t nWritten = 0;
     {
-        DiskTableWriterV1 diskOut(1<<10);
+        DiskTableWriterV0 diskOut(1<<10);
         diskOut.open("memfs:table");
 
         Cell x;
@@ -254,7 +255,7 @@ BOOST_AUTO_TEST_CASE(coarse_test)
     // Read the file and compare with the MemoryTable
     size_t nRead = 0;
     {
-        DiskTableV1 diskIn("memfs:table");
+        DiskTableV0 diskIn("memfs:table");
 
         Cell x,y;
         CellStreamPtr scanX = diskIn.scan();
@@ -304,133 +305,4 @@ BOOST_AUTO_UNIT_TEST(rowscan_test)
         countCells(tbl->scan("'row-442' <  row <  'row-446' or "
                              "'row-447' <= row <= 'row-450'")),
         210u);
-
-    // Need to test row scans on tiny tables as well
-    // Single block tables can be a corner case
-    
-    DiskTableWriterV1 out(256);
-    out.open("memfs:small");
-    out.put(makeCell("row1", "col1", 42, "one1"));
-    out.put(makeCell("row2", "col2", 42, "one2"));
-    out.close();
-
-    DiskTableV1 in("memfs:small");
-    BOOST_CHECK_EQUAL(
-        countCells(in.scan("row = 'row2'")), 
-        1u
-    ); 
-    
 }
-
-BOOST_AUTO_UNIT_TEST(colscan_test)
-{
-    TablePtr tbl(new CheaterDiskTable(33));
-    fillColFamilyTestTable(tbl, 30, 30, 2, 1, "%03d");
-
-    BOOST_CHECK_EQUAL(countCells(tbl->scan()), 1800u);
-
-    BOOST_CHECK_EQUAL(
-        countCells(tbl->scan("row > 'a' and column ~= 'not-a-fam:'")),
-        0u
-    );
-
-    BOOST_CHECK_EQUAL(
-        countCells(tbl->scan("row > 'a' and column ~= 'fam-001:'")),
-        60u
-    );
-}
-
-BOOST_AUTO_UNIT_TEST(timescan_test)
-{
-    TablePtr tbl(new CheaterDiskTable(256));
-    fillTestTable(tbl, 1000, 1, 30, "%03d");
-
-    BOOST_CHECK_EQUAL(countCells(tbl->scan()), 30000u);
-
-    BOOST_CHECK_EQUAL(
-        countCells(tbl->scan("row > 'a' and time = @1")),
-        1000u
-    );
-
-    BOOST_CHECK_EQUAL(
-        countCells(tbl->scan("row > 'a' and @0 <= time <= @666")),
-        30000u
-    );
-
-    BOOST_CHECK_EQUAL( 
-        countCells(tbl->scan("row > 'a' and time = @1 or time = @23")),
-        2000u
-    );
-}
-
-BOOST_AUTO_UNIT_TEST(loader_test)
-{
-    // Verify that loadDiskTable loads correct table for each writer version
-    
-    DiskTableWriterV1 out1(128);
-    out1.open("memfs:v1");
-    out1.put(makeCell("row1", "col1", 42, "one1"));
-    out1.put(makeCell("row1", "col2", 42, "one2"));
-    out1.close();
-
-    DiskTablePtr dp = kdi::local::loadDiskTable("memfs:v1");
-
-    test_out_t s;
-    BOOST_CHECK((s << *dp).is_equal(
-        "(row1,col1,42,one1)"
-        "(row1,col2,42,one2)"
-    ));
-
-    // Disk table written with old format should still load correctly
-
-    DiskTableWriterV0 out0(128);
-    out0.open("memfs:v0");
-    out0.put(makeCell("row1", "col1", 42, "one1"));
-    out0.put(makeCell("row1", "col2", 42, "one2"));
-    out0.close();
-    
-    dp = kdi::local::loadDiskTable("memfs:v0");
-
-    BOOST_CHECK((s << *dp).is_equal(
-        "(row1,col1,42,one1)"               
-        "(row1,col2,42,one2)"                                       
-    ));
-}
-
-BOOST_AUTO_UNIT_TEST(filtering_test)
-{
-    // Try to make verify that filtering blocks doesn't skip data it shouldn't
-    
-    // Column filtering of the last block of a row predicate with subsequent row predicate
-    DiskTableWriterV1 out1(1); // Force one cell per block
-    out1.open("memfs:filtering");
-    out1.put(makeCell("row-A", "fam-1:col", 1, "val"));
-    out1.put(makeCell("row-A", "fam-2:col", 1, "val"));
-    out1.put(makeCell("row-Z", "fam-3:col", 1, "val"));
-    out1.put(makeCell("row-Z", "fam-4:col", 1, "val"));
-    out1.close();
-
-    DiskTablePtr dp = kdi::local::loadDiskTable("memfs:filtering");
-
-    BOOST_CHECK_EQUAL(
-        countCells(dp->scan("row = 'row-A' or row = 'row-Z' and column = 'fam-1:col'")),
-        1u
-    );
-
-    BOOST_CHECK_EQUAL(
-        countCells(dp->scan("row = 'row-A' or row = 'row-Z' and column = 'fam-2:col'")),
-        1u
-    );
-
-/*
-    DiskTableWriterV1 out1(1);
-    out1.open("memfs:filtering2");
-    out1.put(makeCell("row-A", "fam-1:col", 1, "val"));
-    out1.put(makeCell("row-A", "fam-2:col", 1, "val"));
-    out1.put(makeCell("row-Z", "fam-1:col", 1, "val"));
-    out1.put(makeCell("row-Z", "fam-1:col", 1, "val"));
-    out1.close();
-*/
-
-}
-

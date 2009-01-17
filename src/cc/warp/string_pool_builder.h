@@ -135,6 +135,12 @@ public:
         return pos;
     }
 
+    /// Get the string from the builder for given offset
+    StringRange getString(size_t pos) const {
+        StringData const * s = reinterpret_cast<StringData const *>(block->begin() + pos);
+        return StringRange(s->begin(), s->end());    
+    }
+
     /// Clear out the pool and reset with a new builder.
     void reset(BuilderBlock * builder)
     {

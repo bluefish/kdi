@@ -42,7 +42,7 @@ class kdi::tablet::DiskFragment
     : public kdi::tablet::Fragment
 {
     std::string uri;
-    kdi::local::DiskTable table;
+    kdi::local::DiskTablePtr table;
     warp::StatTracker * tracker;
 
 public:

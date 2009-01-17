@@ -36,7 +36,7 @@ using namespace warp;
 using namespace ex;
 using namespace std;
 
-using kdi::local::DiskTableWriter;
+using kdi::local::CurDiskTableWriter;
 using kdi::local::DiskTable;
 
 //----------------------------------------------------------------------------

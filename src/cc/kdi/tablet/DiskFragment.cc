@@ -32,27 +32,27 @@ using namespace warp;
 DiskFragment::DiskFragment(std::string const & uri,
                            warp::StatTracker * tracker) :
     uri(uri),
-    table(uriPushScheme(uriPopScheme(uri), "cache")),
+    table(kdi::local::loadDiskTable(uriPushScheme(uriPopScheme(uri), "cache"))),
     tracker(tracker)
 {
     EX_CHECK_NULL(tracker);
 
-    tracker->add("DiskFragment.indexSize", table.getIndexSize());
-    tracker->add("DiskFragment.dataSize", table.getDataSize());
+    tracker->add("DiskFragment.indexSize", table->getIndexSize());
+    tracker->add("DiskFragment.dataSize", table->getDataSize());
     tracker->add("DiskFragment.nActive", 1);
     tracker->add("DiskFragment.nTotal", 1);
 }
 
 DiskFragment::~DiskFragment()
 {
-    tracker->add("DiskFragment.indexSize", -int64_t(table.getIndexSize()));
-    tracker->add("DiskFragment.dataSize", -int64_t(table.getDataSize()));
+    tracker->add("DiskFragment.indexSize", -int64_t(table->getIndexSize()));
+    tracker->add("DiskFragment.dataSize", -int64_t(table->getDataSize()));
     tracker->add("DiskFragment.nActive", -1);
 }
 
 CellStreamPtr DiskFragment::scan(ScanPredicate const & pred) const
 {
-    return table.scan(pred);
+    return table->scan(pred);
 }
 
 bool DiskFragment::isImmutable() const
@@ -86,5 +86,5 @@ size_t DiskFragment::getDiskSize(warp::Interval<std::string> const & rows) const
 flux::Stream< std::pair<std::string, size_t> >::handle_t
 DiskFragment::scanIndex(warp::Interval<std::string> const & rows) const
 {
-    return table.scanIndex(rows);
+    return table->scanIndex(rows);
 }

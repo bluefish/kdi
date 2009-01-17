@@ -60,7 +60,7 @@ struct IndexStats
         return *this;
     }
 
-    void set(kdi::local::disk::BlockIndex const & idx)
+    void set(kdi::local::disk::BlockIndexV0 const & idx)
     {
         clear();
 
@@ -70,8 +70,8 @@ struct IndexStats
         std::tr1::unordered_set<StringData const *> rows;
         std::tr1::unordered_set<StringData const *> columns;
 
-        using kdi::local::disk::IndexEntry;
-        for(IndexEntry const * ent = idx.blocks.begin();
+        using kdi::local::disk::IndexEntryV0;
+        for(IndexEntryV0 const * ent = idx.blocks.begin();
             ent != idx.blocks.end(); ++ent)
         {
             StringData const * row = ent->startKey.row.get();
@@ -120,10 +120,10 @@ int main(int ac, char ** av)
         i != args.end(); ++i)
     {
         cout << *i << ": " << flush;
-        size_t dataSz = kdi::local::DiskTable::loadIndex(*i, r);
+        size_t dataSz = kdi::local::DiskTableV0::loadIndex(*i, r);
         size_t indexSz = r.getLength();
-        using kdi::local::disk::BlockIndex;
-        BlockIndex const * idx = r.as<BlockIndex>();
+        using kdi::local::disk::BlockIndexV0;
+        BlockIndexV0 const * idx = r.as<BlockIndexV0>();
         IndexStats s;
         s.set(*idx);
         cout << sizeString(indexSz) << "/" << sizeString(dataSz)

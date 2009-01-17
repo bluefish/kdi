@@ -23,6 +23,7 @@
 
 #include <warp/string_data.h>
 #include <warp/offset.h>
+#include <warp/bloom_filter.h>
 #include <kdi/marshal/cell_block.h>
 
 namespace kdi {
@@ -49,14 +50,25 @@ namespace disk {
     using kdi::marshal::CellBlock;
 
     /// Mapping from a beginning CellKey to a CellBlock offset.
-    struct IndexEntry
-    {
+    struct IndexEntryV0 {
         CellKey startKey;
         uint64_t blockOffset;  // from beginning of file
     };
 
+    // Richer index format
+    struct IndexEntryV1
+    {
+        uint32_t blockChecksum; // Adler-32
+        warp::StringOffset lastRow;
+        uint64_t blockOffset;
+        int64_t lowestTime;
+        int64_t highestTime;
+        uint32_t numCells;
+        uint32_t numErasures;
+    };
+
     /// Index of CellBlock records in the file.
-    struct BlockIndex
+    struct BlockIndexV0
     {
         enum {
             TYPECODE = WARP_PACK4('C','B','I','x'),
@@ -65,11 +77,24 @@ namespace disk {
             ALIGNMENT = 8,
         };
 
-        warp::ArrayOffset<IndexEntry> blocks;
+        warp::ArrayOffset<IndexEntryV0> blocks;
     };
 
-    /// Trailer for a disk table file.
-    struct TableInfo
+    // Index of CellBlock records using the new format
+    struct BlockIndexV1
+    {
+        enum {
+            TYPECODE = WARP_PACK4('C','B','I','x'),
+            VERSION = 1,
+            FLAGS = 0,
+            ALIGNMENT = 8
+        };
+
+        warp::ArrayOffset<IndexEntryV1> blocks;
+    };
+
+    // Trailer for a disk table file.
+    struct TableInfoV0
     {
         enum {
             TYPECODE = WARP_PACK4('T','N','f','o'),
@@ -79,11 +104,26 @@ namespace disk {
         };
 
         uint64_t indexOffset;   // from beginning of file
+    
+        TableInfoV0() {}
+        explicit TableInfoV0(uint64_t off) : indexOffset(off) {}
+    };
+
+    // Trailer for a disk table file.
+    struct TableInfo
+    {
+        enum {
+            TYPECODE = WARP_PACK4('T','N','f','o'),
+            VERSION = 1,
+            FLAGS = 0,
+            ALIGNMENT = 8,
+        };
+
+        uint64_t indexOffset;   // from beginning of file
 
         TableInfo() {}
         explicit TableInfo(uint64_t off) : indexOffset(off) {}
     };
-
 } // namespace disk
 } // namespace local
 } // namespace kdi

@@ -31,7 +31,7 @@ namespace tablet {
     class DiskFragmentWriter
         : public FragmentWriter
     {
-        kdi::local::DiskTableWriter writer;
+        kdi::local::CurDiskTableWriter writer;
         std::string fn;
 
         ConfigManagerPtr configMgr;

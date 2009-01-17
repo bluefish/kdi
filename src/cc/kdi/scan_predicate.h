@@ -207,6 +207,20 @@ public:
     /// Return a copy of this ScanPredicate with the row predicate
     /// clipped to the given span.
     ScanPredicate clipRows(warp::Interval<std::string> const & span) const;
+
+    /// If this predicate has a column restriction, get the set of
+    /// column families involved.  The columns involved in the
+    /// predicate may be more restricted than the returned set of
+    /// column families, but the families may be used as filter.  If
+    /// the predicate has no column restriction or the restriction
+    /// cannot be distilled to a discrete set of column families, the
+    /// function will return false, indicating that no useful column
+    /// family filter is available.  Note that the ranges in the
+    /// returned vector share the lifetime of this predicates column
+    /// predicate.
+    /// @returns true iff a containing set of column families can be
+    /// inferred from the column predicate
+    bool getColumnFamilies(std::vector<warp::StringRange> & families) const;
 };
 
 namespace kdi {

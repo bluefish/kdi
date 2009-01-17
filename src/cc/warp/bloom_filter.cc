@@ -106,6 +106,21 @@ bool BloomFilter::contains(strref_t filter, strref_t x)
     return true;
 }
 
+bool BloomFilter::contains(
+    size_t nSeeds, uint32_t const * seeds, 
+    size_t nBits, uint8_t const *bits,
+    strref_t x) 
+{
+    for(size_t i = 0; i < nSeeds; ++i)
+    {
+        size_t bit = getBit(x, seeds[i], nBits);
+        if(!(bits[bit >> 3] & (1u << (bit & 7ul))))
+            return false;
+    }
+
+    return true;
+}
+
 void BloomFilter::serialize(std::vector<char> & buf) const
 {
     // Format: nBits/4 nSeeds/4 (seed/4)*nSeeds bits/((nBits+7)/8)

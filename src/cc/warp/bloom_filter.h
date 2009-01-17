@@ -123,6 +123,9 @@ public:
     /// Get the seeds used for this filter.
     std::vector<uint32_t> getHashSeeds() const { return seeds; }
 
+    /// Get raw bit filter
+    uint8_t const * getBits() const { return bits.raw(); }
+
     /// Return true if the given Bloom filter has parameters
     /// compatible with this one.  That is, they have an equal number
     /// of bits and identical hash seeds.
@@ -166,6 +169,13 @@ public:
     /// actually doing memory allocations necessary for creating a
     /// BloomFilter object.
     static bool contains(strref_t filter, strref_t x);
+
+    /// Check if data has been inserted into a previous bloom filter
+    /// with known nbits and seeds
+    static bool contains(
+        size_t nSeeds, uint32_t const * seeds,
+        size_t nBits, uint8_t const *bits,
+        strref_t x);
 
     /// Serialize the state of the Bloom filter into a buffer.
     void serialize(std::vector<char> & buf) const;

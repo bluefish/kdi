@@ -18,15 +18,21 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
+/*
+ * DEPRECATED
+ *
+ * This file contains the original disk table implementation for backwords
+ * compatibility.  The writer for this disk table format has been removed as
+ * obsolete.  This implementation can be removed only when there are no 
+ * more users of the original disk table format.
+ */
+
 #include <kdi/local/disk_table.h>
 #include <kdi/local/table_types.h>
 #include <kdi/scan_predicate.h>
 #include <kdi/cell_filter.h>
 #include <oort/fileio.h>
 #include <warp/file.h>
-#include <warp/adler.h>
-#include <warp/bloom_filter.h>
-#include <warp/log.h>
 #include <ex/exception.h>
 
 using namespace std;
@@ -35,9 +41,9 @@ using namespace warp;
 using namespace oort;
 using namespace kdi;
 using namespace kdi::local;
-using namespace kdi::local::disk;
+using namespace kdi::local::disk; 
 
-namespace
+namespace 
 {
     struct RowLt
     {
@@ -56,25 +62,29 @@ namespace
         }
 
         bool operator()(IntervalPoint<string> const & a,
-                        IndexEntryV1 const & b) const
+                        IndexEntryV0 const & b) const
         {
-            return lt(a, *b.lastRow);
+            return lt(a, *b.startKey.row);
         }
 
-        bool operator()(IndexEntryV1 const & a,
+        bool operator()(IndexEntryV0 const & a,
                         IntervalPoint<string> const & b) const
         {
-            return lt(*a.lastRow, b);
+            return lt(*a.startKey.row, b);
         }
     };
 
 
-    IndexEntryV1 const * findIndexEntry(BlockIndexV1 const * index,
+    IndexEntryV0 const * findIndexEntry(BlockIndexV0 const * index,
                                       IntervalPoint<string> const & beginRow)
     {
-        IndexEntryV1 const * ent = std::lower_bound(
+        IndexEntryV0 const * ent = std::lower_bound(
             index->blocks.begin(), index->blocks.end(),
             beginRow, RowLt());
+
+        // Really should have kept track of end row...
+        if(ent != index->blocks.begin())
+            --ent;
 
         return ent;
     }
@@ -83,9 +93,9 @@ namespace
 //----------------------------------------------------------------------------
 // DiskScanner
 //----------------------------------------------------------------------------
-namespace
+namespace 
 {
-    class DiskScanner : public CellStream
+    class DiskScannerV0 : public CellStream
     {
         FileInput::handle_t input;
 
@@ -93,14 +103,7 @@ namespace
         ScanPredicate::StringSetCPtr rows;
         IntervalSet<string>::const_iterator nextRowIt;
         IntervalPoint<string> upperBound;
-
-        // Column and timestamp ranges for filtering blocks
-        boost::shared_ptr< vector<string> > columnFamilies;
-        ScanPredicate::TimestampSetCPtr times;
-
-        // Index data
         Record indexRec;
-        IndexEntryV1 const * indexIt;
 
         // Current CellBlock
         Record blockRec;
@@ -113,49 +116,11 @@ namespace
         /// cell iterators to an empty range.
         /// @returns true if a block was read, false if no block was
         /// available
-        bool readNextBlock(IndexEntryV1 const *nextIndexIt = 0)
+        bool readNextBlock()
         {
-            nextBlock:
-
-            // Advance to the index entry for the next block
-            if(nextIndexIt) {
-                if(nextIndexIt >= indexRec.cast<BlockIndexV1>()->blocks.end()) return false;
-                input->seek(nextIndexIt->blockOffset);
-                indexIt = nextIndexIt;
-                nextIndexIt = 0;
-            } else if(indexIt) {
-                ++indexIt;
-            } else {
-                indexIt = indexRec.cast<BlockIndexV1>()->blocks.begin();
-            }
-
-            if(times) {
-                IntervalPoint<int64_t> lowTime(indexIt->lowestTime, PT_INCLUSIVE_LOWER_BOUND);
-                IntervalPoint<int64_t> highTime(indexIt->highestTime, PT_INCLUSIVE_UPPER_BOUND);
-                Interval<int64_t> timeInterval(lowTime, highTime);
-
-                // If there is no overlap between the time ranges we are looking for and the 
-                // interval of times in this block, skip to the next block
-                if(!times->overlaps(timeInterval)) {
-                    nextIndexIt = indexIt+1;
-                    goto nextBlock;
-                }
-            }
-
-            if(columnFamilies) {
-                // Change the column filtering!
-            }
-
             // Read the next record and make sure it is a CellBlock
             if(input->get(blockRec) && blockRec.tryAs<CellBlock>())
             {
-                // Verify the checksum
-                uint32_t checksum = adler((uint8_t*)blockRec.getData(), blockRec.getLength());
-                if(indexIt->blockChecksum != checksum) {
-                    log("BAD CHECKSUM: skipping block");
-                    goto nextBlock;
-                }
-
                 // Got one -- reset Cell iterators
                 CellBlock const * block = blockRec.cast<CellBlock>();
                 cellIt = block->cells.begin();
@@ -189,7 +154,7 @@ namespace
             if(!rows)
                 return readNextBlock();
 
-            // If we're at the last row, there is no next row segment, we're done.
+            // If we're at the last rowthere is no next row segment, we're done.
             if(nextRowIt == rows->end())
                 return false;
 
@@ -206,9 +171,8 @@ namespace
             {
                 CellBlock const * block = blockRec.cast<CellBlock>();
                 CellData const * cell = std::lower_bound(
-                    cellIt, block->cells.end(),
+                    block->cells.begin(), block->cells.end(),
                     *lowerBoundIt, RowLt());
-
                 if(cell != block->cells.end())
                 {
                     cellIt = cell;
@@ -220,24 +184,14 @@ namespace
             // Else use the index to find the position of the next
             // row segment.  If the index points us off the end,
             // we're done.
-            BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
-            IndexEntryV1 const * ent;
-            
-            if(indexIt) {
-                ent = std::lower_bound( 
-                    indexIt, index->blocks.end(),
-                    *lowerBoundIt, RowLt());
-            } else {
-                ent = std::lower_bound(
-                    index->blocks.begin(), index->blocks.end(),
-                    *lowerBoundIt, RowLt());
-            }
-
+            BlockIndexV0 const * index = indexRec.cast<BlockIndexV0>();
+            IndexEntryV0 const * ent = findIndexEntry(index, *lowerBoundIt);
             if(ent == index->blocks.end())
                 return false;
 
             // Seek to the next block position and load the block.
-            if(!readNextBlock(ent))
+            input->seek(ent->blockOffset);
+            if(!readNextBlock())
                 return false;
 
             // Set the start cell iterator
@@ -289,29 +243,22 @@ namespace
 
     public:
         /// Create a full-scan DiskScanner
-        explicit DiskScanner(FilePtr const & fp, Record const & indexRec) :
+        explicit DiskScannerV0(FilePtr const & fp) :
             input(FileInput::make(fp)),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
-            indexRec(indexRec),
-            indexIt(0),
             cellIt(0),
             cellEnd(0)
         {
         }
 
         /// Create a DiskScanner over a set of rows
-        DiskScanner(FilePtr const & fp,
+        DiskScannerV0(FilePtr const & fp,
                     ScanPredicate::StringSetCPtr const & rows,
-                    boost::shared_ptr< vector<string> > const & columnFamilies,
-                    ScanPredicate::TimestampSetCPtr const & times,
                     Record const & indexRec) :
             input(FileInput::make(fp)),
             rows(rows),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
-            columnFamilies(columnFamilies),
-            times(times),
             indexRec(indexRec),
-            indexIt(0),
             cellIt(0),
             cellEnd(0)
         {
@@ -364,8 +311,8 @@ namespace
         Record indexRec;
         Interval<string> rows;
 
-        IndexEntryV1 const * cur;
-        IndexEntryV1 const * end;
+        IndexEntryV0 const * cur;
+        IndexEntryV0 const * end;
         size_t base;
 
     public:
@@ -376,13 +323,13 @@ namespace
             end(0),
             base(0)
         {
-            BlockIndexV1 const * index = indexRec.as<BlockIndexV1>();
+            BlockIndexV0 const * index = indexRec.as<BlockIndexV0>();
             
             cur = findIndexEntry(index, rows.getLowerBound());
             end = index->blocks.end();
 
             IntervalPointOrder<warp::less> lt;
-            while(cur != end && !lt(rows.getLowerBound(), *cur->lastRow))
+            while(cur != end && !lt(rows.getLowerBound(), *cur->startKey.row))
             {
                 base = cur->blockOffset;
                 ++cur;
@@ -395,13 +342,13 @@ namespace
                 return false;
 
             IntervalPointOrder<warp::less> lt;
-            if(lt(rows.getUpperBound(), *cur->lastRow))
+            if(lt(rows.getUpperBound(), *cur->startKey.row))
             {
                 end = cur;
                 return false;
             }
 
-            x.first.assign(cur->lastRow->begin(), cur->lastRow->end());
+            x.first.assign(cur->startKey.row->begin(), cur->startKey.row->end());
             x.second = cur->blockOffset - base;
             base = cur->blockOffset;
             ++cur;
@@ -411,26 +358,11 @@ namespace
     };
 }
 
-//------------------------------------------------------------------------------
-// DiskTable - Always immutable
-//------------------------------------------------------------------------------
-void DiskTable::set(strref_t row, strref_t column, int64_t timestamp,
-                    strref_t value)
-{
-    raise<NotImplementedError>("DiskTable::set() not implemented: "
-                               "DiskTable is read-only");
-}
-
-void DiskTable::erase(strref_t row, strref_t column, int64_t timestamp)
-{
-    raise<NotImplementedError>("DiskTable::erase() not implemented: "
-                               "DiskTable is read-only");
-}
 
 //----------------------------------------------------------------------------
-// DiskTableV1
+// DiskTable
 //----------------------------------------------------------------------------
-DiskTableV1::DiskTableV1(string const & fn) :
+DiskTableV0::DiskTableV0(string const & fn) :
     fn(fn), dataSize(0)
 {
     Record r;
@@ -440,31 +372,31 @@ DiskTableV1::DiskTableV1(string const & fn) :
     indexRec = r.clone();
 }
 
-off_t DiskTableV1::loadIndex(std::string const & fn, oort::Record & r)
+off_t DiskTableV0::loadIndex(std::string const & fn, oort::Record & r)
 {
     // Open file to TableInfo record
     FilePtr fp = File::input(fn);
-    fp->seek(-(10+sizeof(TableInfo)), SEEK_END);
+    fp->seek(-(10+sizeof(TableInfoV0)), SEEK_END);
 
     // Make a Record reader
     FileInput::handle_t input = FileInput::make(fp);
     
     // Read TableInfo
-    if(!input->get(r) || !r.tryAs<TableInfo>())
+    if(!input->get(r) || !r.tryAs<TableInfoV0>())
         raise<RuntimeError>("could not read TableInfo record: %s", fn);
 
     // Seek to BlockIndex
-    uint64_t indexOffset = r.cast<TableInfo>()->indexOffset;
+    uint64_t indexOffset = r.cast<TableInfoV0>()->indexOffset;
     input->seek(indexOffset);
 
     // Read BlockIndex
-    if(!input->get(r) || !r.tryAs<BlockIndexV1>())
+    if(!input->get(r) || !r.tryAs<BlockIndexV0>())
         raise<RuntimeError>("could not read BlockIndex record: %s", fn);
 
     return indexOffset;
 }
 
-CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
+CellStreamPtr DiskTableV0::scan(ScanPredicate const & pred) const
 {
     FilePtr fp = File::input(fn);
 
@@ -472,29 +404,13 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
     CellStreamPtr diskScanner;
     if(ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate())
     {
-        //ScanPredicate::StringSetCPtr const & columns = pred.getColumnPredicate();
-        ScanPredicate::TimestampSetCPtr const & times = pred.getTimePredicate();
-
-        boost::shared_ptr< vector<string> > famsCopy;
-        vector<StringRange> fams;
-        if(pred.getColumnFamilies(fams))
-        {
-            // Make a copy so the families don't get invalidated after
-            // the predicate goes out of scope.
-            famsCopy.reset(new vector<string>(fams.size()));
-            for(size_t i = 0; i < fams.size(); ++i)
-            {
-                (*famsCopy)[i] = fams[i].toString();
-            }
-        }
-
         // Make a scanner that handles the row predicate
-        diskScanner.reset(new DiskScanner(fp, rows, famsCopy, times, indexRec));
+        diskScanner.reset(new DiskScannerV0(fp, rows, indexRec));
     }
     else
     {
         // Scan everything
-        diskScanner.reset(new DiskScanner(fp, indexRec));
+        diskScanner.reset(new DiskScannerV0(fp));
     }
 
     // Filter the rest
@@ -504,34 +420,10 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
 }
 
 flux::Stream< std::pair<std::string, size_t> >::handle_t
-DiskTableV1::scanIndex(warp::Interval<std::string> const & rows) const
+DiskTableV0::scanIndex(warp::Interval<std::string> const & rows) const
 {
     flux::Stream< std::pair<std::string, size_t> >::handle_t p(
         new IndexScanner(indexRec, rows)
         );
     return p;
-}
-
-DiskTablePtr kdi::local::loadDiskTable(std::string const &fn) {
-    // Open file to TableInfo record
-    FilePtr fp = File::input(fn);
-    fp->seek(-(10+sizeof(TableInfo)), SEEK_END);
-
-    // Make a Record reader
-    FileInput::handle_t input = FileInput::make(fp);
-    
-    // Read TableInfo
-    Record r;
-    if(input->get(r) && r.getType() == TableInfo::TYPECODE) {
-        switch(r.getVersion()) {
-            case 0: return DiskTablePtr(new DiskTableV0(fn));
-            case 1: return DiskTablePtr(new DiskTableV1(fn));
-            default: raise<RuntimeError>("Unknown TableInfo version: %s", fn);
-        }
-    }
-    else {
-        raise<RuntimeError>("could not read TableInfo record: %s", fn);
-    }
-
-    return DiskTablePtr();
 }
