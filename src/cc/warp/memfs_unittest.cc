@@ -20,6 +20,7 @@
 //----------------------------------------------------------------------------
 
 #include <warp/memfs.h>
+#include <warp/string_range.h>
 #include <warp/file.h>
 #include <unittest/main.h>
 #include <ex/exception.h>
@@ -105,7 +106,7 @@ BOOST_AUTO_TEST_CASE(file_test)
     
     // Read data out of the file, make sure it is the same data
     BOOST_CHECK_EQUAL(r->read(buf, sizeof(buf)), dataLen);
-    BOOST_CHECK_EQUAL(testData, buf);
+    BOOST_CHECK_EQUAL(testData, StringRange(buf, buf+dataLen));
 
     // Can't read further
     BOOST_CHECK_EQUAL(r->read(buf, sizeof(buf)), 0ul);
@@ -115,7 +116,7 @@ BOOST_AUTO_TEST_CASE(file_test)
 
     // Read data out of the file, make sure it is the same data
     BOOST_CHECK_EQUAL(r->read(buf, sizeof(buf)), dataLen);
-    BOOST_CHECK_EQUAL(buf, testData);
+    BOOST_CHECK_EQUAL(StringRange(buf, buf+dataLen), testData);
 
     // Rewind again
     r->seek(0);
