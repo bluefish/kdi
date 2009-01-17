@@ -1,19 +1,19 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
 // Created 2008-06-11
-// 
+//
 // This file is part of the warp library.
-// 
+//
 // The warp library is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by the
 // Free Software Foundation; either version 2 of the License, or any later
 // version.
-// 
+//
 // The warp library is distributed in the hope that it will be useful, but
 // WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
 // Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -24,12 +24,16 @@
 
 #include <warp/circular.h>
 #include <warp/objectpool.h>
+#include <warp/functional.h>
 #include <boost/noncopyable.hpp>
 #include <map>
 
 namespace warp {
 
-    template <class K, class V>
+    template <class K, class V,
+              class Init=no_op,
+              class Sz=unary_constant<size_t,1>
+              >
     class LruCache;
 
 } // namespace warp
@@ -37,7 +41,7 @@ namespace warp {
 //----------------------------------------------------------------------------
 // LruCache
 //----------------------------------------------------------------------------
-template <class K, class V>
+template <class K, class V, class Init, class Sz>
 class warp::LruCache
     : private boost::noncopyable
 {
@@ -80,7 +84,11 @@ class warp::LruCache
     pool_t pool;
     lru_t lru;
 
-    size_t maxItems;
+    size_t curSize;
+    size_t maxSize;
+
+    Init initValueFromKey;
+    Sz sizeOfValue;
 
     /// Flush least recently used items with no outstanding
     /// references until cache is under budget or all items have
@@ -88,7 +96,7 @@ class warp::LruCache
     void flushToSize(size_t targetSize)
     {
         typename lru_t::iterator i = lru.begin();
-        while(i != lru.end() && index.size() > targetSize)
+        while(i != lru.end() && curSize > targetSize)
         {
             if(i->refCount == 0)
                 removeItem(&*i++);
@@ -101,7 +109,10 @@ class warp::LruCache
     {
         // Take the item out of the index
         index.erase(item->indexIt);
-        
+
+        // Subtract the item's size
+        curSize -= sizeOfValue(item->value);
+
         // Release item
         pool.release(item);
     }
@@ -110,8 +121,12 @@ public:
     /// Make an LruCache holding a certain number of items.  The cache
     /// can temporarily grow larger than the maxSize if clients are
     /// slow in releasing cached objects.
-    explicit LruCache(size_t maxItems) :
-        maxItems(maxItems)
+    explicit LruCache(size_t maxSize,
+                      Init const & initValueFromKey=Init(),
+                      Sz const & sizeOfValue=Sz()) :
+        curSize(0), maxSize(maxSize),
+        initValueFromKey(initValueFromKey),
+        sizeOfValue(sizeOfValue)
     {
     }
 
@@ -124,8 +139,14 @@ public:
         return index.find(key) != index.end();
     }
 
-    /// Return the number of items in the cache.
+    /// Return the current size of the cache.
     size_t size() const
+    {
+        return curSize;
+    }
+
+    /// Return the current number of items in the cache.
+    size_t count() const
     {
         return index.size();
     }
@@ -143,13 +164,15 @@ public:
         typename map_t::iterator i = index.find(key);
         if(i == index.end())
         {
-            // Release unused items until cache is under budget
-            if(index.size() >= maxItems)
-                flushToSize(maxItems-1);
-
             // Create a new item
-            i = index.insert(std::make_pair(key, pool.get())).first;
+            i = index.insert(std::make_pair(key, pool.create())).first;
+            initValueFromKey(i->second->value, key);
+            curSize += sizeOfValue(i->second->value);
             i->second->indexIt = i;
+
+            // Release unused items until cache is under budget
+            if(curSize >= maxSize)
+                flushToSize(maxSize);
         }
 
         // Increment reference count
@@ -197,7 +220,7 @@ public:
             item->removed = true;
 
         // Decrement reference count and maybe remove item
-        if(--item->refCount == 0 && (item->removed || index.size() > maxItems))
+        if(--item->refCount == 0 && (item->removed || curSize > maxSize))
             removeItem(item);
     }
 
@@ -217,7 +240,7 @@ public:
     {
         // Recover the item pointer from the value
         Item * item = Item::castFromValue(mark);
-        
+
         // Remove items until we find the mark
         typename lru_t::iterator i = lru.begin();
         while(i != lru.end() && &*i != item)
