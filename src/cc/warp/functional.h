@@ -57,6 +57,32 @@ namespace warp
     };
 
     //------------------------------------------------------------------------
+    // unary_constant
+    //------------------------------------------------------------------------
+    /// Unary functor that returns a constant.
+    template <class R, R K>
+    struct unary_constant
+    {
+        template <class A>
+        R operator()(A const &) const { return K; }
+    };
+
+    //------------------------------------------------------------------------
+    // no_op
+    //------------------------------------------------------------------------
+    /// Functor that does nothing for up to 2 arguments
+    struct no_op
+    {
+        void operator()() const {}
+
+        template <class A>
+        void operator()(A const &) const {}
+
+        template <class A, class B>
+        void operator()(A const &, B const &) const {}
+    };
+
+    //------------------------------------------------------------------------
     // less
     //------------------------------------------------------------------------
     /// Binary functor that returns true iff its first argument is
