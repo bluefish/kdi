@@ -143,6 +143,7 @@ namespace
                 }
             }
 
+            log("col family mask: 0x%x", colFamilyMask);
             if(colFamilyMask) {
                 if(!(colFamilyMask & indexIt->colFamilyMask)) {
                     log("skipping, looking for 0x%x, has 0x%x", colFamilyMask, indexIt->colFamilyMask);
@@ -324,7 +325,6 @@ namespace
                 BlockIndexV1 const * index = indexRec.as<BlockIndexV1>();
 
                 // Figure out the column family bitmask now
-                uint32_t colFamilyMask = 0;
                 vector<string>::const_iterator cfi;
                 for(cfi = columnFamilies->begin(); cfi != columnFamilies->end(); ++cfi) {
                     uint32_t nextMask = 1;
