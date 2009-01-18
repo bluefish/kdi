@@ -129,7 +129,8 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
     int64_t highestTime;
 
     // Maps string offsets in the index header to col family bitmasks
-    map<size_t, uint32_t> colFamilyMasks; 
+    map<size_t, uint32_t> colFamilyMasks;
+    vector<size_t> allColFamilies;
     uint32_t nextColMask; // Mask to assign to the next column family
     uint32_t curColMask;  // Computed mask for the current cell block
 
@@ -222,7 +223,12 @@ void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
     size_t colFamily = index.pool.getStringOffset(x.getColumnFamily());
     if(colFamilyMasks.count(colFamily) == 1) {
         curColMask |= colFamilyMasks[colFamily];
-    } else if(colFamilyMasks.size() < 32) {
+    } else {
+        // The mask is allowed to wrap around!
+        // If there are more than 32 column families (rare use case),
+        // it simply results in false positives
+        if(nextColMask == 0) nextColMask = 1;
+
         colFamilyMasks[colFamily] = nextColMask;
         curColMask |= nextColMask;
         nextColMask = nextColMask << 1;
