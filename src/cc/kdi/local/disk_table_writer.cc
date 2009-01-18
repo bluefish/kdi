@@ -127,7 +127,6 @@ class DiskTableWriterV1::ImplV1 : public DiskTableWriter::Impl
 
     int64_t lowestTime;
     int64_t highestTime;
-    uint32_t numErasures;
 
     // Maps string offsets in the index header to col family bitmasks
     map<size_t, uint32_t> colFamilyMasks; 
@@ -175,8 +174,6 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Record const & cbRec)
     index.arr->append(fp->tell());   // blockOffset
     index.arr->append(lowestTime);   // timeRange-min
     index.arr->append(highestTime);  // timeRange-max
-    index.arr->append(block.nItems); // numCells
-    index.arr->append(numErasures);  // numErasures
     index.arr->append(curColMask);   // column family mask
     curColMask = 0;
 
@@ -204,7 +201,6 @@ void DiskTableWriterV1::ImplV1::addCell(Cell const & x)
     {
         size_t v = block.pool.getStringOffset(x.getValue());
         block.arr->appendOffset(b, v);     // value
-        ++numErasures;
     }
     else
     {
@@ -280,7 +276,6 @@ void DiskTableWriterV1::ImplV1::open(string const & fn)
 
     lowestTime = 0;
     highestTime = 0;
-    numErasures = 0;
 
     colFamilyMasks.clear();
     nextColMask = 1;

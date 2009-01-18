@@ -63,8 +63,6 @@ namespace disk {
         uint64_t blockOffset;
         int64_t lowestTime;
         int64_t highestTime;
-        uint32_t numCells;
-        uint32_t numErasures;
         uint32_t colFamilyMask;
     };
 
