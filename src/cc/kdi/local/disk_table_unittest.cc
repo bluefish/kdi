@@ -325,9 +325,9 @@ BOOST_AUTO_UNIT_TEST(rowscan_test)
 BOOST_AUTO_UNIT_TEST(colscan_test)
 {
     TablePtr tbl(new CheaterDiskTable(33));
-    fillColFamilyTestTable(tbl, 30, 30, 2, 1, "%03d");
+    fillColFamilyTestTable(tbl, 30, 33, 2, 1, "%03d");
 
-    BOOST_CHECK_EQUAL(countCells(tbl->scan()), 1800u);
+    BOOST_CHECK_EQUAL(countCells(tbl->scan()), 1980u);
 
     BOOST_CHECK_EQUAL(
         countCells(tbl->scan("row > 'a' and column ~= 'not-a-fam:'")),
@@ -337,6 +337,11 @@ BOOST_AUTO_UNIT_TEST(colscan_test)
     BOOST_CHECK_EQUAL(
         countCells(tbl->scan("row > 'a' and column ~= 'fam-001:'")),
         60u
+    );
+
+    BOOST_CHECK_EQUAL(
+        countCells(tbl->scan("row > 'a' and column ~= 'fam-001:' or column ~= 'fam-033:'")),
+        120u
     );
 }
 
