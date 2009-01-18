@@ -67,54 +67,40 @@ namespace disk {
         uint32_t numErasures;
     };
 
-    /// Index of CellBlock records in the file.
-    struct BlockIndexV0
+    /// Base BlockIndex type defines record type code
+    struct BlockIndex
     {
         enum {
             TYPECODE = WARP_PACK4('C','B','I','x'),
-            VERSION = 0,
             FLAGS = 0,
             ALIGNMENT = 8,
         };
+    };
 
+    /// Index of CellBlock records in the file.
+    struct BlockIndexV0 : public BlockIndex
+    {
+        enum { VERSION = 0 };
         warp::ArrayOffset<IndexEntryV0> blocks;
     };
 
     // Index of CellBlock records using the new format
-    struct BlockIndexV1
+    struct BlockIndexV1 : public BlockIndex
     {
-        enum {
-            TYPECODE = WARP_PACK4('C','B','I','x'),
-            VERSION = 1,
-            FLAGS = 0,
-            ALIGNMENT = 8
-        };
-
+        enum { VERSION = 1 };
         warp::ArrayOffset<IndexEntryV1> blocks;
-    };
-
-    // Trailer for a disk table file.
-    struct TableInfoV0
-    {
-        enum {
-            TYPECODE = WARP_PACK4('T','N','f','o'),
-            VERSION = 0,
-            FLAGS = 0,
-            ALIGNMENT = 8,
-        };
-
-        uint64_t indexOffset;   // from beginning of file
-    
-        TableInfoV0() {}
-        explicit TableInfoV0(uint64_t off) : indexOffset(off) {}
     };
 
     // Trailer for a disk table file.
     struct TableInfo
     {
+        // TableInfo structure shouldn't change.  It's used to figure
+        // out what kind of DiskTable file we have.  The record
+        // version tells us what to expect from the rest of the file.
+
         enum {
             TYPECODE = WARP_PACK4('T','N','f','o'),
-            VERSION = 1,
+            VERSION = 1,        // latest version
             FLAGS = 0,
             ALIGNMENT = 8,
         };
@@ -124,6 +110,7 @@ namespace disk {
         TableInfo() {}
         explicit TableInfo(uint64_t off) : indexOffset(off) {}
     };
+
 } // namespace disk
 } // namespace local
 } // namespace kdi

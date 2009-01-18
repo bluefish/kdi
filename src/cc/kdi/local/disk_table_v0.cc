@@ -366,34 +366,13 @@ DiskTableV0::DiskTableV0(string const & fn) :
     fn(fn), dataSize(0)
 {
     Record r;
-    dataSize = loadIndex(fn, r);
+    dataSize = DiskTable::loadIndex(fn, r);
+
+    // Make sure we have the right type
+    r.as<BlockIndexV0>();
 
     // Make a copy of the index
     indexRec = r.clone();
-}
-
-off_t DiskTableV0::loadIndex(std::string const & fn, oort::Record & r)
-{
-    // Open file to TableInfo record
-    FilePtr fp = File::input(fn);
-    fp->seek(-(10+sizeof(TableInfoV0)), SEEK_END);
-
-    // Make a Record reader
-    FileInput::handle_t input = FileInput::make(fp);
-    
-    // Read TableInfo
-    if(!input->get(r) || !r.tryAs<TableInfoV0>())
-        raise<RuntimeError>("could not read TableInfo record: %s", fn);
-
-    // Seek to BlockIndex
-    uint64_t indexOffset = r.cast<TableInfoV0>()->indexOffset;
-    input->seek(indexOffset);
-
-    // Read BlockIndex
-    if(!input->get(r) || !r.tryAs<BlockIndexV0>())
-        raise<RuntimeError>("could not read BlockIndex record: %s", fn);
-
-    return indexOffset;
 }
 
 CellStreamPtr DiskTableV0::scan(ScanPredicate const & pred) const

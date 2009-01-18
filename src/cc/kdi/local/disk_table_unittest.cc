@@ -373,7 +373,7 @@ BOOST_AUTO_UNIT_TEST(loader_test)
     out1.put(makeCell("row1", "col2", 42, "one2"));
     out1.close();
 
-    DiskTablePtr dp = kdi::local::loadDiskTable("memfs:v1");
+    DiskTablePtr dp = DiskTable::loadTable("memfs:v1");
 
     test_out_t s;
     BOOST_CHECK((s << *dp).is_equal(
@@ -389,7 +389,7 @@ BOOST_AUTO_UNIT_TEST(loader_test)
     out0.put(makeCell("row1", "col2", 42, "one2"));
     out0.close();
     
-    dp = kdi::local::loadDiskTable("memfs:v0");
+    dp = DiskTable::loadTable("memfs:v0");
 
     BOOST_CHECK((s << *dp).is_equal(
         "(row1,col1,42,one1)"               
@@ -410,7 +410,7 @@ BOOST_AUTO_UNIT_TEST(filtering_test)
     out1.put(makeCell("row-Z", "fam-4:col", 1, "val"));
     out1.close();
 
-    DiskTablePtr dp = kdi::local::loadDiskTable("memfs:filtering");
+    DiskTablePtr dp = DiskTable::loadTable("memfs:filtering");
 
     BOOST_CHECK_EQUAL(
         countCells(dp->scan("row = 'row-A' or row = 'row-Z' and column = 'fam-1:col'")),

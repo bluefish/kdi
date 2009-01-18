@@ -43,9 +43,6 @@ namespace local {
     /// Pointer to a const DiskTable
     typedef boost::shared_ptr<DiskTable const> DiskTableCPtr;
 
-    /// Loader for getting correct DiskTable version from file.
-    DiskTablePtr loadDiskTable(std::string const &fn);
-
 } // namespace local
 } // namespace kdi
 
@@ -74,6 +71,18 @@ public:
 
     virtual size_t getIndexSize() const = 0;
     virtual size_t getDataSize() const = 0;
+
+    /// Read the table version number from the given file name.  The
+    /// file should name a valid table file.
+    static size_t readVersion(std::string const & fn);
+
+    /// Load the correct DiskTable version from the given file.
+    static DiskTablePtr loadTable(std::string const & fn);
+
+    /// Load the index record from the given file.  The index is
+    /// loaded into the given record object and the position of the
+    /// index in the file is returned.
+    static off_t loadIndex(std::string const & fn, oort::Record & r);
 };
 
 //----------------------------------------------------------------------------
@@ -88,10 +97,6 @@ class kdi::local::DiskTableV0
 
 public:
     explicit DiskTableV0(std::string const & fn);
-
-    /// Load the index Record from the given file
-    /// @returns offset to index from start of file
-    static off_t loadIndex(std::string const & fn, oort::Record & r);
 
     using Table::scan;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
@@ -119,10 +124,6 @@ class kdi::local::DiskTableV1
 public:
     explicit DiskTableV1(std::string const & fn);
 
-    /// Load the index Record from the given file
-    /// @returns offset to index from start of file
-    static off_t loadIndex(std::string const & fn, oort::Record & r);
-
     using Table::scan;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
 
@@ -132,10 +133,5 @@ public:
     virtual size_t getIndexSize() const { return indexRec.getLength(); }
     virtual size_t getDataSize() const { return dataSize; }
 };
-
-//----------------------------------------------------------------------------
-// loadDiskTable - instantiate correctly versioned DiskTable object
-// ---------------------------------------------------------------------------
-kdi::local::DiskTablePtr kdi::local::loadDiskTable(std::string const &fn);
 
 #endif // KDI_LOCAL_DISK_TABLE_H

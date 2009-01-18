@@ -32,7 +32,9 @@ using namespace warp;
 DiskFragment::DiskFragment(std::string const & uri,
                            warp::StatTracker * tracker) :
     uri(uri),
-    table(kdi::local::loadDiskTable(uriPushScheme(uriPopScheme(uri), "cache"))),
+    table(
+        kdi::local::DiskTable::loadTable(
+            uriPushScheme(uriPopScheme(uri), "cache"))),
     tracker(tracker)
 {
     EX_CHECK_NULL(tracker);

@@ -427,20 +427,7 @@ void DiskTable::erase(strref_t row, strref_t column, int64_t timestamp)
                                "DiskTable is read-only");
 }
 
-//----------------------------------------------------------------------------
-// DiskTableV1
-//----------------------------------------------------------------------------
-DiskTableV1::DiskTableV1(string const & fn) :
-    fn(fn), dataSize(0)
-{
-    Record r;
-    dataSize = loadIndex(fn, r);
-
-    // Make a copy of the index
-    indexRec = r.clone();
-}
-
-off_t DiskTableV1::loadIndex(std::string const & fn, oort::Record & r)
+size_t DiskTable::readVersion(std::string const & fn)
 {
     // Open file to TableInfo record
     FilePtr fp = File::input(fn);
@@ -448,9 +435,38 @@ off_t DiskTableV1::loadIndex(std::string const & fn, oort::Record & r)
 
     // Make a Record reader
     FileInput::handle_t input = FileInput::make(fp);
-    
+
     // Read TableInfo
-    if(!input->get(r) || !r.tryAs<TableInfo>())
+    oort::Record r;
+    if(!input->get(r) || !r.getType() == TableInfo::TYPECODE)
+        raise<RuntimeError>("could not read TableInfo record: %s", fn);
+
+    return r.getVersion();
+}
+
+DiskTablePtr DiskTable::loadTable(std::string const & fn)
+{
+    size_t version = readVersion(fn);
+    switch(version)
+    {
+        case 0: return DiskTablePtr(new DiskTableV0(fn));
+        case 1: return DiskTablePtr(new DiskTableV1(fn));
+    }
+
+    raise<RuntimeError>("Unknown TableInfo version %d: %s", version, fn);
+}
+
+off_t DiskTable::loadIndex(std::string const & fn, oort::Record & r)
+{
+    // Open file to TableInfo record
+    FilePtr fp = File::input(fn);
+    fp->seek(-(10+sizeof(TableInfo)), SEEK_END);
+
+    // Make a Record reader
+    FileInput::handle_t input = FileInput::make(fp);
+
+    // Read TableInfo
+    if(!input->get(r) || r.getType() != TableInfo::TYPECODE)
         raise<RuntimeError>("could not read TableInfo record: %s", fn);
 
     // Seek to BlockIndex
@@ -458,10 +474,26 @@ off_t DiskTableV1::loadIndex(std::string const & fn, oort::Record & r)
     input->seek(indexOffset);
 
     // Read BlockIndex
-    if(!input->get(r) || !r.tryAs<BlockIndexV1>())
+    if(!input->get(r) || r.getType() != BlockIndex::TYPECODE)
         raise<RuntimeError>("could not read BlockIndex record: %s", fn);
 
     return indexOffset;
+}
+
+//----------------------------------------------------------------------------
+// DiskTableV1
+//----------------------------------------------------------------------------
+DiskTableV1::DiskTableV1(string const & fn) :
+    fn(fn), dataSize(0)
+{
+    Record r;
+    dataSize = DiskTable::loadIndex(fn, r);
+
+    // Make sure we have the right type
+    r.as<BlockIndexV1>();
+
+    // Make a copy of the index
+    indexRec = r.clone();
 }
 
 CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
@@ -510,28 +542,4 @@ DiskTableV1::scanIndex(warp::Interval<std::string> const & rows) const
         new IndexScanner(indexRec, rows)
         );
     return p;
-}
-
-DiskTablePtr kdi::local::loadDiskTable(std::string const &fn) {
-    // Open file to TableInfo record
-    FilePtr fp = File::input(fn);
-    fp->seek(-(10+sizeof(TableInfo)), SEEK_END);
-
-    // Make a Record reader
-    FileInput::handle_t input = FileInput::make(fp);
-    
-    // Read TableInfo
-    Record r;
-    if(input->get(r) && r.getType() == TableInfo::TYPECODE) {
-        switch(r.getVersion()) {
-            case 0: return DiskTablePtr(new DiskTableV0(fn));
-            case 1: return DiskTablePtr(new DiskTableV1(fn));
-            default: raise<RuntimeError>("Unknown TableInfo version: %s", fn);
-        }
-    }
-    else {
-        raise<RuntimeError>("could not read TableInfo record: %s", fn);
-    }
-
-    return DiskTablePtr();
 }

@@ -215,7 +215,10 @@ void DiskTableWriterV0::ImplV0::close()
 
     // Write TableInfo record
     Record r;
-    alloc.construct<disk::TableInfoV0>(r, indexOffset);
+    HeaderSpec::Fields f;
+    f.setFromType<disk::TableInfo>();
+    f.version = 0;              // This is an old version
+    serialize<uint64_t>(alloc.alloc(r,f), indexOffset);
     output->put(r);
 
     // Shut down
