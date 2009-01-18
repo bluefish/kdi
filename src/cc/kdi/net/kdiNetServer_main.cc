@@ -49,6 +49,8 @@
 #include <kdi/tablet/TabletGc.h>
 #include <warp/tuple_encode.h>
 
+#include <kdi/local/index_cache.h>
+
 // For getHostName
 #include <unistd.h>
 #include <cstring>
@@ -74,10 +76,16 @@ namespace {
         boost::mutex mutex;
 
     public:
-        int64_t add(strref_t name, int64_t delta)
+        void set(strref_t name, int64_t value)
         {
             boost::mutex::scoped_lock lock(mutex);
-            return stats[name.toString()] += delta;
+            stats[name.toString()] = value;
+        }
+
+        void add(strref_t name, int64_t delta)
+        {
+            boost::mutex::scoped_lock lock(mutex);
+            stats[name.toString()] += delta;
         }
 
         void report()
@@ -254,10 +262,14 @@ namespace {
                             this
                             ),
                         "Maintenance thread", true)));
+
+            kdi::local::IndexCache::setTracker(&myTracker);
         }
 
         ~SuperTabletServer()
         {
+            kdi::local::IndexCache::setTracker(0);
+
             log("SuperTabletServer %p: destroyed", this);
         }
 

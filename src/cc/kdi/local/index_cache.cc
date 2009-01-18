@@ -37,12 +37,63 @@ void IndexCache::Load::operator()(oort::Record & r, std::string const & fn) cons
 //----------------------------------------------------------------------------
 // IndexCache
 //----------------------------------------------------------------------------
-IndexCache * IndexCache::get()
+IndexCache::IndexCache(size_t maxSize) :
+    cache(maxSize), tracker(0)
 {
-    size_t const CACHE_SIZE = size_t(2) << 30;
+}
 
-    static boost::scoped_ptr<IndexCache> x(
-        new IndexCache(CACHE_SIZE));
-    
-    return x.get();
+oort::Record * IndexCache::get(std::string const & fn)
+{
+    locked_t p(cache);
+    oort::Record * r = p->get(fn);
+    if(tracker)
+    {
+        tracker->set("IndexCache.size", p->size());
+        tracker->set("IndexCache.count", p->count());
+    }
+    return r;
+}
+
+void IndexCache::release(oort::Record * r)
+{
+    locked_t p(cache);
+    p->release(r);
+    if(tracker)
+    {
+        tracker->set("IndexCache.size", p->size());
+        tracker->set("IndexCache.count", p->count());
+    }
+}
+
+void IndexCache::remove(std::string const & fn)
+{
+    locked_t p(cache);
+    p->remove(fn);
+    if(tracker)
+    {
+        tracker->set("IndexCache.size", p->size());
+        tracker->set("IndexCache.count", p->count());
+    }
+}
+
+
+namespace
+{
+    IndexCache * gptr()
+    {
+        size_t const CACHE_SIZE = size_t(2) << 30;
+        static boost::scoped_ptr<IndexCache> p(
+            new IndexCache(CACHE_SIZE));
+        return p.get();
+    }
+}
+
+void IndexCache::setTracker(warp::StatTracker * tracker)
+{
+    gptr()->tracker = tracker;
+}
+
+IndexCache * IndexCache::getGlobal()
+{
+    return gptr();
 }

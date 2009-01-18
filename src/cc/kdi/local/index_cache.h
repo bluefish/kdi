@@ -23,6 +23,7 @@
 
 #include <warp/lru_cache.h>
 #include <warp/synchronized.h>
+#include <warp/StatTracker.h>
 #include <oort/record.h>
 #include <string>
 #include <boost/noncopyable.hpp>
@@ -50,29 +51,19 @@ class kdi::local::IndexCache
                            oort::record_size> cache_t;
     typedef warp::Synchronized<cache_t> scache_t;
     typedef warp::LockedPtr<cache_t> locked_t;
-        
+
     scache_t cache;
+    warp::StatTracker * tracker;
 
 public:
-    explicit IndexCache(size_t maxSize) :
-        cache(maxSize) {}
+    explicit IndexCache(size_t maxSize);
 
-    oort::Record * get(std::string const & fn)
-    {
-        return locked_t(cache)->get(fn);
-    }
+    oort::Record * get(std::string const & fn);
+    void release(oort::Record * r);
+    void remove(std::string const & fn);
 
-    void release(oort::Record * r)
-    {
-        locked_t(cache)->release(r);
-    }
-
-    void remove(std::string const & fn)
-    {
-        locked_t(cache)->remove(fn);
-    }
-
-    static IndexCache * get();
+    static void setTracker(warp::StatTracker * tracker);
+    static IndexCache * getGlobal();
 };
 
 //----------------------------------------------------------------------------
@@ -83,7 +74,7 @@ class kdi::local::CacheRecord
 {
     IndexCache * cache;
     oort::Record * record;
-        
+
 public:
     CacheRecord() : cache(0), record(0) {}
 

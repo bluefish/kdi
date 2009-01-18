@@ -29,8 +29,11 @@ namespace warp {
     class StatTracker
     {
     public:
-        /// Add delta to the named stat and return the new value
-        virtual int64_t add(strref_t name, int64_t delta) = 0;
+        /// Set the named the named stat to the given value
+        virtual void set(strref_t name, int64_t value) = 0;
+
+        /// Add delta to the named stat
+        virtual void add(strref_t name, int64_t delta) = 0;
 
     protected:
         ~StatTracker() {}
@@ -40,7 +43,8 @@ namespace warp {
         : public StatTracker
     {
     public:
-        int64_t add(strref_t name, int64_t delta) { return 0; }
+        void set(strref_t name, int64_t value) {}
+        void add(strref_t name, int64_t delta) {}
     };
 
 } // namespace warp

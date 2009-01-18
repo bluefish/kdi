@@ -506,7 +506,7 @@ off_t DiskTable::loadIndex(std::string const & fn, oort::Record & r)
 // DiskTableV1
 //----------------------------------------------------------------------------
 DiskTableV1::DiskTableV1(string const & fn) :
-    cache(IndexCache::get()), fn(fn), indexSize(0), dataSize(0)
+    cache(IndexCache::getGlobal()), fn(fn), indexSize(0), dataSize(0)
 {
     oort::Record r;
     dataSize = loadIndex(fn, r);

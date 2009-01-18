@@ -364,7 +364,7 @@ namespace
 // DiskTable
 //----------------------------------------------------------------------------
 DiskTableV0::DiskTableV0(string const & fn) :
-    cache(IndexCache::get()), fn(fn), indexSize(0), dataSize(0)
+    cache(IndexCache::getGlobal()), fn(fn), indexSize(0), dataSize(0)
 {
     oort::Record r;
     dataSize = loadIndex(fn, r);
