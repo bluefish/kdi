@@ -103,7 +103,7 @@ namespace
         ScanPredicate::StringSetCPtr rows;
         IntervalSet<string>::const_iterator nextRowIt;
         IntervalPoint<string> upperBound;
-        Record indexRec;
+        CacheRecord indexRec;
 
         // Current CellBlock
         Record blockRec;
@@ -254,11 +254,11 @@ namespace
         /// Create a DiskScanner over a set of rows
         DiskScannerV0(FilePtr const & fp,
                     ScanPredicate::StringSetCPtr const & rows,
-                    Record const & indexRec) :
+                      IndexCache * cache, string const & fn) :
             input(FileInput::make(fp)),
             rows(rows),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
-            indexRec(indexRec),
+            indexRec(cache, fn),
             cellIt(0),
             cellEnd(0)
         {
@@ -308,7 +308,7 @@ namespace
     class IndexScanner
         : public flux::Stream< std::pair<std::string, size_t> >
     {
-        Record indexRec;
+        CacheRecord indexRec;
         Interval<string> rows;
 
         IndexEntryV0 const * cur;
@@ -316,8 +316,9 @@ namespace
         size_t base;
 
     public:
-        IndexScanner(Record const & indexRec, Interval<string> const & rows) :
-            indexRec(indexRec),
+        IndexScanner(IndexCache * cache, string const & fn,
+                     Interval<string> const & rows) :
+            indexRec(cache, fn),
             rows(rows),
             cur(0),
             end(0),
@@ -363,16 +364,19 @@ namespace
 // DiskTable
 //----------------------------------------------------------------------------
 DiskTableV0::DiskTableV0(string const & fn) :
-    fn(fn), dataSize(0)
+    cache(IndexCache::get()), fn(fn), indexSize(0), dataSize(0)
 {
-    Record r;
-    dataSize = DiskTable::loadIndex(fn, r);
+    oort::Record r;
+    dataSize = loadIndex(fn, r);
+    indexSize = r.getLength();
 
     // Make sure we have the right type
     r.as<BlockIndexV0>();
+}
 
-    // Make a copy of the index
-    indexRec = r.clone();
+DiskTableV0::~DiskTableV0()
+{
+    cache->remove(fn);
 }
 
 CellStreamPtr DiskTableV0::scan(ScanPredicate const & pred) const
@@ -384,7 +388,7 @@ CellStreamPtr DiskTableV0::scan(ScanPredicate const & pred) const
     if(ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate())
     {
         // Make a scanner that handles the row predicate
-        diskScanner.reset(new DiskScannerV0(fp, rows, indexRec));
+        diskScanner.reset(new DiskScannerV0(fp, rows, cache, fn));
     }
     else
     {
@@ -402,7 +406,7 @@ flux::Stream< std::pair<std::string, size_t> >::handle_t
 DiskTableV0::scanIndex(warp::Interval<std::string> const & rows) const
 {
     flux::Stream< std::pair<std::string, size_t> >::handle_t p(
-        new IndexScanner(indexRec, rows)
+        new IndexScanner(cache, fn, rows)
         );
     return p;
 }

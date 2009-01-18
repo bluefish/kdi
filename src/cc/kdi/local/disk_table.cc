@@ -100,7 +100,7 @@ namespace
         ScanPredicate::TimestampSetCPtr times;
 
         // Index data
-        Record indexRec;
+        CacheRecord indexRec;
         IndexEntryV1 const * indexIt;
 
         // Current CellBlock
@@ -288,11 +288,13 @@ namespace
 
     public:
         /// Create a full-scan DiskScanner
-        explicit DiskScanner(FilePtr const & fp, Record const & indexRec) :
+        explicit DiskScanner(FilePtr const & fp,
+                             IndexCache * cache,
+                             string const & fn) :
             input(FileInput::make(fp)),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
             colFamilyMask(0),
-            indexRec(indexRec),
+            indexRec(cache, fn),
             indexIt(0),
             cellIt(0),
             cellEnd(0)
@@ -304,14 +306,15 @@ namespace
                     ScanPredicate::StringSetCPtr const & rows,
                     boost::shared_ptr< vector<string> > const & columnFamilies,
                     ScanPredicate::TimestampSetCPtr const & times,
-                    Record const & indexRec) :
+                    IndexCache * cache,
+                    string const & fn) :
             input(FileInput::make(fp)),
             rows(rows),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
             columnFamilies(columnFamilies),
             colFamilyMask(0),
             times(times),
-            indexRec(indexRec),
+            indexRec(cache, fn),
             indexIt(0),
             cellIt(0),
             cellEnd(0)
@@ -380,7 +383,7 @@ namespace
     class IndexScanner
         : public flux::Stream< std::pair<std::string, size_t> >
     {
-        Record indexRec;
+        CacheRecord indexRec;
         Interval<string> rows;
 
         IndexEntryV1 const * cur;
@@ -388,8 +391,8 @@ namespace
         size_t base;
 
     public:
-        IndexScanner(Record const & indexRec, Interval<string> const & rows) :
-            indexRec(indexRec),
+        IndexScanner(IndexCache * cache, string const & fn, Interval<string> const & rows) :
+            indexRec(cache, fn),
             rows(rows),
             cur(0),
             end(0),
@@ -503,16 +506,19 @@ off_t DiskTable::loadIndex(std::string const & fn, oort::Record & r)
 // DiskTableV1
 //----------------------------------------------------------------------------
 DiskTableV1::DiskTableV1(string const & fn) :
-    fn(fn), dataSize(0)
+    cache(IndexCache::get()), fn(fn), indexSize(0), dataSize(0)
 {
-    Record r;
-    dataSize = DiskTable::loadIndex(fn, r);
+    oort::Record r;
+    dataSize = loadIndex(fn, r);
+    indexSize = r.getLength();
 
     // Make sure we have the right type
     r.as<BlockIndexV1>();
+}
 
-    // Make a copy of the index
-    indexRec = r.clone();
+DiskTableV1::~DiskTableV1()
+{
+    cache->remove(fn);
 }
 
 CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
@@ -540,12 +546,12 @@ CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
         }
 
         // Make a scanner that handles the row predicate
-        diskScanner.reset(new DiskScanner(fp, rows, famsCopy, times, indexRec));
+        diskScanner.reset(new DiskScanner(fp, rows, famsCopy, times, cache, fn));
     }
     else
     {
         // Scan everything
-        diskScanner.reset(new DiskScanner(fp, indexRec));
+        diskScanner.reset(new DiskScanner(fp, cache, fn));
     }
 
     // Filter the rest
@@ -558,7 +564,7 @@ flux::Stream< std::pair<std::string, size_t> >::handle_t
 DiskTableV1::scanIndex(warp::Interval<std::string> const & rows) const
 {
     flux::Stream< std::pair<std::string, size_t> >::handle_t p(
-        new IndexScanner(indexRec, rows)
+        new IndexScanner(cache, fn, rows)
         );
     return p;
 }

@@ -22,8 +22,8 @@
 #define KDI_LOCAL_DISK_TABLE_H
 
 #include <kdi/table.h>
+#include <kdi/local/index_cache.h>
 #include <boost/noncopyable.hpp>
-
 #include <oort/record.h>
 #include <oort/fileio.h>
 #include <warp/interval.h>
@@ -91,12 +91,14 @@ public:
 class kdi::local::DiskTableV0
     : public kdi::local::DiskTable
 {
+    IndexCache * cache;
     std::string fn;
-    oort::Record indexRec;
+    size_t indexSize;
     size_t dataSize;
 
 public:
     explicit DiskTableV0(std::string const & fn);
+    ~DiskTableV0();
 
     using Table::scan;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
@@ -104,7 +106,7 @@ public:
     virtual flux::Stream< std::pair<std::string, size_t> >::handle_t
     scanIndex(warp::Interval<std::string> const & rows) const;
 
-    virtual size_t getIndexSize() const { return indexRec.getLength(); }
+    virtual size_t getIndexSize() const { return indexSize; }
     virtual size_t getDataSize() const { return dataSize; }
 };
 
@@ -117,12 +119,14 @@ public:
 class kdi::local::DiskTableV1
     : public kdi::local::DiskTable
 {
+    IndexCache * cache;
     std::string fn;
-    oort::Record indexRec;
+    size_t indexSize;
     size_t dataSize;
 
 public:
     explicit DiskTableV1(std::string const & fn);
+    ~DiskTableV1();
 
     using Table::scan;
     virtual CellStreamPtr scan(ScanPredicate const & pred) const;
@@ -130,7 +134,7 @@ public:
     virtual flux::Stream< std::pair<std::string, size_t> >::handle_t
     scanIndex(warp::Interval<std::string> const & rows) const;
 
-    virtual size_t getIndexSize() const { return indexRec.getLength(); }
+    virtual size_t getIndexSize() const { return indexSize; }
     virtual size_t getDataSize() const { return dataSize; }
 };
 
