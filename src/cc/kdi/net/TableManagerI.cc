@@ -88,10 +88,32 @@ ScannerI::ScannerI(kdi::TablePtr const & table,
 
     if(pred.getRowPredicate())
         basePred.setRowPredicate(*pred.getRowPredicate());
-    if(pred.getColumnPredicate())
-        filterPred.setColumnPredicate(*pred.getColumnPredicate());
-    if(pred.getTimePredicate())
-        filterPred.setTimePredicate(*pred.getTimePredicate());
+
+    if(getenv("UNLIMIT_NET_SCANNERS")) {
+        log("Using unlimited net scanner");
+
+        if(pred.getColumnPredicate()) {
+            // Only pass down column predicates if they have 
+            // column family restrictions that can be used for 
+            // fast filtering
+            vector<StringRange> fams;
+            if(pred.getColumnFamilies(fams)) {
+                basePred.setColumnPredicate(*pred.getColumnPredicate());
+            } else {
+                filterPred.setColumnPredicate(*pred.getColumnPredicate());
+            }
+        }
+        
+        // But always pass through the time predicate
+        if(pred.getTimePredicate())
+            basePred.setTimePredicate(*pred.getTimePredicate());
+    } else {
+        log("Using limited net scanner");
+        if(pred.getColumnPredicate())
+            filterPred.setColumnPredicate(*pred.getColumnPredicate());
+        if(pred.getTimePredicate())
+            filterPred.setTimePredicate(*pred.getTimePredicate());
+    }
     if(pred.getMaxHistory())
         filterPred.setMaxHistory(pred.getMaxHistory());
 

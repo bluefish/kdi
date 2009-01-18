@@ -63,8 +63,7 @@ namespace disk {
         uint64_t blockOffset;
         int64_t lowestTime;
         int64_t highestTime;
-        uint32_t numCells;
-        uint32_t numErasures;
+        uint32_t colFamilyMask;
     };
 
     /// Base BlockIndex type defines record type code
@@ -89,6 +88,7 @@ namespace disk {
     {
         enum { VERSION = 1 };
         warp::ArrayOffset<IndexEntryV1> blocks;
+        warp::ArrayOffset<warp::StringOffset> colFamilies;
     };
 
     // Trailer for a disk table file.

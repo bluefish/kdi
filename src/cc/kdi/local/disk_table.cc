@@ -96,6 +96,7 @@ namespace
 
         // Column and timestamp ranges for filtering blocks
         boost::shared_ptr< vector<string> > columnFamilies;
+        uint32_t colFamilyMask;
         ScanPredicate::TimestampSetCPtr times;
 
         // Index data
@@ -142,8 +143,11 @@ namespace
                 }
             }
 
-            if(columnFamilies) {
-                // Change the column filtering!
+            if(colFamilyMask) {
+                if(!(colFamilyMask & indexIt->colFamilyMask)) {
+                    nextIndexIt = indexIt+1;
+                    goto nextBlock;
+                }
             }
 
             // Read the next record and make sure it is a CellBlock
@@ -206,7 +210,7 @@ namespace
             {
                 CellBlock const * block = blockRec.cast<CellBlock>();
                 CellData const * cell = std::lower_bound(
-                    cellIt, block->cells.end(),
+                    block->cells.begin(), block->cells.end(),
                     *lowerBoundIt, RowLt());
 
                 if(cell != block->cells.end())
@@ -223,15 +227,9 @@ namespace
             BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
             IndexEntryV1 const * ent;
             
-            if(indexIt) {
-                ent = std::lower_bound( 
-                    indexIt, index->blocks.end(),
-                    *lowerBoundIt, RowLt());
-            } else {
-                ent = std::lower_bound(
-                    index->blocks.begin(), index->blocks.end(),
-                    *lowerBoundIt, RowLt());
-            }
+            ent = std::lower_bound(
+                index->blocks.begin(), index->blocks.end(),
+                *lowerBoundIt, RowLt());
 
             if(ent == index->blocks.end())
                 return false;
@@ -245,6 +243,7 @@ namespace
             cellIt = std::lower_bound(
                 block->cells.begin(), block->cells.end(),
                 *lowerBoundIt, RowLt());
+
             return true;
         }
 
@@ -292,6 +291,7 @@ namespace
         explicit DiskScanner(FilePtr const & fp, Record const & indexRec) :
             input(FileInput::make(fp)),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
+            colFamilyMask(0),
             indexRec(indexRec),
             indexIt(0),
             cellIt(0),
@@ -309,6 +309,7 @@ namespace
             rows(rows),
             upperBound(string(), PT_INFINITE_UPPER_BOUND),
             columnFamilies(columnFamilies),
+            colFamilyMask(0),
             times(times),
             indexRec(indexRec),
             indexIt(0),
@@ -317,6 +318,24 @@ namespace
         {
             if(rows)
                 nextRowIt = rows->begin();
+
+            if(columnFamilies) {
+                BlockIndexV1 const * index = indexRec.as<BlockIndexV1>();
+
+                // Figure out the column family bitmask now
+                vector<string>::const_iterator cfi;
+                for(cfi = columnFamilies->begin(); cfi != columnFamilies->end(); ++cfi) {
+                    uint32_t nextMask = 1;
+                    warp::StringOffset const * si;
+                    for(si = index->colFamilies.begin(); si != index->colFamilies.end(); ++si) {
+                        if(**si == *cfi) {
+                            colFamilyMask |= nextMask;
+                            break; 
+                        }
+                        nextMask = nextMask << 1;
+                    }
+                }
+            }
         }
 
         bool get(Cell & x)
