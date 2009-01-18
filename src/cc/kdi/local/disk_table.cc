@@ -143,10 +143,8 @@ namespace
                 }
             }
 
-            log("col family mask: 0x%x", colFamilyMask);
             if(colFamilyMask) {
                 if(!(colFamilyMask & indexIt->colFamilyMask)) {
-                    log("skipping, looking for 0x%x, has 0x%x", colFamilyMask, indexIt->colFamilyMask);
                     nextIndexIt = indexIt+1;
                     goto nextBlock;
                 }
