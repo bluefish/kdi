@@ -82,7 +82,7 @@ int main(int ac, char ** av)
                 step_size = 1;
 
             for(size_t i = 0; i < intervals.size(); i += step_size) {
-                size_t j = i + step_size;
+                size_t j = i + step_size - 1;
                 if(j >= intervals.size())
                     j = intervals.size()-1;
 
