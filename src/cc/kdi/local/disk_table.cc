@@ -1,18 +1,18 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2007 Josh Taylor (Kosmix Corporation)
 // Created 2007-10-04
-// 
+//
 // This file is part of KDI.
-// 
+//
 // KDI is free software; you can redistribute it and/or modify it under the
 // terms of the GNU General Public License as published by the Free Software
 // Foundation; either version 2 of the License, or any later version.
-// 
+//
 // KDI is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -67,17 +67,6 @@ namespace
             return lt(*a.lastRow, b);
         }
     };
-
-
-    IndexEntryV1 const * findIndexEntry(BlockIndexV1 const * index,
-                                      IntervalPoint<string> const & beginRow)
-    {
-        IndexEntryV1 const * ent = std::lower_bound(
-            index->blocks.begin(), index->blocks.end(),
-            beginRow, RowLt());
-
-        return ent;
-    }
 }
 
 //----------------------------------------------------------------------------
@@ -135,7 +124,7 @@ namespace
                 IntervalPoint<int64_t> highTime(indexIt->highestTime, PT_INCLUSIVE_UPPER_BOUND);
                 Interval<int64_t> timeInterval(lowTime, highTime);
 
-                // If there is no overlap between the time ranges we are looking for and the 
+                // If there is no overlap between the time ranges we are looking for and the
                 // interval of times in this block, skip to the next block
                 if(!times->overlaps(timeInterval)) {
                     nextIndexIt = indexIt+1;
@@ -226,7 +215,7 @@ namespace
             // we're done.
             BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
             IndexEntryV1 const * ent;
-            
+
             ent = std::lower_bound(
                 index->blocks.begin(), index->blocks.end(),
                 *lowerBoundIt, RowLt());
@@ -333,7 +322,7 @@ namespace
                     for(si = index->colFamilies.begin(); si != index->colFamilies.end(); ++si) {
                         if(**si == *cfi) {
                             colFamilyMask |= nextMask;
-                            break; 
+                            break;
                         }
                         nextMask = nextMask << 1;
                     }
@@ -391,7 +380,8 @@ namespace
         size_t base;
 
     public:
-        IndexScanner(IndexCache * cache, string const & fn, Interval<string> const & rows) :
+        IndexScanner(IndexCache * cache, string const & fn,
+                     Interval<string> const & rows) :
             indexRec(cache, fn),
             rows(rows),
             cur(0),
@@ -399,29 +389,28 @@ namespace
             base(0)
         {
             BlockIndexV1 const * index = indexRec.as<BlockIndexV1>();
-            
-            cur = findIndexEntry(index, rows.getLowerBound());
-            end = index->blocks.end();
 
-            IntervalPointOrder<warp::less> lt;
-            while(cur != end && !lt(rows.getLowerBound(), *cur->lastRow))
-            {
-                base = cur->blockOffset;
-                ++cur;
-            }
+            RowLt lt;
+
+            cur = std::lower_bound(
+                index->blocks.begin(), index->blocks.end(),
+                rows.getLowerBound(), lt);
+
+            end = std::lower_bound(
+                cur, index->blocks.end(),
+                rows.getUpperBound(), lt);
+
+            if(end != index->blocks.end())
+                ++end;
+
+            if(cur != index->blocks.begin())
+                base = cur[-1].blockOffset;
         }
 
         bool get(pair<string, size_t> & x)
         {
             if(cur == end)
                 return false;
-
-            IntervalPointOrder<warp::less> lt;
-            if(lt(rows.getUpperBound(), *cur->lastRow))
-            {
-                end = cur;
-                return false;
-            }
 
             x.first.assign(cur->lastRow->begin(), cur->lastRow->end());
             x.second = cur->blockOffset - base;
