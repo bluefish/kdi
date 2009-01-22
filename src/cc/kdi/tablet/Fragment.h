@@ -70,6 +70,9 @@ public:
     /// overcounting for fragmented sets.
     virtual size_t getDiskSize(warp::IntervalSet<std::string> const & rows) const;
 
+    /// Get the approximate total disk size of this fragment.
+    virtual size_t getDiskSize() const;
+
     /// Scan the index of the fragment within the given row range,
     /// returning (row, incremental-size) pairs.  The incremental size
     /// approximates the on-disk size of the cells between the last

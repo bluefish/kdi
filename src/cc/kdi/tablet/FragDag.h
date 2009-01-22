@@ -54,6 +54,18 @@ private:
     ftset_map activeTablets;
     tfset_map activeFragments;
 
+    struct FragStats {
+        size_t diskSize;
+        size_t activeDiskSize;
+        size_t nStartingTablets; 
+    };
+
+    typedef std::map<FragmentPtr, FragStats> fstat_map;
+    mutable fstat_map activeFragStats;
+
+    FragStats const &
+    getFragmentStats(FragmentPtr const & fragment) const;
+
 public:
     /// Append an edge to a tablet's fragment list.
     void

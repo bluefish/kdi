@@ -77,6 +77,26 @@ void FragDag::removeInactiveFragment(FragmentPtr const & fragment)
 
     // Remove fragment from active map
     activeTablets.erase(fragment);
+
+    // Remove stats about the fragment
+    activeFragStats.erase(fragment);
+}
+
+FragDag::FragStats const &
+FragDag::getFragmentStats(FragmentPtr const & fragment) const
+{
+    // Fragment stats are cached because some stat calculations, 
+    // particularly activeDiskSize estimate, can be expensive.
+    fstat_map::iterator istat = activeFragStats.find(fragment);
+    if(istat == activeFragStats.end()) {
+        FragStats s;
+        s.diskSize = fragment->getDiskSize();
+        s.activeDiskSize = getActiveSize(fragment);
+        s.nStartingTablets = activeTablets.find(fragment)->second.size();
+        activeFragStats[fragment] = s;
+        istat = activeFragStats.find(fragment);
+    }
+    return istat->second;
 }
 
 size_t
@@ -88,6 +108,10 @@ FragDag::getFragmentWeight(FragmentPtr const & fragment) const
                             fragment->getFragmentUri());
 
     tablet_set const & tablets = i->second;
+
+    // Cache some disk use statistics about this fragment
+    FragStats const & stats = getFragmentStats(fragment);
+    double wastageFactor = double(stats.diskSize)/double(stats.activeDiskSize);
 
     // Frag weight is the sum of the lengths (minus 1) of the
     // tablet chains of which it is a part
@@ -101,7 +125,7 @@ FragDag::getFragmentWeight(FragmentPtr const & fragment) const
         weight += activeFragments.find(tablet)->second.size() - 1;
     }
 
-    return weight;
+    return weight * wastageFactor;
 }
 
 FragmentPtr
@@ -144,11 +168,49 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
             totChain += len;
             if(len > maxChain)
                 maxChain = len;
-
         }
         log("FragDag: average chain length: %.2f",
             double(totChain) / activeFragments.size());
         log("FragDag: maximum chain length: %d", maxChain);
+
+        // Caculate per fragment disk statistics
+        size_t totalActiveSize = 0;
+        size_t totalDiskSize = 0;
+        size_t nLowCoverageFrags = 0;
+        double lowestTabletCoverage = 1;
+        FragmentPtr leastCoveredFragment;
+
+        for(fstat_map::const_iterator i = activeFragStats.begin();
+            i != activeFragStats.end(); ++i)
+        {
+            FragStats const & stats = i->second;
+            totalActiveSize += stats.activeDiskSize;
+            totalDiskSize += stats.diskSize;
+
+            size_t at = activeTablets.find(i->first)->second.size();
+            double tabletCoverage = double(at)/stats.nStartingTablets;
+            if(tabletCoverage < lowestTabletCoverage) {
+                lowestTabletCoverage = tabletCoverage;
+                leastCoveredFragment = i->first;
+            }
+            if(tabletCoverage < 0.5) {
+                ++nLowCoverageFrags;
+            }
+        }
+
+        if(totalDiskSize > 0) {
+            log("FragDag: total disk space: %d", totalDiskSize);
+            log("FragDag: total active size: %d", totalActiveSize);
+            log("FragDag: percent wasted: %.2f%%",
+                100*(double(totalDiskSize - totalActiveSize)/totalDiskSize));
+        }
+
+        if(leastCoveredFragment) {
+            log("FragDag: least covered fragment: %s = %.2f%%",
+                leastCoveredFragment->getFragmentUri(),
+                100*lowestTabletCoverage);
+            log("FragDag: low coverage fragments: %d", nLowCoverageFrags);
+        }
     }
 
     return maxFrag;
@@ -330,6 +392,10 @@ FragDag::replaceInternal(Tablet * tablet,
 
         activeTablets[*f].erase(tablet);
         activeFragments[tablet].erase(*f);
+
+        // Update disk use statistics
+        FragStats & stats = activeFragStats.find(*f)->second;
+        stats.activeDiskSize = getActiveSize(*f);
     }
     //log("FragDag:  child: %s", child ? child->getFragmentUri() : "NULL");
 
@@ -478,7 +544,7 @@ FragDag::chooseCompactionSet() const
     // Expand fragment set until it is sufficiently large
     //  (16-way merge or 4 GB compaction, whichever comes first)
     size_t const SUFFICIENTLY_LARGE = size_t(4) << 30;
-    size_t const SUFFICIENTLY_NUMEROUS = 16;
+    size_t const SUFFICIENTLY_NUMEROUS = 32;
     size_t curSpace = getActiveSize(frag);
     frags.insert(frag);
     for(;;)

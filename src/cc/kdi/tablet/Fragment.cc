@@ -39,3 +39,8 @@ size_t Fragment::getDiskSize(IntervalSet<string> const & rows) const
     return sz;
 }
 
+size_t Fragment::getDiskSize() const {
+    Interval<string> unbounded = makeUnboundedInterval<string>();
+    return getDiskSize(unbounded);
+}
+
