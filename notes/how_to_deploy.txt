@@ -1,0 +1,107 @@
+#----------------------------------------------------------------------------
+# HOWTO: Build and deploy KDI
+#----------------------------------------------------------------------------
+
+This doc describes how to build and deploy KDI on a small cluster (the
+hcrawl cluster).
+
+#----------------------------------------------------------------------------
+# Step 1: Build the binaries
+#----------------------------------------------------------------------------
+
+   KDI_SRC=$HOME/josh.kdi
+   cd $KDI_SRC
+   rm -rf bin lib
+   make -j10 TCMALLOC= binclean
+   make -j10 TCMALLOC= all unittest
+   make -j10 TCMALLOC= syminstall
+
+These steps are pretty aggressive about making sure you wind up with
+good, predicable output binaries.  If you're comfortable with the
+state of your source tree, you can probably skip to the "make
+syminstall" step.
+
+We explicitly disable TCMALLOC since it seems to have some memory leak
+problems.
+
+#----------------------------------------------------------------------------
+# Step 2: Package the binaries
+#----------------------------------------------------------------------------
+
+   mkdir -p $HOME/kdi-builds
+   TARBALL="$HOME/kdi-builds/kdi-$(date +%m%d)-glibc.tgz"
+   source $KDI_SRC/env.sh
+   binbundle.py -o $TARBALL $KDI_SRC/bin/kdi* $KDI_SRC/scripts/kdi*
+
+This will build a new tarball and place it in your "kdi-builds"
+directory.  You can name the tarball whatever you want.  The above
+snippet embeds the build month and day in the name to provide some
+kind of versioning.  It's handy to save previously built packages in
+case you need to roll back the servers in a hurry.
+
+#----------------------------------------------------------------------------
+# Step 3: Stop existing servers
+#----------------------------------------------------------------------------
+
+   # (From hcrawl000)
+   foreach.pl kdi/bin/kdi stop
+   foreach.pl ps xvf | grep kdiNetServer
+
+Keep doing the last step until they all stop.  If they don't stop
+within a few minutes, they may need some helping with "kill -9".  This
+usually isn't a problem, so it's worth investigating if the server
+does get stuck.
+
+This assumes you have a previous installation in the default "kdi"
+directory.
+
+#----------------------------------------------------------------------------
+# Step 3.A: Stop watchdog script (optional)
+#----------------------------------------------------------------------------
+
+   # (From hcrawl000)
+   foreach.pl kdi/bin/kdi unwatch
+   foreach.pl ps xvf | grep kdiWatchdog
+
+This is only necessary if you want to deploy some change to the
+watchdog script itself.  Usually you don't need to stop it.
+
+#----------------------------------------------------------------------------
+# Step 4: Patch binaries
+#----------------------------------------------------------------------------
+
+   # (From hcrawl000)
+   NFS_HOME=/net/dev005/data1/home/josh
+   NFS_KDI_SRC=$NFS_HOME/josh.kdi
+   NFS_TARBALL=$NFS_HOME/kdi-builds/kdi-$(date +%m%d)-glibc.tgz
+   foreach.pl $NFS_KDI_SRC/scripts/kdi patch $NFS_TARBALL
+
+This uses the KDI control script from your source directory.  This
+allows it to work even if you don't have an existing installation.
+Otherwise, you could just use "kdi/bin/kdi" from the existing
+installation.
+
+You're deploying the binary you just built in Step 2.  It's also good
+practice to know where to find the tarball from the previous
+installation in case you need to roll back using Steps 3-5.
+
+#----------------------------------------------------------------------------
+# Step 5: Start new servers
+#----------------------------------------------------------------------------
+
+   # (From hcrawl000)
+   foreach.pl kdi/bin/kdi start
+   foreach.pl ps xvf | grep kdiNetServer
+
+Start the servers and make sure they're up.
+
+#----------------------------------------------------------------------------
+# Step 5.A: Start watchdog script (optional)
+#----------------------------------------------------------------------------
+
+   # (From hcrawl000)
+   foreach.pl kdi/bin/kdi watch
+   foreach.pl ps xvf | grep kdiWatchdog
+
+You generally don't want to start the watchdog script unless you know
+it's down.
