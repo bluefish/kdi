@@ -111,7 +111,9 @@ FragDag::getFragmentWeight(FragmentPtr const & fragment) const
 
     // Cache some disk use statistics about this fragment
     FragStats const & stats = getFragmentStats(fragment);
-    double wastageFactor = double(stats.diskSize)/double(stats.activeDiskSize);
+    double wastageFactor = 1.0;
+    if(stats.activeDiskSize > 0)
+        wastageFactor = double(stats.diskSize)/stats.activeDiskSize;
 
     // Frag weight is the sum of the lengths (minus 1) of the
     // tablet chains of which it is a part
