@@ -29,20 +29,14 @@
 #include <ex/exception.h>
 
 #include <boost/algorithm/string.hpp>
-#include <boost/bind.hpp>
-#include <boost/scoped_ptr.hpp>
-#include <boost/format.hpp>
-#include <boost/thread/mutex.hpp>
-#include <boost/lexical_cast.hpp>
+#include <assert.h>
+
 #include <Ice/ObjectAdapter.h>
-#include <iostream>
-#include <map>
 
 using namespace kdi::net::details;
 using namespace std;
 using namespace ex;
 using namespace warp;
-using boost::format;
 using namespace boost::algorithm;
 using Ice::ByteSeq;
 
@@ -129,6 +123,8 @@ ScannerI::~ScannerI()
 void ScannerI::getBulk(Ice::ByteSeq & cells, bool & lastBlock,
                        Ice::Current const & cur)
 {
+    boost::mutex::scoped_lock lock(mutex);
+
     builder.reset();
     cellBuilder.reset();
 
@@ -150,20 +146,16 @@ void ScannerI::getBulk(Ice::ByteSeq & cells, bool & lastBlock,
     builder.finalize();
     cells.resize(builder.getFinalSize());
     builder.exportTo(&cells[0]);
-
-    // cerr << format("getBulk: %d cells, %d bytes, eof=%s")
-    //     % cellBuilder.getCellCount() % cells.size() % lastBlock
-    //      << endl;
 }
 
 void ScannerI::close(Ice::Current const & cur)
 {
-    size_t id;
-    if(parseInt(id, cur.id.name))
-    {
-        log("Scan: close scanner %d", id);
-        locator->remove(id);
-    }
+    boost::mutex::scoped_lock lock(mutex);
+
+    size_t id = locator->getIdFromName(cur.id.name);
+
+    log("Scan: close scanner %d", id);
+    locator->remove(id);
 }
 
 
@@ -207,10 +199,6 @@ void TableI::applyMutations(Ice::ByteSeq const & cells,
 
     CellBlock const * b = reinterpret_cast<CellBlock const *>(&cells[0]);
 
-    // cerr << format("Apply buffer size: %d cells, %d bytes")
-    //     % b->cells.size() % cells.size()
-    //      << endl;
-
     for(CellData const * ci = b->cells.begin(); ci != b->cells.end(); ++ci)
     {
         if(ci->value)
@@ -243,7 +231,7 @@ ScannerPrx TableI::scan(std::string const & predicate,
     // Make identity
     Ice::Identity id;
     id.category = "scan";
-    id.name = boost::lexical_cast<string>(scannerId);
+    id.name = locator->getNameFromId(scannerId);
 
     // Make ICE object for scanner
     ScannerIPtr obj = new ScannerI(table, pred, locator);
