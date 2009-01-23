@@ -28,6 +28,7 @@
 #include <kdi/scan_predicate.h>
 #include <kdi/LimitedScanner.h>
 #include <boost/noncopyable.hpp>
+#include <boost/thread/mutex.hpp>
 #include <Ice/Identity.h>
 
 // Generated header
@@ -67,6 +68,8 @@ class kdi::net::details::ScannerI
     kdi::marshal::CellBlockBuilder cellBuilder;
 
     ScannerLocator * locator;
+
+    boost::mutex mutex;
 
 public:
     ScannerI(kdi::TablePtr const & table,

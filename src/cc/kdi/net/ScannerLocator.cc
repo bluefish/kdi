@@ -20,7 +20,9 @@
 
 #include <kdi/net/ScannerLocator.h>
 #include <warp/strutil.h>
+#include <warp/file.h>
 #include <ex/exception.h>
+#include <sstream>
 
 using namespace kdi;
 using namespace kdi::net;
@@ -43,6 +45,37 @@ ScannerLocator::ScannerLocator(size_t nObjects) :
     cache(nObjects+1),
     mark(0)
 {
+    size_t salt;
+    if(!warp::File::input("/dev/random")->read(&salt, sizeof(salt), 1))
+        raise<RuntimeError>("couldn't generate scanner instance ID");
+
+    std::ostringstream oss;
+    oss << salt;
+    instanceId = oss.str();
+}
+
+std::string ScannerLocator::getNameFromId(size_t id) const
+{
+    std::ostringstream oss;
+    oss << instanceId << ':' << id;
+    return oss.str();
+}
+
+size_t ScannerLocator::getIdFromName(std::string const & name) const
+{
+    char const * begin = name.c_str();
+    char const * end = begin + name.size();
+    char const * sep = std::find(begin, end, ':');
+
+    size_t id;
+    if(sep != end &&
+       instanceId == warp::StringRange(begin,sep) &&
+       warp::parseInt(id, sep+1, end))
+    {
+        return id;
+    }
+
+    return size_t(-1);
 }
 
 size_t ScannerLocator::add(size_t id, Ice::ObjectPtr const & ptr)
@@ -81,8 +114,8 @@ void ScannerLocator::purgeAndMark()
 Ice::ObjectPtr ScannerLocator::locate(Ice::Current const & cur,
                                       Ice::LocalObjectPtr & cookie)
 {
-    size_t id;
-    if(!warp::parseInt(id, cur.id.name))
+    size_t id = getIdFromName(cur.id.name);
+    if(id == size_t(-1))
         return 0;
 
     lock_t lock(mutex);

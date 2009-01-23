@@ -24,6 +24,7 @@
 #include <warp/lru_cache.h>
 #include <Ice/ServantLocator.h>
 #include <boost/thread/mutex.hpp>
+#include <string>
 
 namespace kdi {
 namespace net {
@@ -44,10 +45,23 @@ class kdi::net::ScannerLocator
     Ice::ObjectPtr * mark;
     boost::mutex mutex;
 
+    std::string instanceId;
+
     typedef boost::mutex::scoped_lock lock_t;
 
 public:
     explicit ScannerLocator(size_t nObjects);
+
+    /// Get the Ice object name from a scanner ID.  The name will
+    /// include a unique identifier for this server so it cannot be
+    /// reused by a later instance.
+    std::string getNameFromId(size_t id) const;
+
+    /// Get the scanner ID from the Ice object name.  If the name is
+    /// not valid for this server (that is, it has the wrong server
+    /// identifier), this function will return size_t(-1), which is an
+    /// invalid scanner ID.
+    size_t getIdFromName(std::string const & name) const;
 
     /// Add a scanner to the cache -- returns the number of active scanners
     size_t add(size_t id, Ice::ObjectPtr const & ptr);
