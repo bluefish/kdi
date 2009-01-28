@@ -65,6 +65,9 @@ public:
 
     void endScan()
     {
+        nCellsTotal += nCells;
+        nBytesTotal += nBytes;
+
         double dt = totalTimer.getElapsed();
         cerr << format("%d cells total (%s cells/s, %sB, %sB/s, %.2f sec)")
             % nCellsTotal
