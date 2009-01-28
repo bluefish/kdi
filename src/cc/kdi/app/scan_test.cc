@@ -23,8 +23,12 @@
 #include <kdi/scan_predicate.h>
 #include <warp/options.h>
 #include <warp/bloom_filter.h>
+#include <warp/log.h>
+#include <warp/string_interval.h>
 
 #include <boost/scoped_ptr.hpp>
+#include <boost/thread.hpp>
+#include <boost/bind.hpp>
 #include <vector>
 #include <string>
 #include <stdlib.h>
@@ -63,7 +67,7 @@ public:
         else if(double(rand()) * populationSize <
                 double(RAND_MAX) * sampleSize)
         {
-            size_t idx = size_t(rand() / (1.0 + RAND_MAX));
+            size_t idx = size_t(rand() * sampleSize / (1.0 + RAND_MAX));
             samples[idx] = x;
         }
     }
@@ -152,6 +156,106 @@ public:
 };
 
 //----------------------------------------------------------------------------
+// AddingVisitor
+//----------------------------------------------------------------------------
+class AddingVisitor
+{
+public:
+    size_t nCells;
+    size_t nBytes;
+
+    AddingVisitor() : nCells(0), nBytes(0) {}
+
+    void startScan() {}
+    void endScan() {}
+
+    void startTable(std::string const & uri) {}
+    void endTable() {}
+
+    void visitCell(Cell const & x)
+    {
+        ++nCells;
+        nBytes += (8 + x.getRow().size() + x.getColumn().size() +
+                   x.getValue().size());
+    }
+};
+
+
+//----------------------------------------------------------------------------
+// chooseSample
+//----------------------------------------------------------------------------
+IntervalSet<std::string>
+chooseSample(std::vector<std::string> const & samples, bool family)
+{
+    IntervalSet<std::string> ss;
+
+    if(!samples.empty())
+    {
+        size_t idx = size_t(rand() * samples.size() / (1.0 + RAND_MAX));
+        std::string const & s = samples[idx];
+        if(family)
+            ss.add(makePrefixInterval(s + ":"));
+        else
+            ss.add(Interval<string>().setPoint(s));
+    }
+    
+    return ss;
+}
+
+//----------------------------------------------------------------------------
+// runScanners
+//----------------------------------------------------------------------------
+void runScanners(size_t id,
+                 size_t nScans,
+                 bool verbose,
+                 std::vector<std::string> const & tables,
+                 ScanPredicate const & pred,
+                 Sampler<std::string> * rowSampler,
+                 UniqueStringSampler * columnSampler,
+                 UniqueStringSampler * familySampler)
+{
+    for(size_t i = 0; i < nScans; ++i)
+    {
+        ScanPredicate p(pred);
+
+        if(rowSampler)
+        {
+            p.setRowPredicate(
+                chooseSample(rowSampler->getSamples(), false));
+        }
+
+        if(columnSampler)
+        {
+            if(familySampler && (i & 1))
+            {
+                p.setColumnPredicate(
+                    chooseSample(familySampler->getSamples(), true));
+            }
+            else
+            {
+                p.setColumnPredicate(
+                    chooseSample(columnSampler->getSamples(), false));
+            }
+        }
+        else if(familySampler)
+        {
+            p.setColumnPredicate(
+                chooseSample(familySampler->getSamples(), true));
+        }
+        
+        log("Scan %d.%d starting: pred=(%s)", id, i, p);
+
+        AddingVisitor v;
+        doScan(v, tables, p);
+
+        log("Scan %d.%d done: %s cells, %s bytes", id, i,
+            sizeString(v.nCells, 1000),
+            sizeString(v.nBytes, 1024));
+    }
+}
+
+
+//----------------------------------------------------------------------------
 // main
 //----------------------------------------------------------------------------
 int main(int ac, char ** av)
@@ -160,6 +264,10 @@ int main(int ac, char ** av)
     {
         using namespace boost::program_options;
         op.addOption("predicate,p",    value<string>(), "Use scan predicate");
+        op.addOption("numScans,n",     value<string>()->default_value("1"),
+                     "Do K scans per scan thread");
+        op.addOption("numThreads,N",   value<string>()->default_value("1"),
+                     "Use K scanning threads");
         op.addOption("rowSample,r",    value<string>(), "Sample K rows");
         op.addOption("columnSample,c", value<string>(), "Sample K columns");
         op.addOption("columnSpace,C",  value<string>()->default_value("50k"),
@@ -188,7 +296,7 @@ int main(int ac, char ** av)
             op.error(ex.what());
         }
         if(verbose)
-            cerr << "using predicate: " << pred << endl;
+            log("using predicate: %s", pred);
     }
     
     boost::scoped_ptr< Sampler<std::string> > rowSampler;
@@ -214,27 +322,16 @@ int main(int ac, char ** av)
 
     if(rowSampler || columnSampler || familySampler)
     {
+        log("Sampling...");
+
         if(verbose)
         {
-            cerr << "Sampling..." << endl;
-
             VerboseAdapter<SamplingVisitor> v(
                 SamplingVisitor(
                     rowSampler.get(),
                     columnSampler.get(),
                     familySampler.get()));
             doScan(v, args, pred);
-
-            cerr << "Done Sampling..." << endl;
-
-            if(rowSampler)
-                cerr << "Got " << rowSampler->getSamples().size() << " rows" << endl;
-
-            if(columnSampler)
-                cerr << "Got " << columnSampler->getSamples().size() << " columns" << endl;
-
-            if(familySampler)
-                cerr << "Got " << familySampler->getSamples().size() << " families" << endl;
         }
         else
         {
@@ -245,7 +342,45 @@ int main(int ac, char ** av)
             
             doScan(v, args, pred);
         }
+
+        log("Done sampling");
     }
+
+    
+    if(rowSampler)
+        log("Got %d rows", rowSampler->getSamples().size());
+
+    if(columnSampler)
+        log("Got %d columns", columnSampler->getSamples().size());
+    
+    if(familySampler)
+        log("Got %d families", familySampler->getSamples().size());
+
+    size_t nScans = 1;
+    if(opt.get("numScans", arg))
+        nScans = parseSize(arg);
+
+    size_t nThreads = 1;
+    if(opt.get("numThreads", arg))
+        nThreads = parseSize(arg);
+
+    log("Starting %d thread(s) to do %d scan(s) each", nThreads, nScans);
+    boost::thread_group threads;
+    for(size_t i = 0; i < nThreads; ++i)
+    {
+        threads.create_thread(
+            boost::bind(&runScanners,
+                        i,
+                        nScans,
+                        verbose,
+                        boost::cref(args),
+                        boost::cref(pred),
+                        rowSampler.get(),
+                        columnSampler.get(),
+                        familySampler.get()));
+    }
+
+    threads.join_all();
 
     return 0;
 }
