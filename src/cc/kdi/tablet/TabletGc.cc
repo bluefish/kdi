@@ -142,10 +142,13 @@ void buildActiveSetFromConfig(
     std::string const & dataDir,
     std::vector<std::string> & activeSet)
 {
-    Config const & tables = config.getChild("tables");
-    for(size_t i = 0; i < tables.numChildren(); ++i)
+    Config const * tables = config.findChild("tables");
+    if(!tables)
+        return;
+
+    for(size_t i = 0; i < tables->numChildren(); ++i)
     {
-        string path = extractFragmentFile(tables.getChild(i).get(), dataDir);
+        string path = extractFragmentFile(tables->getChild(i).get(), dataDir);
         activeSet.push_back(path);
         //cerr << "Active: " << path << endl;
     }
