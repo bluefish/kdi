@@ -27,7 +27,6 @@
 #include <flux/stream.h>
 #include <stdint.h>
 #include <assert.h>
-#include <iostream>
 
 namespace sdstore
 {
@@ -234,11 +233,6 @@ public:
         }
     }
 };
-
-namespace sdstore
-{
-    std::ostream & operator<<(std::ostream & o, Cell const & cell);
-}
 
 
 #endif // SDSTORE_CELL_H
