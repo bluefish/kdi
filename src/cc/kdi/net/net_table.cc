@@ -34,8 +34,16 @@
 #include <kdi/net/TableManager.h>
 
 #include <boost/scoped_ptr.hpp>
+#include <boost/scoped_array.hpp>
 #include <boost/format.hpp>
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/condition.hpp>
+#include <boost/thread/xtime.hpp>
 #include <Ice/Ice.h>
+#include <IceUtil/Handle.h>
+#include <sstream>
+#include <queue>
+#include <time.h>
 
 using namespace kdi;
 using namespace kdi::net;
@@ -44,6 +52,9 @@ using namespace ex;
 using namespace std;
 
 using boost::format;
+
+#undef DLOG
+#define DLOG(x) ((void) 0)
 
 namespace
 {
@@ -59,6 +70,17 @@ namespace
 
     int const RETRY_WAIT_SECONDS = 60;
     int const MAX_CONNECTION_ATTEMPTS = 15;   // 15 minutes
+
+    size_t const MAX_SCAN_FAILURES = 15;
+    size_t const N_SCAN_BUFFERS = 3;
+
+    boost::xtime make_xtime(time_t t)
+    {
+        boost::xtime xt;
+        boost::xtime_get(&xt, boost::TIME_UTC);
+        xt.sec += t - time(0);
+        return xt;
+    }
 }
 
 
@@ -116,11 +138,51 @@ namespace
 class NetTable::Scanner
     : public kdi::CellStream
 {
-    boost::shared_ptr<Impl const> table;
-    ScanPredicate pred;
+public:
+    Scanner(details::TablePrx const & table, ScanPredicate const & pred) :
+        table(table),
+        pred(pred),
+        buffers(new Buffer[N_SCAN_BUFFERS]),
+        activeBuf(0),
+        lastBuf(0),
+        nFailures(0),
+        delayUntil(0),
+        eos(false),
+        pending(false),
+        scannerOpen(false)
+    {
+        for(size_t i = 0; i < N_SCAN_BUFFERS; ++i)
+            emptyQ.push(&buffers[i]);
+    }
 
-    details::ScannerPrx scanner;
+    ~Scanner()
+    {
+        lock_t lock(mutex);
+        eos = true;
+        while(pending || scannerOpen)
+        {
+            maybeStartClose_locked();
+            DLOG("~ Wait");
+            cond.wait(lock);
+            DLOG("~ Wait: wakeup");
+        }
+    }
 
+    bool get(Cell & x)
+    {
+        if(!activeBuf && !nextBuffer())
+            return false;
+
+        activeBuf->get(x);
+
+        if(activeBuf->empty())
+            releaseBuffer();
+
+        return true;
+    }
+
+private:
+    /// Key of a fetched cell
     struct Key
     {
         std::string row;
@@ -145,103 +207,271 @@ class NetTable::Scanner
         }
     };
 
-    boost::scoped_ptr<Key> lastKey;
-
-    Ice::ByteSeq buffer;
-    kdi::marshal::CellData const * next;
-    kdi::marshal::CellData const * end;
-    bool eof;
-
-    bool refillBuffer()
+    /// Buffer representing one block from getBulk()
+    class Buffer
     {
-        using kdi::marshal::CellBlock;
+        Ice::ByteSeq buffer;
+        kdi::marshal::CellData const * next;
+        kdi::marshal::CellData const * end;
 
-        size_t const MAX_FAILURES = 5;
-        size_t scanFailures = 0;
-        for(;;)
+    public:
+        Buffer() : next(0), end(0) {}
+
+        void set(Ice::ByteSeq const & other, ptrdiff_t firstIdx)
         {
-            if(eof)
-                return false;
+            buffer = other;
 
-            for(;;)
-            {
-                try {
-                    scanner->getBulk(buffer, eof);
-                    break;
-                }
-                catch(Ice::RequestFailedException const &) {
-                    // Only retry so much
-                    if(++scanFailures >= MAX_FAILURES)
-                        throw;
-                }
-                catch(Ice::SocketException const &) {
-                    // Only retry so much
-                    if(++scanFailures >= MAX_FAILURES)
-                        throw;
-                }
-                catch(Ice::TimeoutException const &) {
-                    // Only retry so much
-                    if(++scanFailures >= MAX_FAILURES)
-                        throw;
-                }
-
-                // If request fails, reopen the scan and try again
-                reopen();
-            }
-
-            assert(!buffer.empty());
+            using kdi::marshal::CellBlock;
             CellBlock const * block =
                 reinterpret_cast<CellBlock const *>(&buffer[0]);
 
-            // cerr << format("gotBulk: %d cells, %d bytes, eof=%s")
-            //     % block->cells.size() % buffer.size() % eof
-            //      << endl;
+            assert(firstIdx < block->cells.size());
 
-            next = block->cells.begin();
+            next = block->cells.begin() + firstIdx;
             end = block->cells.end();
-
-            // If we've set lastKey, it's the key of the last cell we
-            // returned in this scan.  We need to advance the scan
-            // until it is past lastKey.
-            if(lastKey)
-            {
-                for(; next != end; ++next)
-                {
-                    if(*lastKey < next->key)
-                    {
-                        lastKey.reset();
-                        break;
-                    }
-                }
-            }
-
-            if(next != end)
-                return true;
         }
+
+        void get(Cell & x)
+        {
+            x = makeCell(*next->key.row, *next->key.column,
+                         next->key.timestamp, *next->value);
+            ++next;
+        }
+
+        kdi::marshal::CellKey const &
+        getLastKey() const { return end[-1].key; }
+
+        bool empty() const { return next == end; }
+    };
+
+    /// Callback for Scanner.getBulk
+    struct FetchCb : public details::AMI_Scanner_getBulk
+    {
+        Scanner * scanner;
+        FetchCb(Scanner * scanner) : scanner(scanner) {}
+        void ice_response(Ice::ByteSeq const & cells, bool lastBlock) {
+            scanner->handleFetch(cells, lastBlock);
+        }
+        void ice_exception(Ice::Exception const & ex) {
+            scanner->handleError(ex);
+        }
+    };
+
+    /// Callback for Table.scan
+    struct ScanCb : public details::AMI_Table_scan
+    {
+        Scanner * scanner;
+        ScanCb(Scanner * scanner) : scanner(scanner) {}
+        void ice_response(details::ScannerPrx const & prx) {
+            scanner->handleScan(prx);
+        }
+        void ice_exception(Ice::Exception const & ex) {
+            scanner->handleError(ex);
+        }
+    };
+
+    /// Callback for Scanner.close
+    struct CloseCb : public details::AMI_Scanner_close
+    {
+        Scanner * scanner;
+        CloseCb(Scanner * scanner) : scanner(scanner) {}
+        void ice_response() {
+            scanner->handleClose(0);
+        }
+        void ice_exception(Ice::Exception const & ex) {
+            scanner->handleClose(&ex);
+        }
+    };
+
+private:
+    // Table proxy for scan, given at creation
+    details::TablePrx const table;
+
+    // Original predicate for scan, given at creation
+    ScanPredicate const pred;
+
+    // Current Scanner proxy, valid if scannerOpen == true
+    details::ScannerPrx scanner;
+
+    // The last key fetched.  If we have to reopen the scanner, resume
+    // after this point.
+    boost::scoped_ptr<Key> lastKey;
+
+    // Storage for buffers
+    boost::scoped_array<Buffer> buffers;
+
+    // Stored exception from an async call
+    boost::scoped_ptr<Ice::Exception> error;
+
+    // The active buffer, only accessed by client thread
+    Buffer * activeBuf;
+
+    // The last buffer fetched
+    Buffer * lastBuf;
+
+    // Queue of filled buffers
+    std::queue<Buffer *> readyQ;
+
+    // Queue of empty buffers
+    std::queue<Buffer *> emptyQ;
+
+    // Count of successive errors that have occurred.
+    size_t nFailures;
+
+    // If an error occurs, delay next async call until this time
+    time_t delayUntil;
+
+    // Indicates end-of-stream.  Set if we've reached the end or
+    // encounter a persistent error.
+    bool eos;
+
+    // Indicates there is an async call pending.
+    bool pending;
+
+    // Indicates we have an open scanner on a remote server and we
+    // should eventually call close() on it.
+    bool scannerOpen;
+
+    // Synchronization mutex
+    boost::mutex mutex;
+
+    // Condition to signal async operation is complete
+    boost::condition cond;
+
+    typedef boost::mutex::scoped_lock lock_t;
+
+private:
+    /// Wait for a full buffer and make it the active buffer.  Return
+    /// true if we can get one.
+    bool nextBuffer()
+    {
+        lock_t lock(mutex);
+
+        while(readyQ.empty() && !eos)
+        {
+            if(time(0) < delayUntil)
+            {
+                DLOG("Timed wait");
+                cond.timed_wait(lock, make_xtime(delayUntil));
+                DLOG("Timed wait: wakeup");
+            }
+            else
+            {
+                maybeStartFetch_locked();
+                DLOG("Wait");
+                cond.wait(lock);
+                DLOG("Wait: wakeup");
+            }
+        }
+
+        if(readyQ.empty())
+        {
+            if(error)
+                error->ice_throw();
+
+            DLOG("eos");
+
+            return false;
+        }
+        
+        activeBuf = readyQ.front();
+        readyQ.pop();
+
+        DLOG("got");
+
+        return true;
     }
 
-    void setLastKey()
+    /// Release active buffer into the empty queue.
+    void releaseBuffer()
     {
-        // Already set?
+        lock_t lock(mutex);
+
+        emptyQ.push(activeBuf);
+        activeBuf = 0;
+
+        maybeStartFetch_locked();
+    }
+
+    /// If we can start an asynchronous getBulk() call, go ahead and
+    /// do so.
+    void maybeStartFetch_locked()
+    {
+        DLOG("maybeStartFetch");
+
+        // If we're at EOS, there's already a pending call, or there's
+        // nothing to fetch into, don't start a new fetch call
+        if(eos || pending || emptyQ.empty())
+        {
+            DLOG("no");
+            return;
+        }
+
+        // We need a scanner before we can fetch
+        if(!scannerOpen)
+        {
+            // Set the last key if we can.
+            setLastKey_locked();
+
+            // Trim the scan predicate if we have a last cell
+            ScanPredicate p;
+            if(lastKey)
+                p = pred.clipRows(makeLowerBound(lastKey->row));
+            else
+                p = pred;
+
+            // Open the scanner
+            ostringstream oss;
+            oss << p;
+            table->scan_async(new ScanCb(this), oss.str());
+            pending = true;
+            
+            DLOG("started scan()");
+
+            // Don't start a fetch -- wait for the scan to open
+            return;
+        }
+
+        // Start a fetch
+        scanner->getBulk_async(new FetchCb(this));
+        pending = true;
+
+        DLOG("started getBulk()");
+    }
+
+    void maybeStartClose_locked()
+    {
+        DLOG("maybeStartClose");
+
+        // Don't close if there's no scanner open or we have a pending
+        // call
+        if(!scannerOpen || pending)
+        {
+            DLOG("no");
+            return;
+        }
+
+        // Close the scanner
+        scanner->close_async(new CloseCb(this));
+        pending = true;
+
+        DLOG("started close()");
+    }
+
+    /// Set the last key from the last buffer we've successfully
+    /// fetched.  This happens when we're about to open a new scanner.
+    void setLastKey_locked()
+    {
+        // If we've already set it, don't bother resetting it.
         if(lastKey)
             return;
 
-        // Haven't returned any cells yet?
-        if(!next)
+        // Don't set the last key if we haven't fetched any cells yet.
+        if(!lastBuf)
             return;
 
-        // Get the block to make sure we're not at the beginning of
-        // it.
-        using kdi::marshal::CellBlock;
-        CellBlock const * block =
-            reinterpret_cast<CellBlock const *>(&buffer[0]);
-
-        // Haven't returned any cells yet?
-        if(next == block->cells.begin())
-            return;
-
-        // Init lastKey from most recently returned cell
-        lastKey.reset(new Key(next[-1].key));
+        // Init lastKey from last fetched cell
+        lastKey.reset(new Key(lastBuf->getLastKey()));
 
         // If we have a positive history predicate, let's just advance
         // to the end of this (row,column) set.
@@ -253,41 +483,164 @@ class NetTable::Scanner
         }
     }
 
-    void reopen();
-
-public:
-    explicit Scanner(boost::shared_ptr<Impl const> const & table, ScanPredicate const & pred) :
-        table(table),
-        pred(pred),
-        next(0),
-        end(0),
-        eof(false)
+    /// Called when Table.scan_async() completes successfully
+    void handleScan(details::ScannerPrx const & prx)
     {
-        reopen();
+        DLOG("handleScan");
+
+        lock_t lock(mutex);
+        pending = false;
+        nFailures = 0;
+
+        // We have a scanner
+        scanner = prx;
+        scannerOpen = true;
+
+        // Start fetching
+        maybeStartFetch_locked();
+
+        // If the fetch didn't start for some reason, notify main
+        // thread it should wake up.  One possible reason: destructor
+        // was called, setting EOS flag.
+        if(!pending)
+            cond.notify_one();
     }
 
-    ~Scanner()
+    /// Called when Scanner.getBulk_async() completes successfully
+    void handleFetch(Ice::ByteSeq const & buffer, bool lastCell)
     {
+        DLOG("handleFetch");
+
+        lock_t lock(mutex);
+        pending = false;
+        nFailures = 0;
+
+        // Get the CellBlock from the buffer
+        using kdi::marshal::CellBlock;
+        CellBlock const * block =
+            reinterpret_cast<CellBlock const *>(&buffer[0]);
+        
+        kdi::marshal::CellData const * next = block->cells.begin();
+        kdi::marshal::CellData const * end = block->cells.end();
+
+        // If we've set lastKey, it's the key of the last cell we've
+        // fetched and queued.  We need to advance the scan until it
+        // is past lastKey.
+        if(lastKey)
+        {
+            for(; next != end; ++next)
+            {
+                if(*lastKey < next->key)
+                {
+                    // Done.  Clear last key.
+                    lastKey.reset();
+                    break;
+                }
+            }
+        }
+
+        // Should we wake the main thread?
+        bool shouldSignal = false;
+
+        // If we still have some cells left in the buffer, put the
+        // buffer in the ready queue
+        if(next != end)
+        {
+            Buffer * b = emptyQ.front();
+            emptyQ.pop();
+            
+            b->set(buffer, next - block->cells.begin());
+            readyQ.push(b);
+
+            // Set the pointer for the last buffer fetched
+            lastBuf = b;
+
+            // Notify others that new data is available
+            shouldSignal = true;
+        }
+
+        // Did we reach the end of the stream?
+        if(lastCell)
+        {
+            // Set the end-of-stream flag
+            eos = true;
+
+            // Notify others that we've reached the end of the stream
+            shouldSignal = true;
+
+            // Close the scanner
+            maybeStartClose_locked();
+        }
+        else
+        {
+            // Get some more data if we can
+            maybeStartFetch_locked();
+        }
+
+        // Maybe signal
+        if(shouldSignal)
+            cond.notify_one();
+    }
+
+    /// Called when Scanner.close_async() completes, either
+    /// successfully or with an error.  If there is an error, it will
+    /// be passed in.
+    void handleClose(Ice::Exception const * error)
+    {
+        DLOG("handleClose");
+
+        lock_t lock(mutex);
+        pending = false;
+
+        if(error)
+            log("Scanner.close() failed: %s", *error);
+
+        // Scanner is closed
+        scannerOpen = false;
+        cond.notify_one();
+    }
+
+    /// Called if Scanner.getBulk_async() or Table.scan_async() fails.
+    void handleError(Ice::Exception const & ex)
+    {
+        DLOG("handleError");
+
+        lock_t lock(mutex);
+        pending = false;
+
+        log("Scanner error: %s", ex);
+
+        // If we get an error, consider the scanner closed
+        scannerOpen = false;
+
+        // We're willing to retry some types of errors
         try {
-            scanner->close();
+            ex.ice_throw();
         }
-        catch(Ice::RequestFailedException const & ex) {
-            // Don't worry about it.
-        }
-        catch(Ice::Exception const & ex) {
-            log("ERROR on scanner close: %s", ex);
-        }
-    }
+        catch(Ice::RequestFailedException const &) { ++nFailures; }
+        catch(Ice::SocketException const &)        { ++nFailures; }
+        catch(Ice::TimeoutException const &)       { ++nFailures; }
+        catch(...)               { nFailures = MAX_SCAN_FAILURES; }
 
-    bool get(Cell & x)
-    {
-        if(next == end && !refillBuffer())
-            return false;
+        // Have we reached the maximum error count?
+        if(nFailures >= MAX_SCAN_FAILURES)
+        {
+            // Forward the error to the client thread
+            error.reset(ex.ice_clone());
 
-        x = makeCell(*next->key.row, *next->key.column,
-                     next->key.timestamp, *next->value);
-        ++next;
-        return true;
+            // Mark the end-of-stream
+            eos = true;
+        }
+        else
+        {
+            // We'll try again later.  Set a delay time.
+            delayUntil = time(0) + RETRY_WAIT_SECONDS;
+
+            log("Will retry in %d seconds (attempt %d of %d)",
+                RETRY_WAIT_SECONDS, nFailures, MAX_SCAN_FAILURES);
+        }
+
+        cond.notify_one();
     }
 };
 
@@ -424,38 +777,8 @@ public:
     CellStreamPtr scan(ScanPredicate const & pred) const
     {
         //log("NetTable::scan(%s)", pred);
-        CellStreamPtr ptr(new Scanner(shared_from_this(), pred));
+        CellStreamPtr ptr(new Scanner(table, pred));
         return ptr;
-    }
-
-    details::ScannerPrx getScanner(ScanPredicate const & pred) const
-    {
-        //log("NetTable::getScanner(%s)", pred);
-        std::ostringstream oss;
-        oss << pred;
-        string predStr = oss.str();
-
-        for(int attempt = 0;;)
-        {
-            try {
-                return table->scan(predStr);
-            }
-            catch(Ice::SocketException const & ex) {
-                log("connection error on %s: %s", uri, ex);
-                }
-            catch(Ice::TimeoutException const & ex) {
-                log("timeout error on %s: %s", uri, ex);
-            }
-
-            if(++attempt >= MAX_CONNECTION_ATTEMPTS)
-                raise<RuntimeError>("lost connection to %s", uri);
-
-            int sleepTime = RETRY_WAIT_SECONDS;
-            log("will retry in %d seconds (attempt %d of %d)",
-                sleepTime, attempt, MAX_CONNECTION_ATTEMPTS);
-
-            sleep(sleepTime);
-        }
     }
 
     void sync()
@@ -481,26 +804,6 @@ public:
     }
 
 };
-
-
-//----------------------------------------------------------------------------
-// NetTable::Scanner
-//----------------------------------------------------------------------------
-void NetTable::Scanner::reopen()
-{
-    // The the last key if we can.
-    setLastKey();
-
-    // Trim the scan predicate if we have a last cell
-    ScanPredicate p;
-    if(lastKey)
-        p = pred.clipRows(makeLowerBound(lastKey->row));
-    else
-        p = pred;
-
-    // Reopen the scanner
-    scanner = table->getScanner(p);
-}
 
 
 //----------------------------------------------------------------------------

@@ -66,37 +66,6 @@ bool CellInterpreter::isLess(void const * data1, void const * data2) const
 }
 
 //----------------------------------------------------------------------------
-// Cell
-//----------------------------------------------------------------------------
-std::ostream & sdstore::operator<<(std::ostream & o, Cell const & cell)
-{
-    if(!cell)
-        return o << "(NULL)";
-
-    StringRange row = cell.getRow();
-    StringRange col = cell.getColumn();
-    StringRange val = cell.getValue();
-    int64_t ts = cell.getTimestamp();
-
-    o << '('
-      << reprString(row.begin(), row.end(), true)
-      << ','
-      << reprString(col.begin(), col.end(), true)
-      << ',';
-    if(-10000 < ts && ts < 10000)
-        o << '@' << ts;
-    else
-        o << Timestamp::fromMicroseconds(ts);
-    o << ',';
-    if(cell.isErasure())
-        o << "ERASED";
-    else
-        o << reprString(val.begin(), val.end(), true);
-    return o << ')';
-}
-
-
-//----------------------------------------------------------------------------
 // makeCell
 //----------------------------------------------------------------------------
 Cell sdstore::makeCell(strref_t row, strref_t col, int64_t ts, strref_t val)

@@ -80,7 +80,7 @@ private:
 namespace warp {
 namespace xml {
 
-    std::ostream & operator<<(std::ostream & out, XmlEscape const & x)
+    inline std::ostream & operator<<(std::ostream & out, XmlEscape const & x)
     {
         char const * begin = x.begin();
         char const * end = x.end();

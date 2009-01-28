@@ -29,12 +29,12 @@ module kdi {
 module net {
 module details {
 
-    interface Scanner {
+    ["ami"] interface Scanner {
         void getBulk(out Ice::ByteSeq cells, out bool lastBlock);
         idempotent void close();
     };
 
-    interface Table {
+    ["ami"] interface Table {
         idempotent void applyMutations(Ice::ByteSeq cells);
         idempotent void sync();
         idempotent Scanner* scan(string predicate);
