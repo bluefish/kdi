@@ -438,7 +438,7 @@ namespace {
     void outOfMemory()
     {
         std::cerr << "Operator new failed.  Out of memory." << std::endl;
-        std::exit(1);
+        _exit(1);
     }
 
 }
