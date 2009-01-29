@@ -34,9 +34,17 @@ namespace kdi {
 namespace tablet {
 
     class FragDag;
+    class CompactionList;
 
 } // namespace tablet
 } // namespace kdi
+
+class kdi::tablet::CompactionList
+{
+public:
+    Tablet const * tablet;
+    std::vector<FragmentPtr> fragments;
+};
 
 //----------------------------------------------------------------------------
 // FragDag
@@ -65,6 +73,12 @@ private:
 
     FragStats const &
     getFragmentStats(FragmentPtr const & fragment) const;
+
+    size_t const
+    getInactiveSize(FragmentPtr const & fragment) const;
+
+    fragment_set
+    getMostWastedSet(size_t maxSize) const;
 
 public:
     /// Append an edge to a tablet's fragment list.
@@ -110,7 +124,7 @@ public:
     /// Get the parent of the given fragment in the line of the given
     /// tablet.
     FragmentPtr
-    getParent(FragmentPtr const & fragment, Tablet * tablet) const;
+    getParent(FragmentPtr const & fragment, Tablet const * tablet) const;
 
     /// Get the child of the given fragment in the line of the given
     /// tablet.
@@ -157,7 +171,7 @@ public:
     void sweepGraph();
 
     /// XXX ...
-    fragment_set
+    std::vector<kdi::tablet::CompactionList>
     chooseCompactionSet() const;
 
     void

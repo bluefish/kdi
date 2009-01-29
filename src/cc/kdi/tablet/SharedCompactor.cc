@@ -60,6 +60,9 @@ namespace {
     // Split outputs if they get bigger than this:
     size_t const OUTPUT_SPLIT_SIZE = size_t(1) << 30;  // 1 GB
 
+    // Stop the compaction entirely if it gets bigger than this:
+    size_t const MAX_OUTPUT_SIZE = 4 * OUTPUT_SPLIT_SIZE;
+
     typedef std::set<FragmentPtr> fragment_set;
     typedef std::vector<FragmentPtr> fragment_vec;
 
@@ -300,10 +303,16 @@ namespace {
             }
         }
 
-        void flush()
+        void flush(IntervalPoint<string> & outputUpperBound)
         {
             if(outputOpen)
             {
+                // If not everything in the range map was processed
+                // need to be told not to reassign any tablets
+                // we didn't get to
+                outputRange.setUpperBound(outputUpperBound);
+                log("Compact thread: last output upper bound = %s)", outputUpperBound);
+
                 log("Compact thread: last output (sz=%s)", sizeString(writer->size()));
                 finalizeOutput();
             }
@@ -455,8 +464,35 @@ void SharedCompactor::shutdown()
     }
 }
 
-void SharedCompactor::compact(fragment_set const & fragments)
+namespace {
+    class Compaction {
+        typedef vector<CompactionList> cvec;
+        cvec const & tablet_lists;
+
+    public:
+        Compaction(cvec const & tablet_lists) :
+            tablet_lists(tablet_lists)
+        {
+        }
+
+        fragment_set getAllFragments() {
+            fragment_set all_fragments;
+            for(cvec::const_iterator i = tablet_lists.begin();
+                i != tablet_lists.end(); ++i) 
+            {
+                fragment_vec const & f = (*i).fragments;
+                all_fragments.insert(f.begin(), f.end());
+            }
+            return all_fragments;
+        }
+    };
+}
+
+void SharedCompactor::compact(vector<CompactionList> const & compactions)
 {
+    Compaction c(compactions);
+    fragment_set fragments = c.getAllFragments();
+    
     log("Compact thread: compacting %d fragments", fragments.size());
     WallTimer timer;
     size_t outputCells = 0;
@@ -477,6 +513,16 @@ void SharedCompactor::compact(fragment_set const & fragments)
     FileTrackerPtr tracker;
     string table;
 
+    // Pull our random parameters from one of the tablets.  It 
+    // doesn't matter which as all of the tablets should have the 
+    // same information.
+    if(!compactions.empty())
+    {
+        Tablet const * t = compactions.front().tablet;
+        tracker = t->getFileTracker();
+        table = t->getTableName();
+    }
+
     // For each active tablet in compaction set, remember:
     //   rangeMap:  (not an actual std::map)
     //      tablet range -> adjSeq (longest adjacent sequence
@@ -492,39 +538,14 @@ void SharedCompactor::compact(fragment_set const & fragments)
             inputSize += fragDag.getActiveSize(*f);
         }
 
-        // Get all active tablets for fragment set
-        FragDag::tablet_set active = fragDag.getActiveTablets(fragments);
-
-        // For each tablet, figure out longest adjacent fragment
-        // sequence and remember that for the tablet's range
-        for(FragDag::tablet_set::const_iterator t = active.begin();
-            t != active.end(); ++t)
+        for(vector<CompactionList>::const_iterator i = compactions.begin();
+            i != compactions.end(); ++i) 
         {
-            CompactRangePtr p(new CompactRange((*t)->getRows()));
-
-            // Find max-length adjacent sequence
-            p->fragments = (*t)->getMaxAdjacentChain(fragments);
-
-            // Unless the sequence includes at least two fragments,
-            // there's no point in compacting it
-            if(p->fragments.size() < 2)
-                continue;
-
-            // See if the sequence is rooted (doesn't have a parent)
-            p->isRooted = !(fragDag.getParent(p->fragments.front(), *t));
-
-            // Remember the sequence for the range
+            Tablet const * t = (*i).tablet;
+            CompactRangePtr p(new CompactRange(t->getRows()));
+            p->fragments = (*i).fragments;
+            p->isRooted = !(fragDag.getParent(p->fragments.front(), t));
             rangeMap.push_back(p);
-        }
-
-        // Since we're in the neighborhood, pull our random parameters
-        // from one of the tablets.  It doesn't matter which as all of
-        // the tablets should have the same information.
-        if(!active.empty())
-        {
-            Tablet * t = *active.begin();
-            tracker = t->getFileTracker();
-            table = t->getTableName();
         }
     }
 
@@ -574,7 +595,6 @@ void SharedCompactor::compact(fragment_set const & fragments)
     }
 
     log("Compact thread: starting compaction on table %s", table);
-
 
     // New plan:
     //
@@ -638,8 +658,10 @@ void SharedCompactor::compact(fragment_set const & fragments)
                             rangeMap);
 
     // Merge one range at a time
-    for(range_vec::const_iterator i = rangeMap.begin();
-        i != rangeMap.end(); ++i)
+    range_vec::const_iterator i;
+    for(i = rangeMap.begin();
+        i != rangeMap.end() && output.getOutputSize() < MAX_OUTPUT_SIZE; 
+        ++i)
     {
         {
             lock_t lock(mutex);
@@ -693,8 +715,13 @@ void SharedCompactor::compact(fragment_set const & fragments)
         }
     }
 
+    IntervalPoint<string> outputUpperBound(string(), PT_INFINITE_UPPER_BOUND);
+    if(i < rangeMap.end()) {
+        outputUpperBound = (*i)->range.getLowerBound().getAdjacentComplement();
+    }
+
     // We're done merging.  Flush output.
-    output.flush();
+    output.flush(outputUpperBound);
 
     // Now that we're done, sweep the graph to get rid of old
     // fragments
@@ -751,13 +778,13 @@ void SharedCompactor::compactLoop()
         lock.unlock();
         log("Compact thread: choosing compaction set");
         lock_t dagLock(dagMutex);
-        set<FragmentPtr> frags = fragDag.chooseCompactionSet();
+        vector<CompactionList> compactions = fragDag.chooseCompactionSet();
         dagLock.unlock();
         lock.lock();
         if(cancel || disabled)
             continue;
 
-        if(frags.empty())
+        if(compactions.empty())
         {
             // If empty, wait for a compaction request
             log("Compact thread: nothing to compact, waiting");
@@ -768,7 +795,7 @@ void SharedCompactor::compactLoop()
         {
             // Else, compact it
             lock.unlock();
-            compact(frags);
+            compact(compactions);
             lock.lock();
         }
     }
