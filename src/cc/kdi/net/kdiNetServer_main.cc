@@ -375,7 +375,7 @@ namespace {
             }
 
             // Make scanner locator
-            ScannerLocator * scannerLocator = new ScannerLocator(200);
+            ScannerLocator * scannerLocator = new ScannerLocator(50);
 
             // Create table server
             //   -- hack: tossing the scannerLocator in here so we can
