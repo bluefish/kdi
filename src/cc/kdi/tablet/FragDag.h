@@ -178,6 +178,12 @@ public:
     dumpDotGraph(std::ostream & out,
                  fragment_set const & fragments,
                  bool restrictToSet) const;
+private:
+    // Configurable paramaters for compaction set algorithm
+    size_t MAX_COMPACTION_WIDTH;
+
+public:
+    FragDag();
 };
 
 #endif // KDI_TABLET_FRAGDAG_H

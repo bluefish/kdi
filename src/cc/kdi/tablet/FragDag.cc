@@ -23,6 +23,7 @@
 #include <kdi/tablet/Fragment.h>
 #include <warp/log.h>
 #include <warp/fs.h>
+#include <warp/strutil.h>
 #include <utility>
 #include <algorithm>
 #include <sstream>
@@ -37,6 +38,13 @@ using namespace std;
 //----------------------------------------------------------------------------
 // FragDag
 //----------------------------------------------------------------------------
+FragDag::FragDag() :
+    MAX_COMPACTION_WIDTH(16)
+{
+    if(char * s = getenv("KDI_MAX_COMPACTION_WIDTH"))
+        MAX_COMPACTION_WIDTH = parseSize(s);
+}
+
 void
 FragDag::addFragment(Tablet * tablet, FragmentPtr const & fragment)
 {
@@ -598,7 +606,7 @@ FragDag::chooseCompactionSet() const
         list.fragments.push_back(frag);
 
         FragmentPtr f = frag;
-        while(list.fragments.size() < 16) {
+        while(list.fragments.size() < MAX_COMPACTION_WIDTH) {
             FragmentPtr child = getChild(f, *t);
             if(child) {
                 list.fragments.push_back(child);
@@ -610,7 +618,7 @@ FragDag::chooseCompactionSet() const
         }
 
         f = frag;
-        while(list.fragments.size() < 16) {
+        while(list.fragments.size() < MAX_COMPACTION_WIDTH) {
             FragmentPtr parent = getParent(f, *t);
             if(parent) {
                 list.fragments.insert(list.fragments.begin(), parent);
@@ -629,8 +637,8 @@ FragDag::chooseCompactionSet() const
 
             compactions.push_back(list);
         }
-    }
-
+    } 
+    
     return compactions;
 }
 
