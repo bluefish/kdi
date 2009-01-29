@@ -84,7 +84,7 @@ class sdstore::Cell
     CellInterpreter const * interp;
     void const * data;
 
-    struct unspecified_bool_t {};
+    typedef bool (Cell::*unspecified_bool_t)() const;
 
 public:
     Cell() :
@@ -127,8 +127,8 @@ public:
     }
 
     bool isNull() const { return interp == 0; }
-    operator unspecified_bool_t const *() const {
-        return reinterpret_cast<unspecified_bool_t const *>(interp);
+    operator unspecified_bool_t () const {
+        return interp ? &Cell::isNull : 0;
     }
 
     /// Get row name of cell
@@ -233,6 +233,12 @@ public:
         }
     }
 };
+
+namespace sdstore {
+
+    std::ostream & operator<<(std::ostream & o, Cell const & cell);
+
+}
 
 
 #endif // SDSTORE_CELL_H

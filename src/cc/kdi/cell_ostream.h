@@ -23,7 +23,6 @@
 
 #include <kdi/cell.h>
 #include <warp/repr.h>
-#include <warp/timestamp.h>
 #include <iostream>
 
 namespace kdi {
@@ -34,33 +33,6 @@ namespace kdi {
         Cell const & cell;
         explicit WithFastOutput(Cell const & cell) : cell(cell) {}
     };
-
-    inline std::ostream & operator<<(std::ostream & o, Cell const & cell)
-    {
-        using warp::ReprEscape;
-        using warp::Timestamp;
-
-        if(!cell)
-            return o << "(NULL)";
-
-        int64_t ts = cell.getTimestamp();
-
-        o << "(\""
-          << ReprEscape(cell.getRow())
-          << "\",\""
-          << ReprEscape(cell.getColumn())
-          << "\",";
-        if(-10000 < ts && ts < 10000)
-            o << '@' << ts;
-        else
-            o << Timestamp::fromMicroseconds(ts);
-        o << ",\"";
-        if(cell.isErasure())
-            o << "ERASED";
-        else
-            o << ReprEscape(cell.getValue());
-        return o << "\")";
-    }
 
     inline std::ostream & operator<<(std::ostream & o, WithFastOutput const & cell)
     {
