@@ -56,6 +56,9 @@ using boost::format;
 #undef DLOG
 #define DLOG(x) ((void) 0)
 
+#undef DLOG2
+#define DLOG2(x,y) ((void) 0)
+
 namespace
 {
     Ice::CommunicatorPtr const & getCommunicator()
@@ -244,6 +247,8 @@ private:
         bool empty() const { return next == end; }
     };
 
+    enum OpType { OP_SCAN, OP_FETCH, OP_CLOSE };
+
     /// Callback for Scanner.getBulk
     struct FetchCb : public details::AMI_Scanner_getBulk
     {
@@ -253,7 +258,7 @@ private:
             scanner->handleFetch(cells, lastBlock);
         }
         void ice_exception(Ice::Exception const & ex) {
-            scanner->handleError(ex);
+            scanner->handleError(ex, OP_FETCH);
         }
     };
 
@@ -266,7 +271,7 @@ private:
             scanner->handleScan(prx);
         }
         void ice_exception(Ice::Exception const & ex) {
-            scanner->handleError(ex);
+            scanner->handleError(ex, OP_SCAN);
         }
     };
 
@@ -276,10 +281,10 @@ private:
         Scanner * scanner;
         CloseCb(Scanner * scanner) : scanner(scanner) {}
         void ice_response() {
-            scanner->handleClose(0);
+            scanner->handleClose();
         }
         void ice_exception(Ice::Exception const & ex) {
-            scanner->handleClose(&ex);
+            scanner->handleError(ex, OP_CLOSE);
         }
     };
 
@@ -582,62 +587,93 @@ private:
             cond.notify_one();
     }
 
-    /// Called when Scanner.close_async() completes, either
-    /// successfully or with an error.  If there is an error, it will
-    /// be passed in.
-    void handleClose(Ice::Exception const * error)
+    /// Called when Scanner.close_async() completes successfully.
+    void handleClose()
     {
         DLOG("handleClose");
 
         lock_t lock(mutex);
         pending = false;
-
-        if(error)
-            log("Scanner.close() failed: %s", *error);
+        nFailures = 0;
 
         // Scanner is closed
         scannerOpen = false;
         cond.notify_one();
     }
 
-    /// Called if Scanner.getBulk_async() or Table.scan_async() fails.
-    void handleError(Ice::Exception const & ex)
+    /// Called if any of the async operations encounters an error.
+    void handleError(Ice::Exception const & ex, OpType op)
     {
-        DLOG("handleError");
+        DLOG2("handleError %s",
+              op == OP_FETCH ? "FETCH" :
+              op == OP_SCAN ? "SCAN" :
+              op == OP_CLOSE ? "CLOSE" :
+              "<UNKNOWN>");
 
         lock_t lock(mutex);
         pending = false;
-
-        log("Scanner error: %s", ex);
+        ++nFailures;
 
         // If we get an error, consider the scanner closed
         scannerOpen = false;
+
+        // How to handle this error?
+        int retryWait = RETRY_WAIT_SECONDS;
+        bool reportError = true;
+
+        // Don't ever retry a close
+        if(op == OP_CLOSE)
+            nFailures = MAX_SCAN_FAILURES;
 
         // We're willing to retry some types of errors
         try {
             ex.ice_throw();
         }
-        catch(Ice::RequestFailedException const &) { ++nFailures; }
-        catch(Ice::SocketException const &)        { ++nFailures; }
-        catch(Ice::TimeoutException const &)       { ++nFailures; }
-        catch(...)               { nFailures = MAX_SCAN_FAILURES; }
+        catch(Ice::ObjectNotExistException const &) {
+            // Only log errors when table is missing
+            reportError = (op == OP_SCAN);
+
+            // Don't retry if table is missing
+            if(op == OP_SCAN)
+                nFailures = MAX_SCAN_FAILURES;
+
+            // Don't wait to reopen fetch
+            else if(op == OP_FETCH)
+                retryWait = 0;
+        }
+        catch(Ice::RequestFailedException const &)  {}
+        catch(Ice::SocketException const &)         {}
+        catch(Ice::TimeoutException const &)        {}
+        catch(...)                                  { nFailures = MAX_SCAN_FAILURES; }
+
+        if(reportError)
+        {
+            log("Scanner error on %s: %s",
+                op == OP_FETCH ? "FETCH" :
+                op == OP_SCAN ? "SCAN" :
+                op == OP_CLOSE ? "CLOSE" :
+                "<UNKNOWN>",
+                ex);
+        }
 
         // Have we reached the maximum error count?
         if(nFailures >= MAX_SCAN_FAILURES)
         {
-            // Forward the error to the client thread
-            error.reset(ex.ice_clone());
+            // Forward the error to the client thread (suppress all
+            // close errors)
+            if(op != OP_CLOSE)
+                error.reset(ex.ice_clone());
 
             // Mark the end-of-stream
             eos = true;
         }
-        else
+        else if(retryWait)
         {
             // We'll try again later.  Set a delay time.
-            delayUntil = time(0) + RETRY_WAIT_SECONDS;
+            delayUntil = time(0) + retryWait;
 
             log("Will retry in %d seconds (attempt %d of %d)",
-                RETRY_WAIT_SECONDS, nFailures, MAX_SCAN_FAILURES);
+                retryWait, nFailures, MAX_SCAN_FAILURES);
         }
 
         cond.notify_one();
