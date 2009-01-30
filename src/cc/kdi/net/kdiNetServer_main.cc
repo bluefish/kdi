@@ -331,6 +331,12 @@ namespace {
 
     std::string getHostName()
     {
+        if(char * env = getenv("KDI_SERVER_HOST"))
+        {
+            log("Using server name override: %s", env);
+            return std::string(env);
+        }
+
         char buf[256];
         if(0 == gethostname(buf, sizeof(buf)) && strcmp(buf, "localhost"))
             return std::string(buf);
