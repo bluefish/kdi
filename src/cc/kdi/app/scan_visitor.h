@@ -244,6 +244,31 @@ namespace app {
     };
 
     //------------------------------------------------------------------------
+    // AddingVisitor
+    //------------------------------------------------------------------------
+    class AddingVisitor
+    {
+    public:
+        size_t nCells;
+        size_t nBytes;
+
+        AddingVisitor() : nCells(0), nBytes(0) {}
+
+        void startScan() {}
+        void endScan() {}
+
+        void startTable(std::string const & uri) {}
+        void endTable() {}
+
+        void visitCell(Cell const & x)
+        {
+            ++nCells;
+            nBytes += (8 + x.getRow().size() + x.getColumn().size() +
+                       x.getValue().size());
+        }
+    };
+
+    //------------------------------------------------------------------------
     // doScan
     //------------------------------------------------------------------------
     template <class V>
