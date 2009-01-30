@@ -55,6 +55,7 @@ public:
     typedef std::vector<FragmentPtr>              fragment_vec;
     typedef std::set<FragmentPtr>                 fragment_set;
     typedef std::set<Tablet*>                     tablet_set;
+    typedef std::vector<Tablet*>                  tablet_vec;
     typedef std::map<FragmentPtr, tablet_set>     ftset_map;
     typedef std::map<Tablet*, fragment_set>       tfset_map;
 

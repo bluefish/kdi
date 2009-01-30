@@ -577,6 +577,23 @@ FragDag::sweepGraph()
     }
 }
 
+namespace {
+    struct TabletChainLengthGt {
+        FragDag::tfset_map const & activeFragments;
+
+        TabletChainLengthGt(FragDag::tfset_map const & activeFragments) :
+            activeFragments(activeFragments)
+        {
+        }
+
+        bool operator()(Tablet * a, Tablet * b) const
+        {
+            return activeFragments.find(a)->second.size() >
+                   activeFragments.find(b)->second.size();
+        }
+    };
+}
+
 vector<CompactionList>
 FragDag::chooseCompactionSet() const
 {
@@ -596,48 +613,80 @@ FragDag::chooseCompactionSet() const
     ftset_map::const_iterator i = activeTablets.find(frag);
     tablet_set const & tablets = i->second;
 
-    for(tablet_set::const_iterator t = tablets.begin();
-        t != tablets.end(); ++t)
+    // Add tablets from this fragment into the compaction
+    // by order of tablet chain length.
+    tablet_vec stablets(tablets.begin(), tablets.end());
+    std::sort(stablets.begin(), stablets.end(),
+        TabletChainLengthGt(activeFragments));
+
+    // Keep track of the frags in this compaction.
+    // Once we hit 32 total fragments in the compaction,
+    // add in only adjacent fragments sequences from
+    // this set of fragments which are longer than half
+    // the smallest sequence already added
+    fragment_set all_frags;
+    size_t smallest_chain = MAX_COMPACTION_WIDTH;
+
+    tablet_vec::const_iterator t;
+    for(t = stablets.begin(); t != stablets.end(); ++t)
     {
         CompactionList list;
         list.tablet = *t;
 
-        //log("Adding fragments for %s", (*t));
+        // Add the seed fragment
         list.fragments.push_back(frag);
 
+        // Add children first, since they are presumably lighter
         FragmentPtr f = frag;
         while(list.fragments.size() < MAX_COMPACTION_WIDTH) {
             FragmentPtr child = getChild(f, *t);
             if(child) {
                 list.fragments.push_back(child);
-                //log("Adding child %s", child);
                 f = child;
             } else {
                 break;
             }
         }
 
+        // Then add as many parents as will fit
         f = frag;
         while(list.fragments.size() < MAX_COMPACTION_WIDTH) {
             FragmentPtr parent = getParent(f, *t);
             if(parent) {
+                // Have to be inserted at the front for correct ordering
                 list.fragments.insert(list.fragments.begin(), parent);
-                //log("Adding parent %s", parent);
                 f = parent;
             } else {
                 break;
             }
         }
 
-        //log("Fragments found: %d", list.fragments.size());
-
         if(list.fragments.size() > 1) {
             log("FragDag: adding compaction list for tablet %s, %d fragments", 
                 list.tablet, list.fragments.size());
-
             compactions.push_back(list);
+
+            if(list.fragments.size() < smallest_chain)
+                smallest_chain = list.fragments.size();
+            
+            all_frags.insert(list.fragments.begin(), list.fragments.end());    
+            if(all_frags.size() >= 32)
+                break;
         }
     } 
+
+    for(; t != stablets.end(); ++t) {
+        fragment_vec const & adjChain = (*t)->getMaxAdjacentChain(all_frags);
+        if(adjChain.size() > smallest_chain/2) {
+            CompactionList list;
+            list.tablet = *t;
+            list.fragments = adjChain;
+
+            log("FragDag: adding compaction list for tablet %s, %d fragments", 
+                list.tablet, list.fragments.size());
+            compactions.push_back(list);
+        }
+    }
     
     return compactions;
 }
