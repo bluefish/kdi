@@ -50,7 +50,7 @@ ScannerLocator::ScannerLocator(size_t nObjects) :
         raise<RuntimeError>("couldn't generate scanner instance ID");
 
     std::ostringstream oss;
-    oss << salt;
+    oss << std::hex << salt;
     instanceId = oss.str();
 }
 
