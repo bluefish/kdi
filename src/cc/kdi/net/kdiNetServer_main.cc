@@ -21,6 +21,7 @@
 #include <kdi/net/TableManagerI.h>
 #include <kdi/net/TableLocator.h>
 #include <kdi/net/ScannerLocator.h>
+#include <kdi/net/StatReporterI.h>
 #include <warp/options.h>
 #include <warp/fs.h>
 #include <warp/filestream.h>
@@ -68,12 +69,13 @@ using namespace ex;
 namespace {
 
     class MyTracker
-        : public warp::StatTracker
+        : public warp::StatTracker,
+          public kdi::net::StatReportable
     {
         typedef tr1::unordered_map<std::string, int64_t> map_t;
 
         map_t stats;
-        boost::mutex mutex;
+        mutable boost::mutex mutex;
 
     public:
         void set(strref_t name, int64_t value)
@@ -94,6 +96,13 @@ namespace {
             for(map_t::const_iterator i = stats.begin();
                 i != stats.end(); ++i)
                 log("Stat: %s %d", i->first, i->second);
+        }
+
+        void getStats(StatReportable::StatMap & out) const
+        {
+            out.clear();
+            boost::mutex::scoped_lock lock(mutex);
+            out.insert(stats.begin(), stats.end());
         }
     };
 
@@ -151,7 +160,7 @@ namespace {
 
     class SuperTabletServer
     {
-        MyTracker myTracker;
+        MyTracker * myTracker;
 
         tablet::MetaConfigManagerPtr metaConfigMgr;
         tablet::FileTrackerPtr tracker;
@@ -197,7 +206,7 @@ namespace {
 
                 if(iter % 1 == 0)
                     // Run stat report
-                    myTracker.report();
+                    myTracker->report();
 
                 lock.lock();
             }
@@ -206,10 +215,12 @@ namespace {
     public:
         SuperTabletServer(std::string const & root,
                           std::string const & server,
-                          ScannerLocator * locator) :
+                          ScannerLocator * locator,
+                          MyTracker * myTracker) :
+            myTracker(myTracker),
             metaConfigMgr(new tablet::MetaConfigManager(root, server)),
             tracker(new tablet::FileTracker),
-            loader(new LoaderAssembly(&myTracker, metaConfigMgr)),
+            loader(new LoaderAssembly(myTracker, metaConfigMgr)),
             loggerWriter(new DiskFragmentWriter(metaConfigMgr)),
             compactorWriter(new DiskFragmentWriter(metaConfigMgr)),
             logger(
@@ -263,7 +274,7 @@ namespace {
                             ),
                         "Maintenance thread", true)));
 
-            kdi::local::IndexCache::setTracker(&myTracker);
+            kdi::local::IndexCache::setTracker(myTracker);
         }
 
         ~SuperTabletServer()
@@ -380,6 +391,9 @@ namespace {
                 pid.close();
             }
 
+            // Our stat tracker;
+            MyTracker myTracker;
+
             // Make scanner locator
             ScannerLocator * scannerLocator = new ScannerLocator(50);
 
@@ -389,7 +403,8 @@ namespace {
             //   -- the Tablet GC.  It doesn't really belong here.
             boost::shared_ptr<SuperTabletServer> server(
                 new SuperTabletServer(
-                    tableRoot, getHostName(), scannerLocator));
+                    tableRoot, getHostName(), scannerLocator,
+                    &myTracker));
 
             // Create adapter
             Ice::CommunicatorPtr ic = communicator();
@@ -410,6 +425,11 @@ namespace {
             // Create TableManager object
             Ice::ObjectPtr object = new ::kdi::net::details::TableManagerI;
             adapter->add(object, ic->stringToIdentity("TableManager"));
+
+            // Create StatReporter object
+            adapter->add(
+                makeStatReporter(&myTracker),
+                ic->stringToIdentity("StatReporter"));
 
             // Run server
             adapter->activate();
