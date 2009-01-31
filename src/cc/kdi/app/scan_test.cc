@@ -311,7 +311,7 @@ int main(int ac, char ** av)
 
         if(verbose)
         {
-            VerboseAdapter<SamplingVisitor> v(
+            CompositeVisitor<SamplingVisitor,VerboseVisitor> v(
                 SamplingVisitor(
                     rowSampler.get(),
                     columnSampler.get(),
