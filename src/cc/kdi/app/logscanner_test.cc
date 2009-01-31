@@ -119,12 +119,16 @@ void loadThread(vector<string> const & files, ScanQueue * jobQ)
 }
 
 void scanThread(size_t scanId, bool verbose,
+                double loadRate, double syncRate,
                 std::string const & uriTemplate,
                 ScanQueue * jobQ)
 {
     log("Scan thread %d starting", scanId);
 
-    AddingVisitor v;
+    ReloadingVisitor lv(loadRate, syncRate);
+    AddingVisitor av;
+    CompositeVisitor<ReloadingVisitor &, AddingVisitor &> cv(lv,av);
+    
     vector<string> tables(1);
     map<string,string> vmap;
 
@@ -141,21 +145,53 @@ void scanThread(size_t scanId, bool verbose,
             log("Scan %d.%d running: table=%s pred=(%s)",
                 scanId, nScans, job.table, p);
 
-        size_t nCells = v.nCells;
-        size_t nBytes = v.nBytes;
+        size_t nCells = av.nCells;
+        size_t nBytes = av.nBytes;
+        size_t nLoadCells = lv.nCells;
+        size_t nLoadBytes = lv.nBytes;
+        size_t nLoadSyncs = lv.nSyncs;
 
-        doScan(v, tables, p);
+        if(loadRate > 0)
+            doScan(cv, tables, p);
+        else
+            doScan(av, tables, p);
 
         if(verbose)
-            log("Scan %d.%d done: %s cells, %s bytes", scanId, nScans,
-                sizeString(v.nCells - nCells, 1000),
-                sizeString(v.nBytes - nBytes, 1024));
+        {
+            if(loadRate > 0)
+            {
+                log("Scan %d.%d done: %s cells, %s bytes, %s loaded cells, "
+                    "%s loaded bytes, %s syncs",
+                    scanId, nScans,
+                    sizeString(av.nCells - nCells, 1000),
+                    sizeString(av.nBytes - nBytes, 1024),
+                    sizeString(lv.nCells - nLoadCells, 1000),
+                    sizeString(lv.nBytes - nLoadBytes, 1024),
+                    sizeString(lv.nSyncs - nLoadSyncs, 1000));
+            }
+            else
+            {
+                log("Scan %d.%d done: %s cells, %s bytes", scanId, nScans,
+                    sizeString(av.nCells - nCells, 1000),
+                    sizeString(av.nBytes - nBytes, 1024));
+            }
+        }
     }
 
     log("Scan thread %d done: %d scans, %s cells, %s bytes",
         scanId, nScans,
-        sizeString(v.nCells, 1000),
-        sizeString(v.nBytes, 1024));
+        sizeString(av.nCells, 1000),
+        sizeString(av.nBytes, 1024));
+
+    if(loadRate > 0)
+    {
+        log("Scan thread %d done: %s loaded cells, %s loaded bytes, %s syncs",
+            scanId,
+            sizeString(lv.nCells, 1000),
+            sizeString(lv.nBytes, 1024),
+            sizeString(lv.nSyncs, 1000)
+        );
+    }
 }
 
 int main(int ac, char ** av)
@@ -167,6 +203,10 @@ int main(int ac, char ** av)
                      "Table URI template containing $TABLE");
         op.addOption("numThreads,n", value<size_t>()->default_value(1),
                      "Number of scanner threads");
+        op.addOption("loadRate,l", value<double>()->default_value(0),
+                     "Probabilistic rate at which to re-set scanned cells");
+        op.addOption("syncRate,s", value<double>()->default_value(0),
+                     "Probabilistic rate at which to sync after setting a cell");
         op.addOption("verbose,v", "Be verbose");
     }
 
@@ -175,6 +215,16 @@ int main(int ac, char ** av)
     op.parseOrBail(ac, av, opt, args);
 
     bool verbose = hasopt(opt, "verbose");
+
+    double loadRate = 0;
+    opt.get("loadRate", loadRate);
+    if(loadRate < 0 || loadRate > 1)
+        op.error("--loadRate must between 0 and 1");
+
+    double syncRate = 0;
+    opt.get("syncRate", syncRate);
+    if(syncRate < 0 || syncRate > 1)
+        op.error("--syncRate must between 0 and 1");
 
     string uriTemplate;
     opt.get("uriTemplate", uriTemplate);
@@ -198,7 +248,7 @@ int main(int ac, char ** av)
         threads.create_thread(
             warp::callOrDie(
                 boost::bind(
-                    &scanThread, i, verbose,
+                    &scanThread, i, verbose, loadRate, syncRate,
                     boost::cref(uriTemplate), &jobQ),
                 str(format("Scan thread %d") % i), false));
     }
