@@ -21,6 +21,7 @@
 #include <kdi/sdstore_cell.h>
 #include <kdi/sdstore_dynamic_cell.h>
 #include <warp/util.h>
+#include <warp/repr.h>
 #include <warp/atomic.h>
 #include <warp/timestamp.h>
 #include <algorithm>
@@ -64,6 +65,37 @@ bool CellInterpreter::isLess(void const * data1, void const * data2) const
     else
         return getTimestamp(data2) < getTimestamp(data1);
 }
+
+//----------------------------------------------------------------------------
+// Cell
+//----------------------------------------------------------------------------
+std::ostream & sdstore::operator<<(std::ostream & o, Cell const & cell)
+{
+    using warp::ReprEscape;
+    using warp::Timestamp;
+
+    if(!cell)
+        return o << "(NULL)";
+
+    int64_t ts = cell.getTimestamp();
+
+    o << "(\""
+      << ReprEscape(cell.getRow())
+      << "\",\""
+      << ReprEscape(cell.getColumn())
+      << "\",";
+    if(-10000 < ts && ts < 10000)
+        o << '@' << ts;
+    else
+        o << Timestamp::fromMicroseconds(ts);
+    o << ",\"";
+    if(cell.isErasure())
+        o << "ERASED";
+    else
+        o << ReprEscape(cell.getValue());
+    return o << "\")";
+}
+
 
 //----------------------------------------------------------------------------
 // makeCell

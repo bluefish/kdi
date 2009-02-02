@@ -156,32 +156,6 @@ public:
 };
 
 //----------------------------------------------------------------------------
-// AddingVisitor
-//----------------------------------------------------------------------------
-class AddingVisitor
-{
-public:
-    size_t nCells;
-    size_t nBytes;
-
-    AddingVisitor() : nCells(0), nBytes(0) {}
-
-    void startScan() {}
-    void endScan() {}
-
-    void startTable(std::string const & uri) {}
-    void endTable() {}
-
-    void visitCell(Cell const & x)
-    {
-        ++nCells;
-        nBytes += (8 + x.getRow().size() + x.getColumn().size() +
-                   x.getValue().size());
-    }
-};
-
-
-//----------------------------------------------------------------------------
 // chooseSample
 //----------------------------------------------------------------------------
 IntervalSet<std::string>
@@ -214,6 +188,9 @@ void runScanners(size_t id,
                  UniqueStringSampler * columnSampler,
                  UniqueStringSampler * familySampler)
 {
+    log("Scan thread %d starting: %d scan(s)", id, nScans);
+
+    AddingVisitor v;
     for(size_t i = 0; i < nScans; ++i)
     {
         ScanPredicate p(pred);
@@ -243,15 +220,23 @@ void runScanners(size_t id,
                 chooseSample(familySampler->getSamples(), true));
         }
         
-        log("Scan %d.%d starting: pred=(%s)", id, i, p);
+        if(verbose)
+            log("Scan %d.%d running: pred=(%s)", id, i, p);
 
-        AddingVisitor v;
+        size_t nCells = v.nCells;
+        size_t nBytes = v.nBytes;
+
         doScan(v, tables, p);
 
-        log("Scan %d.%d done: %s cells, %s bytes", id, i,
-            sizeString(v.nCells, 1000),
-            sizeString(v.nBytes, 1024));
+        if(verbose)
+            log("Scan %d.%d done: %s cells, %s bytes", id, i,
+                sizeString(v.nCells - nCells, 1000),
+                sizeString(v.nBytes - nBytes, 1024));
     }
+
+    log("Scan thread %d done: %s cells, %s bytes", id,
+        sizeString(v.nCells, 1000),
+        sizeString(v.nBytes, 1024));
 }
 
 
@@ -326,7 +311,7 @@ int main(int ac, char ** av)
 
         if(verbose)
         {
-            VerboseAdapter<SamplingVisitor> v(
+            CompositeVisitor<SamplingVisitor,VerboseVisitor> v(
                 SamplingVisitor(
                     rowSampler.get(),
                     columnSampler.get(),

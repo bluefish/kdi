@@ -76,13 +76,13 @@ int main(int ac, char ** av)
     if(verbose)
     {
         if(count)
-            doScan<VerboseAdapter<CellCounter> >(args, pred);
+            doScan<CompositeVisitor<VerboseVisitor,CellCounter> >(args, pred);
         else if(dumpXml)
-            doScan<VerboseAdapter<XmlWriter> >(args, pred);
+            doScan<CompositeVisitor<VerboseVisitor,XmlWriter> >(args, pred);
         else if(numericTime)
-            doScan<VerboseAdapter<FastCellWriter> >(args, pred);
+            doScan<CompositeVisitor<VerboseVisitor,FastCellWriter> >(args, pred);
         else
-            doScan<VerboseAdapter<CellWriter> >(args, pred);
+            doScan<CompositeVisitor<VerboseVisitor,CellWriter> >(args, pred);
     }
     else
     {

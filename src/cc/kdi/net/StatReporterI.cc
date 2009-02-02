@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-01-27
+// Created 2009-01-30
 //
 // This file is part of KDI.
 //
@@ -18,37 +18,32 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_CELL_OSTREAM_H
-#define KDI_CELL_OSTREAM_H
+#include <kdi/net/StatReporter.h>
+#include <kdi/net/StatReporterI.h>
+#include <ex/exception.h>
 
-#include <kdi/cell.h>
-#include <warp/repr.h>
-#include <iostream>
+using namespace kdi::net::details;
+using kdi::net::StatReportable;
 
-namespace kdi {
+namespace {
 
-    /// Adapter for printing a Cell as fast as possible.
-    struct WithFastOutput
+    class StatReporterI : public StatReporter
     {
-        Cell const & cell;
-        explicit WithFastOutput(Cell const & cell) : cell(cell) {}
+        StatReportable * stats;
+
+    public:
+        StatReporterI(StatReportable * stats) : stats(stats) {}
+
+        void getStats(StatMap & map, Ice::Current const & cur)
+        {
+            stats->getStats(map);
+        }
     };
+}
 
-    inline std::ostream & operator<<(std::ostream & o, WithFastOutput const & cell)
-    {
-        using warp::ReprEscape;
-        Cell const & c = cell.cell;
-        return o << "(\""
-                 << ReprEscape(c.getRow())
-                 << "\",\""
-                 << ReprEscape(c.getColumn())
-                 << "\",@"
-                 << c.getTimestamp()
-                 << ",\""
-                 << ReprEscape(c.getValue())
-                 << "\")";
-    }
-
-} // namespace kdi
-
-#endif // KDI_CELL_OSTREAM_H
+Ice::ObjectPtr kdi::net::makeStatReporter(StatReportable * reportable)
+{
+    EX_CHECK_NULL(reportable);
+    Ice::ObjectPtr p = new StatReporterI(reportable);
+    return p;
+}

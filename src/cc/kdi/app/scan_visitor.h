@@ -38,10 +38,70 @@ namespace kdi {
 namespace app {
 
     //------------------------------------------------------------------------
-    // VerboseAdapter
+    // NullVisitor
     //------------------------------------------------------------------------
-    template <class V>
-    class VerboseAdapter
+    class NullVisitor
+    {
+    public:
+        void startScan() {}
+        void endScan() {}
+
+        void startTable(std::string const & uri) {}
+        void endTable() {}
+
+        void visitCell(Cell const & x) {}
+    };
+
+
+    //------------------------------------------------------------------------
+    // CompositeVisitor
+    //------------------------------------------------------------------------
+    template <class V1=NullVisitor, class V2=NullVisitor>
+    class CompositeVisitor
+    {
+        V1 v1;
+        V2 v2;
+
+    public:
+        explicit CompositeVisitor(V1 const & v1=V1(), V2 const & v2=V2()) :
+            v1(v1), v2(v2) {}
+
+        void startScan()
+        {
+            v1.startScan();
+            v2.startScan();
+        }
+
+        void endScan()
+        {
+            v1.endScan();
+            v2.endScan();
+        }
+
+        void startTable(std::string const & uri)
+        {
+            v1.startTable(uri);
+            v2.startTable(uri);
+        }
+
+        void endTable()
+        {
+            v1.endTable();
+            v2.endTable();
+        }
+
+        void visitCell(Cell const & x)
+        {
+            v1.visitCell(x);
+            v2.visitCell(x);
+        }
+    };
+    
+
+    //------------------------------------------------------------------------
+    // VerboseVisitor
+    //------------------------------------------------------------------------
+    class VerboseVisitor
     {
         warp::WallTimer totalTimer;
         warp::WallTimer tableTimer;
@@ -52,18 +112,12 @@ namespace app {
         size_t nBytes;
         size_t reportAfter;
 
-        V visitor;
-
     public:
-        explicit VerboseAdapter(V const & v=V()) : visitor(v) {}
-
         void startScan()
         {
             totalTimer.reset();
             nCellsTotal = 0;
             nBytesTotal = 0;
-
-            visitor.startScan();
         }
 
         void endScan()
@@ -80,8 +134,6 @@ namespace app {
                 % sizeString(size_t(nBytesTotal / dt), 1024)
                 % dt
                  << endl;
-
-            visitor.endScan();
         }
 
         void startTable(std::string const & uri)
@@ -94,8 +146,6 @@ namespace app {
             nCells = 0;
             nBytes = 0;
             reportAfter = 1 << 20;
-
-            visitor.startTable(uri);
         }
 
         void endTable()
@@ -115,8 +165,6 @@ namespace app {
                 % sizeString(size_t(nBytes / dt), 1024)
                 % dt
                  << endl;
-
-            visitor.endTable();
         }
 
         void visitCell(Cell const & x)
@@ -144,15 +192,13 @@ namespace app {
             }
             else
                 reportAfter -= sz;
-
-            visitor.visitCell(x);
         }
     };
 
     //------------------------------------------------------------------------
     // XmlWriter
     //------------------------------------------------------------------------
-    class XmlWriter
+    class XmlWriter : public NullVisitor
     {
     public:
         void startScan()
@@ -164,9 +210,6 @@ namespace app {
         {
             std::cout << "</cells>" << std::endl;
         }
-
-        void startTable(std::string const & uri) {}
-        void endTable() {}
 
         void visitCell(Cell const & x)
         {
@@ -185,15 +228,9 @@ namespace app {
     //------------------------------------------------------------------------
     // CellWriter
     //------------------------------------------------------------------------
-    class CellWriter
+    class CellWriter : public NullVisitor
     {
     public:
-        void startScan() {}
-        void endScan() {}
-
-        void startTable(std::string const & uri) {}
-        void endTable() {}
-
         void visitCell(Cell const & x)
         {
             std::cout << x << std::endl;
@@ -203,15 +240,9 @@ namespace app {
     //------------------------------------------------------------------------
     // FastCellWriter
     //------------------------------------------------------------------------
-    class FastCellWriter
+    class FastCellWriter : public NullVisitor
     {
     public:
-        void startScan() {}
-        void endScan() {}
-
-        void startTable(std::string const & uri) {}
-        void endTable() {}
-
         void visitCell(Cell const & x)
         {
             std::cout << WithFastOutput(x) << std::endl;
@@ -221,25 +252,100 @@ namespace app {
     //------------------------------------------------------------------------
     // CellCounter
     //------------------------------------------------------------------------
-    class CellCounter
+    class CellCounter : public NullVisitor
     {
         size_t nCells;
 
     public:
         CellCounter() : nCells(0) {}
 
-        void startScan() {}
         void endScan()
         {
             std::cout << nCells << std::endl;
         }
 
-        void startTable(std::string const & uri) {}
-        void endTable() {}
+        void visitCell(Cell const & x)
+        {
+            ++nCells;
+        }
+    };
+
+    //------------------------------------------------------------------------
+    // AddingVisitor
+    //------------------------------------------------------------------------
+    class AddingVisitor : public NullVisitor
+    {
+    public:
+        size_t nCells;
+        size_t nBytes;
+
+        AddingVisitor() : nCells(0), nBytes(0) {}
 
         void visitCell(Cell const & x)
         {
             ++nCells;
+            nBytes += (8 + x.getRow().size() + x.getColumn().size() +
+                       x.getValue().size());
+        }
+    };
+
+
+    //------------------------------------------------------------------------
+    // ReloadingVisitor
+    //------------------------------------------------------------------------
+    class ReloadingVisitor : public NullVisitor
+    {
+        double loadRate;
+        double syncRate;
+        TablePtr curTable;
+        bool needSync;
+
+    public:
+        size_t nCells;
+        size_t nBytes;
+        size_t nSyncs;
+
+        ReloadingVisitor(double loadRate, double syncRate) :
+            loadRate(loadRate), syncRate(syncRate), needSync(false),
+            nCells(0), nBytes(0), nSyncs(0)
+        {}
+
+        void startTable(std::string const & uri)
+        {
+            curTable = Table::open(uri);
+        }
+
+        void endTable()
+        {
+            if(needSync)
+            {
+                curTable->sync();
+                ++nSyncs;
+                needSync = false;
+            }
+
+            curTable.reset();
+        }
+
+        void visitCell(Cell const & x)
+        {
+            if(rand() < loadRate * RAND_MAX)
+            {
+                ++nCells;
+                nBytes += (8 + x.getRow().size() + x.getColumn().size() +
+                           x.getValue().size());
+
+                curTable->insert(x);
+                
+                if(rand() < syncRate * RAND_MAX)
+                {
+                    curTable->sync();
+                    ++nSyncs;
+                    needSync = false;
+                }
+                else
+                    needSync = true;
+            }
         }
     };
 
