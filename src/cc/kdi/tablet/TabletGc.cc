@@ -94,7 +94,13 @@ void buildCandidateSet(
     std::vector<std::string> & tableSet)
 {
     bool addedTable = false;
-    DirPtr dir = Directory::open(scanDir);
+    DirPtr dir;
+    try {
+        dir = Directory::open(scanDir);
+    }
+    catch(IOError const &) {
+        return;
+    }
     for(string path; dir->readPath(path);)
     {
         if(fs::isDirectory(path))
