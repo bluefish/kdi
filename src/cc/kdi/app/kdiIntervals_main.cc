@@ -61,7 +61,9 @@ cutPoint(IntervalPoint<string> const & x, size_t cutLength,
     }
 
     return IntervalPoint<string>(x.getValue().substr(0, len),
-                                 x.getType());
+                                 x.isLowerBound() ?
+                                 PT_INCLUSIVE_LOWER_BOUND :
+                                 PT_EXCLUSIVE_UPPER_BOUND);
 }
 
 
@@ -110,7 +112,7 @@ int main(int ac, char ** av)
     bool partition = nPartitions > 0;
 
     size_t cutLength(-1);
-    opt.get("cut", cutLength);
+    bool useCut = opt.get("cut", cutLength);
     string fieldDelimiter;
     bool useFields = opt.get("delimiter", fieldDelimiter);
     bool includeTrailing = hasopt(opt, "trailing");
@@ -127,12 +129,15 @@ int main(int ac, char ** av)
         size_t nIntervals = 0;
         while(scan->get(x))
         {
-            x = RowInterval(
-                cutInterval(x, cutLength, useFields,
-                            fieldDelimiter, includeTrailing));
-            if(x.isEmpty() ||
-               lastInterval.contains(static_cast<Interval<string>&>(x)))
-                continue;
+            if(useCut)
+            {
+                x = RowInterval(
+                    cutInterval(x, cutLength, useFields,
+                                fieldDelimiter, includeTrailing));
+                if(x.isEmpty() ||
+                   lastInterval.contains(static_cast<Interval<string>&>(x)))
+                    continue;
+            }
 
             ++nIntervals;
             lastInterval = x;
