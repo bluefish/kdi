@@ -358,7 +358,11 @@ namespace {
     class ServerApp
         : public virtual Ice::Application
     {
+        MyTracker * myTracker;
+
     public:
+        ServerApp(MyTracker * myTracker) : myTracker(myTracker) {}
+
         void appMain(int ac, char ** av)
         {
             // Set options
@@ -391,9 +395,6 @@ namespace {
                 pid.close();
             }
 
-            // Our stat tracker;
-            MyTracker myTracker;
-
             // Make scanner locator
             ScannerLocator * scannerLocator = new ScannerLocator(50);
 
@@ -404,7 +405,7 @@ namespace {
             boost::shared_ptr<SuperTabletServer> server(
                 new SuperTabletServer(
                     tableRoot, getHostName(), scannerLocator,
-                    &myTracker));
+                    myTracker));
 
             // Create adapter
             Ice::CommunicatorPtr ic = communicator();
@@ -428,7 +429,7 @@ namespace {
 
             // Create StatReporter object
             adapter->add(
-                makeStatReporter(&myTracker),
+                makeStatReporter(myTracker),
                 ic->stringToIdentity("StatReporter"));
 
             // Run server
@@ -473,6 +474,8 @@ int main(int ac, char ** av)
 {
     std::set_new_handler(&outOfMemory);
 
+    MyTracker myTracker;
+
     bool daemonize = true;
     for(int i = 1; i < ac; ++i)
     {
@@ -494,6 +497,6 @@ int main(int ac, char ** av)
             raise<RuntimeError>("daemon failed: %s", getStdError());
     }
 
-    ServerApp app;
+    ServerApp app(&myTracker);
     return app.main(ac, av);
 }
