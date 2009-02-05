@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// Copyright (C) 2008 Josh Taylor (Kosmix Corporation)
-// Created 2008-12-10
+// Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
+// Created 2009-01-16
 //
 // This file is part of KDI.
 //
@@ -18,29 +18,37 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include <kdi/tablet/Fragment.h>
+#include <kdi/local/disk_table.h>
+#include <kdi/local/table_types.h>
+#include <warp/options.h>
+#include <warp/util.h>
+#include <tr1/unordered_set>
+#include <iostream>
+#include <string>
 
-using namespace kdi::tablet;
+using namespace kdi;
 using namespace warp;
 using namespace std;
 
-size_t Fragment::getDiskSize(IntervalSet<string> const & rows) const
+int main(int ac, char ** av)
 {
-    size_t sz = 0;
-    for(IntervalSet<string>::const_iterator i = rows.begin();
-        i != rows.end();)
-    {
-        IntervalPoint<string> const & lo = *i;  ++i;
-        IntervalPoint<string> const & hi = *i;  ++i;
+    OptionParser op;
 
-        sz += getDiskSize(Interval<string>(lo, hi));
+    OptionMap opt;
+    ArgumentList args;
+    op.parseOrBail(ac, av, opt, args);
+
+    for(ArgumentList::const_iterator i = args.begin();
+        i != args.end(); ++i)
+    {
+        kdi::local::DiskTablePtr dp = kdi::local::DiskTable::loadTable(*i);
+        CellStreamPtr scan = dp->scan("");
+
+        Cell x;
+        while(scan->get(x)) {
+            cout << x.getRow() << endl;
+        }
     }
 
-    return sz;
+    return 0;
 }
-
-size_t Fragment::getDiskSize() const {
-    Interval<string> unbounded = makeUnboundedInterval<string>();
-    return getDiskSize(unbounded);
-}
-

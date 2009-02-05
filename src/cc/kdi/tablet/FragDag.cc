@@ -23,6 +23,7 @@
 #include <kdi/tablet/Fragment.h>
 #include <warp/log.h>
 #include <warp/fs.h>
+#include <warp/strutil.h>
 #include <utility>
 #include <algorithm>
 #include <sstream>
@@ -37,6 +38,13 @@ using namespace std;
 //----------------------------------------------------------------------------
 // FragDag
 //----------------------------------------------------------------------------
+FragDag::FragDag() :
+    MAX_COMPACTION_WIDTH(16)
+{
+    if(char * s = getenv("KDI_MAX_COMPACTION_WIDTH"))
+        MAX_COMPACTION_WIDTH = parseSize(s);
+}
+
 void
 FragDag::addFragment(Tablet * tablet, FragmentPtr const & fragment)
 {
@@ -77,6 +85,26 @@ void FragDag::removeInactiveFragment(FragmentPtr const & fragment)
 
     // Remove fragment from active map
     activeTablets.erase(fragment);
+
+    // Remove stats about the fragment
+    activeFragStats.erase(fragment);
+}
+
+FragDag::FragStats const &
+FragDag::getFragmentStats(FragmentPtr const & fragment) const
+{
+    // Fragment stats are cached because some stat calculations, 
+    // particularly activeDiskSize estimate, can be expensive.
+    fstat_map::iterator istat = activeFragStats.find(fragment);
+    if(istat == activeFragStats.end()) {
+        FragStats s;
+        s.diskSize = fragment->getDiskSize();
+        s.activeDiskSize = getActiveSize(fragment);
+        s.nStartingTablets = activeTablets.find(fragment)->second.size();
+        activeFragStats[fragment] = s;
+        istat = activeFragStats.find(fragment);
+    }
+    return istat->second;
 }
 
 size_t
@@ -88,6 +116,12 @@ FragDag::getFragmentWeight(FragmentPtr const & fragment) const
                             fragment->getFragmentUri());
 
     tablet_set const & tablets = i->second;
+
+    // Cache some disk use statistics about this fragment
+    FragStats const & stats = getFragmentStats(fragment);
+    double wastageFactor = 1.0;
+    if(stats.activeDiskSize > 0)
+        wastageFactor = double(stats.diskSize)/stats.activeDiskSize;
 
     // Frag weight is the sum of the lengths (minus 1) of the
     // tablet chains of which it is a part
@@ -101,7 +135,7 @@ FragDag::getFragmentWeight(FragmentPtr const & fragment) const
         weight += activeFragments.find(tablet)->second.size() - 1;
     }
 
-    return weight;
+    return weight * wastageFactor;
 }
 
 FragmentPtr
@@ -144,11 +178,49 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
             totChain += len;
             if(len > maxChain)
                 maxChain = len;
-
         }
         log("FragDag: average chain length: %.2f",
             double(totChain) / activeFragments.size());
         log("FragDag: maximum chain length: %d", maxChain);
+
+        // Caculate per fragment disk statistics
+        size_t totalActiveSize = 0;
+        size_t totalDiskSize = 0;
+        size_t nLowCoverageFrags = 0;
+        double lowestTabletCoverage = 1;
+        FragmentPtr leastCoveredFragment;
+
+        for(fstat_map::const_iterator i = activeFragStats.begin();
+            i != activeFragStats.end(); ++i)
+        {
+            FragStats const & stats = i->second;
+            totalActiveSize += stats.activeDiskSize;
+            totalDiskSize += stats.diskSize;
+
+            size_t at = activeTablets.find(i->first)->second.size();
+            double tabletCoverage = double(at)/stats.nStartingTablets;
+            if(tabletCoverage < lowestTabletCoverage) {
+                lowestTabletCoverage = tabletCoverage;
+                leastCoveredFragment = i->first;
+            }
+            if(tabletCoverage < 0.5) {
+                ++nLowCoverageFrags;
+            }
+        }
+
+        if(totalDiskSize > 0) {
+            log("FragDag: total disk space: %d", totalDiskSize);
+            log("FragDag: total active size: %d", totalActiveSize);
+            log("FragDag: percent wasted: %.2f%%",
+                100*(double(totalDiskSize - totalActiveSize)/totalDiskSize));
+        }
+
+        if(leastCoveredFragment) {
+            log("FragDag: least covered fragment: %s = %.2f%%",
+                leastCoveredFragment->getFragmentUri(),
+                100*lowestTabletCoverage);
+            log("FragDag: low coverage fragments: %d", nLowCoverageFrags);
+        }
     }
 
     return maxFrag;
@@ -208,6 +280,47 @@ FragDag::getAdjacentSet(fragment_set const & frags) const
     return adjacent;
 }
 
+size_t const
+FragDag::getInactiveSize(FragmentPtr const & fragment) const
+{
+    FragStats const & s = getFragmentStats(fragment);
+    return s.diskSize - s.activeDiskSize;
+}
+
+FragDag::fragment_set
+FragDag::getMostWastedSet(size_t maxSize) const {
+    fragment_set result;
+    size_t mostWastedSize = 0;
+
+    for(tfset_map::const_iterator t = activeFragments.begin();
+        t != activeFragments.end(); ++t) 
+    {
+        fragment_vec frags = t->first->getMaxAdjacentChain(t->second);
+        for(fragment_vec::const_iterator f1 = frags.begin();
+            f1 != frags.end(); ++f1) 
+        {
+            size_t waste = 0;
+
+            fragment_vec::const_iterator f2;
+            for(f2 = f1; f2+maxSize < frags.end(); ++f2) 
+            {
+                waste += getInactiveSize(*f2);    
+            } 
+
+            if(waste > mostWastedSize) {
+                result = fragment_set(f1, f2);
+                mostWastedSize = waste;
+            }
+        }
+    }
+
+    if(mostWastedSize > 0) {
+        return result;
+    } else {
+        return result;
+    }
+}
+
 FragDag::fragment_vec
 FragDag::filterTabletFragments(fragment_vec const & fragments,
                                Tablet * tablet) const
@@ -231,7 +344,7 @@ FragDag::filterTabletFragments(fragment_vec const & fragments,
 }
 
 FragmentPtr
-FragDag::getParent(FragmentPtr const & fragment, Tablet * tablet) const
+FragDag::getParent(FragmentPtr const & fragment, Tablet const * tablet) const
 {
     return tablet->getFragmentParent(fragment);
 }
@@ -330,6 +443,10 @@ FragDag::replaceInternal(Tablet * tablet,
 
         activeTablets[*f].erase(tablet);
         activeFragments[tablet].erase(*f);
+
+        // Update disk use statistics
+        FragStats & stats = activeFragStats.find(*f)->second;
+        stats.activeDiskSize = getActiveSize(*f);
     }
     //log("FragDag:  child: %s", child ? child->getFragmentUri() : "NULL");
 
@@ -460,80 +577,118 @@ FragDag::sweepGraph()
     }
 }
 
-FragDag::fragment_set
+namespace {
+    struct TabletChainLengthGt {
+        FragDag::tfset_map const & activeFragments;
+
+        TabletChainLengthGt(FragDag::tfset_map const & activeFragments) :
+            activeFragments(activeFragments)
+        {
+        }
+
+        bool operator()(Tablet * a, Tablet * b) const
+        {
+            return activeFragments.find(a)->second.size() >
+                   activeFragments.find(b)->second.size();
+        }
+    };
+}
+
+vector<CompactionList>
 FragDag::chooseCompactionSet() const
 {
     log("FragDag: chooseCompactionSet");
-    fragment_set frags;
+
+    vector<CompactionList> compactions;
 
     FragmentPtr frag = getMaxWeightFragment(0);
     if(!frag)
     {
         log("FragDag: no max weight fragment");
-        return frags;
+        return vector<CompactionList>();
     }
 
     log("FragDag: max fragment: %s", frag->getFragmentUri());
 
-    // Expand fragment set until it is sufficiently large
-    //  (16-way merge or 4 GB compaction, whichever comes first)
-    size_t const SUFFICIENTLY_LARGE = size_t(4) << 30;
-    size_t const SUFFICIENTLY_NUMEROUS = 16;
-    size_t curSpace = getActiveSize(frag);
-    frags.insert(frag);
-    for(;;)
+    ftset_map::const_iterator i = activeTablets.find(frag);
+    tablet_set const & tablets = i->second;
+
+    // Add tablets from this fragment into the compaction
+    // by order of tablet chain length.
+    tablet_vec stablets(tablets.begin(), tablets.end());
+    std::sort(stablets.begin(), stablets.end(),
+        TabletChainLengthGt(activeFragments));
+
+    // Keep track of the frags in this compaction.
+    // Once we hit 32 total fragments in the compaction,
+    // add in only adjacent fragments sequences from
+    // this set of fragments which are longer than half
+    // the smallest sequence already added
+    fragment_set all_frags;
+    size_t smallest_chain = MAX_COMPACTION_WIDTH;
+
+    tablet_vec::const_iterator t;
+    for(t = stablets.begin(); t != stablets.end(); ++t)
     {
-        log("FragDag: expanding set: size=%d, space=%s",
-            frags.size(), sizeString(curSpace));
+        CompactionList list;
+        list.tablet = *t;
 
-        // Get set of adjacent nodes
-        fragment_set adjacent = getAdjacentSet(frags);
-        log("FragDag: found %d neighbor(s)", adjacent.size());
-        if(adjacent.empty())
-        {
-            log("FragDag: compaction set is complete");
-            return frags;
-        }
+        // Add the seed fragment
+        list.fragments.push_back(frag);
 
-        typedef std::pair<size_t, FragmentPtr> size_pair;
-        typedef std::vector<size_pair> size_vec;
-
-        // Get weights of adjacent nodes
-        size_vec sizes;
-        sizes.reserve(adjacent.size());
-        for(fragment_set::const_iterator i = adjacent.begin();
-            i != adjacent.end(); ++i)
-        {
-            size_t wt = getFragmentWeight(*i);
-            sizes.push_back(size_pair(wt, *i));
-            //log("FragDag: .. weight %d: %s", wt, (*i)->getFragmentUri());
-        }
-
-        // Sort by size
-        std::sort(sizes.begin(), sizes.end(), std::greater<size_pair>());
-
-        // Add to fragment set in order of decreasing weight
-        for(size_vec::const_iterator i = sizes.begin();
-            i != sizes.end(); ++i)
-        {
-            frags.insert(i->second);
-            curSpace += getActiveSize(i->second);
-
-            log("FragDag: grow set (size=%d, space=%s): %s",
-                frags.size(), sizeString(curSpace),
-                i->second->getFragmentUri());
-
-            if(frags.size() >= SUFFICIENTLY_NUMEROUS ||
-               curSpace >= SUFFICIENTLY_LARGE)
-            {
-                log("FragDag: compaction set is sufficiently large");
-                return frags;
+        // Add children first, since they are presumably lighter
+        FragmentPtr f = frag;
+        while(list.fragments.size() < MAX_COMPACTION_WIDTH) {
+            FragmentPtr child = getChild(f, *t);
+            if(child) {
+                list.fragments.push_back(child);
+                f = child;
+            } else {
+                break;
             }
+        }
 
-            // Only add one node before getting a new expansion set.
-            break;
+        // Then add as many parents as will fit
+        f = frag;
+        while(list.fragments.size() < MAX_COMPACTION_WIDTH) {
+            FragmentPtr parent = getParent(f, *t);
+            if(parent) {
+                // Have to be inserted at the front for correct ordering
+                list.fragments.insert(list.fragments.begin(), parent);
+                f = parent;
+            } else {
+                break;
+            }
+        }
+
+        if(list.fragments.size() > 1) {
+            log("FragDag: adding compaction list for tablet %s, %d fragments", 
+                list.tablet, list.fragments.size());
+            compactions.push_back(list);
+
+            if(list.fragments.size() < smallest_chain)
+                smallest_chain = list.fragments.size();
+            
+            all_frags.insert(list.fragments.begin(), list.fragments.end());    
+            if(all_frags.size() >= 32)
+                break;
+        }
+    } 
+
+    for(; t != stablets.end(); ++t) {
+        fragment_vec const & adjChain = (*t)->getMaxAdjacentChain(all_frags);
+        if(adjChain.size() > smallest_chain/2) {
+            CompactionList list;
+            list.tablet = *t;
+            list.fragments = adjChain;
+
+            log("FragDag: adding compaction list for tablet %s, %d fragments", 
+                list.tablet, list.fragments.size());
+            compactions.push_back(list);
         }
     }
+    
+    return compactions;
 }
 
 void

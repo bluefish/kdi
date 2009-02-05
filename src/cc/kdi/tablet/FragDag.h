@@ -34,9 +34,17 @@ namespace kdi {
 namespace tablet {
 
     class FragDag;
+    class CompactionList;
 
 } // namespace tablet
 } // namespace kdi
+
+class kdi::tablet::CompactionList
+{
+public:
+    Tablet const * tablet;
+    std::vector<FragmentPtr> fragments;
+};
 
 //----------------------------------------------------------------------------
 // FragDag
@@ -47,12 +55,31 @@ public:
     typedef std::vector<FragmentPtr>              fragment_vec;
     typedef std::set<FragmentPtr>                 fragment_set;
     typedef std::set<Tablet*>                     tablet_set;
+    typedef std::vector<Tablet*>                  tablet_vec;
     typedef std::map<FragmentPtr, tablet_set>     ftset_map;
     typedef std::map<Tablet*, fragment_set>       tfset_map;
 
 private:
     ftset_map activeTablets;
     tfset_map activeFragments;
+
+    struct FragStats {
+        size_t diskSize;
+        size_t activeDiskSize;
+        size_t nStartingTablets; 
+    };
+
+    typedef std::map<FragmentPtr, FragStats> fstat_map;
+    mutable fstat_map activeFragStats;
+
+    FragStats const &
+    getFragmentStats(FragmentPtr const & fragment) const;
+
+    size_t const
+    getInactiveSize(FragmentPtr const & fragment) const;
+
+    fragment_set
+    getMostWastedSet(size_t maxSize) const;
 
 public:
     /// Append an edge to a tablet's fragment list.
@@ -98,7 +125,7 @@ public:
     /// Get the parent of the given fragment in the line of the given
     /// tablet.
     FragmentPtr
-    getParent(FragmentPtr const & fragment, Tablet * tablet) const;
+    getParent(FragmentPtr const & fragment, Tablet const * tablet) const;
 
     /// Get the child of the given fragment in the line of the given
     /// tablet.
@@ -145,13 +172,19 @@ public:
     void sweepGraph();
 
     /// XXX ...
-    fragment_set
+    std::vector<kdi::tablet::CompactionList>
     chooseCompactionSet() const;
 
     void
     dumpDotGraph(std::ostream & out,
                  fragment_set const & fragments,
                  bool restrictToSet) const;
+private:
+    // Configurable paramaters for compaction set algorithm
+    size_t MAX_COMPACTION_WIDTH;
+
+public:
+    FragDag();
 };
 
 #endif // KDI_TABLET_FRAGDAG_H

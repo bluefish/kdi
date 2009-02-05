@@ -76,7 +76,7 @@ public:
     void shutdown();
 
 private:
-    void compact(std::set<FragmentPtr> const & fragments);
+    void compact(std::vector<CompactionList> const & compactions);
     void compactLoop();
 };
 
