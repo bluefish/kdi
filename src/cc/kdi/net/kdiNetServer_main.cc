@@ -232,7 +232,8 @@ namespace {
             compactor(
                 new tablet::SharedCompactor(
                     loader->getLoader(),
-                    compactorWriter.get())),
+                    compactorWriter.get(),
+                    myTracker)),
             workQueue(new tablet::WorkQueue(1)),
             server(server),
             locator(locator),

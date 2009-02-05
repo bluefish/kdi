@@ -38,8 +38,9 @@ using namespace std;
 //----------------------------------------------------------------------------
 // FragDag
 //----------------------------------------------------------------------------
-FragDag::FragDag() :
-    MAX_COMPACTION_WIDTH(16)
+FragDag::FragDag(warp::StatTracker * statTracker) :
+    MAX_COMPACTION_WIDTH(16),
+    statTracker(statTracker)
 {
     if(char * s = getenv("KDI_MAX_COMPACTION_WIDTH"))
         MAX_COMPACTION_WIDTH = parseSize(s);
@@ -179,9 +180,12 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
             if(len > maxChain)
                 maxChain = len;
         }
-        log("FragDag: average chain length: %.2f",
-            double(totChain) / activeFragments.size());
+
+        double avgChainLength = double(totChain) / activeFragments.size();
+        log("FragDag: average chain length: %.2f", avgChainLength);
         log("FragDag: maximum chain length: %d", maxChain);
+        statTracker->set("Compaction.averageChainLength", avgChainLength);
+        statTracker->set("Compaction.maximumChainLength", maxChain);
 
         // Caculate per fragment disk statistics
         size_t totalActiveSize = 0;
@@ -209,10 +213,11 @@ FragDag::getMaxWeightFragment(size_t minWeight) const
         }
 
         if(totalDiskSize > 0) {
+            double pw = 100*(double(totalDiskSize - totalActiveSize)/totalDiskSize);
+            statTracker->set("Compaction.percentWasted", pw);
             log("FragDag: total disk space: %d", totalDiskSize);
             log("FragDag: total active size: %d", totalActiveSize);
-            log("FragDag: percent wasted: %.2f%%",
-                100*(double(totalDiskSize - totalActiveSize)/totalDiskSize));
+            log("FragDag: percent wasted: %.2f%%", pw);
         }
 
         if(leastCoveredFragment) {

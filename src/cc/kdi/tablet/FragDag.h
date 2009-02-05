@@ -24,6 +24,7 @@
 #include <kdi/tablet/forward.h>
 #include <warp/interval.h>
 #include <warp/string_range.h>
+#include <warp/StatTracker.h>
 #include <string>
 #include <ostream>
 #include <vector>
@@ -183,8 +184,11 @@ private:
     // Configurable paramaters for compaction set algorithm
     size_t MAX_COMPACTION_WIDTH;
 
+    // Need to track compaction statistics
+    warp::StatTracker * statTracker; 
+
 public:
-    FragDag();
+    FragDag(warp::StatTracker * statTracker);
 };
 
 #endif // KDI_TABLET_FRAGDAG_H
