@@ -26,11 +26,11 @@ namespace warp {
 
     class Runnable
     {
-    protected:
-        ~Runnable() {}
-
     public:
         virtual void run() = 0;
+
+    protected:
+        ~Runnable() {}
     };
 
 } // namespace warp

@@ -34,6 +34,7 @@
 #include <map>
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
+#include <boost/ref.hpp>
 #include <boost/format.hpp>
 #include <boost/algorithm/string.hpp>
 
@@ -127,7 +128,8 @@ void scanThread(size_t scanId, bool verbose,
 
     ReloadingVisitor lv(loadRate, syncRate);
     AddingVisitor av;
-    CompositeVisitor<ReloadingVisitor &, AddingVisitor &> cv(lv,av);
+    CompositeVisitor<ReloadingVisitor &, AddingVisitor &>
+        cv(boost::ref(lv), boost::ref(av));
     
     vector<string> tables(1);
     map<string,string> vmap;

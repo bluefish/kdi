@@ -63,8 +63,18 @@ namespace app {
         V2 v2;
 
     public:
-        explicit CompositeVisitor(V1 const & v1=V1(), V2 const & v2=V2()) :
-            v1(v1), v2(v2) {}
+        // GCC 4.1.1 seems unhappy with this constructor when V1
+        // and/or V2 is a reference type.  GCC 4.3.0 likes it well
+        // enough.  Replacing with the template method and default
+        // constructor combo below...
+
+        //explicit CompositeVisitor(V1 const & v1=V1(), V2 const & v2=V2()) :
+        //    v1(v1), v2(v2) {}
+
+        CompositeVisitor() {}
+
+        template <class A1, class A2>
+        CompositeVisitor(A1 a1, A2 a2) : v1(a1), v2(a2) {}
 
         void startScan()
         {
@@ -96,7 +106,7 @@ namespace app {
             v2.visitCell(x);
         }
     };
-    
+
 
     //------------------------------------------------------------------------
     // VerboseVisitor
@@ -105,7 +115,7 @@ namespace app {
     {
         warp::WallTimer totalTimer;
         warp::WallTimer tableTimer;
-    
+
         size_t nCellsTotal;
         size_t nBytesTotal;
         size_t nCells;
@@ -177,7 +187,7 @@ namespace app {
                          x.getValue().size() + 8);
             nBytes += sz;
             ++nCells;
-            
+
             if(reportAfter <= sz)
             {
                 double dt = tableTimer.getElapsed();
@@ -336,7 +346,7 @@ namespace app {
                            x.getValue().size());
 
                 curTable->insert(x);
-                
+
                 if(rand() < syncRate * RAND_MAX)
                 {
                     curTable->sync();
