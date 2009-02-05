@@ -315,7 +315,8 @@ int main(int ac, char ** av)
                 SamplingVisitor(
                     rowSampler.get(),
                     columnSampler.get(),
-                    familySampler.get()));
+                    familySampler.get()),
+                VerboseVisitor());
             doScan(v, args, pred);
         }
         else
