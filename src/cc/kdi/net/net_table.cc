@@ -565,7 +565,7 @@ private:
         }
 
         // Did we reach the end of the stream?
-        if(lastCell)
+        if(lastCell || eos)
         {
             // Set the end-of-stream flag
             eos = true;
