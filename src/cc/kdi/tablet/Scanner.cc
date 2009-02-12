@@ -62,6 +62,13 @@ bool Scanner::get(Cell & x)
         // to last row, then fast forward the scan to the last cell.
         if(lastCell)
         {
+            // If the last cell that we read is no longer in the tablet range,
+            // it means that the tablet split and we had already read past the split 
+            // point.  So no more cells to return from this tablet, the super
+            // scan will proceed to the new lower tablet.
+            if(!tablet->getRows().contains(lastCell.getRow(), warp::less()))
+                return false;
+
             // Reopen the scan using a clipped predicate.
             cells = tablet->getMergedScan(
                 pred.clipRows(
