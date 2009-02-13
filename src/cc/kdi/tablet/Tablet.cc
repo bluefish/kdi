@@ -698,9 +698,40 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
     log("Tablet %s: replace %d fragment(s) with %s", getPrettyName(),
         oldFragments.size(), newFragment->getFragmentUri());
 
-    // Log hackery
-    bool isLogReplacement = false;
-    if(oldFragments.size() == 1 && !oldFragments[0]->isImmutable())
+    bool isLogReplacement = (oldFragments.size() == 1 &&
+                             !oldFragments[0]->isImmutable());
+
+    if(isLogReplacement)
+    {
+        lock_t lock(mutex);
+
+        // Check if this is a duplicate replace request for a log
+        // fragment that we already removed
+        fragments_t::iterator i = std::search(
+            fragments.begin(), fragments.end(),
+            oldFragments.begin(), oldFragments.end());
+        
+        if(i == fragments.end())
+        {
+            std::set<FragmentPtr>::iterator j =
+                duplicatedLogs.find(oldFragments[0]);
+            
+            if(j != duplicatedLogs.end())
+            {
+                log("Tablet %s: ignoring clone update", getPrettyName());
+                duplicatedLogs.erase(j);
+                return;
+            }
+            else
+            {
+                raise<RuntimeError>("replaceFragments with unknown fragment sequence");
+            }
+        }
+    }
+    
+    replaceFragmentsInternal(oldFragments, newFragment);
+
+    if(isLogReplacement)
     {
         // Lock clonedLogs and duplicatedLogs
         lock_t lock(mutex);
@@ -726,24 +757,7 @@ void Tablet::replaceFragments(std::vector<FragmentPtr> const & oldFragments,
 
             lock.lock();
         }
-
-        // If we're in one of these clone forwarding chains, we may
-        // get two of these messages.  If we're expecting two, ignore
-        // the first one.
-        std::set<FragmentPtr>::iterator j =
-            duplicatedLogs.find(oldFragments[0]);
-        if(j != duplicatedLogs.end())
-        {
-            log("Tablet %s: ignoring clone update", getPrettyName());
-            duplicatedLogs.erase(j);
-            return;
-        }
-
-        isLogReplacement = true;
     }
-
-    // Replace fragments
-    replaceFragmentsInternal(oldFragments, newFragment);
 
     // FragDag hackery
     if(isLogReplacement)
