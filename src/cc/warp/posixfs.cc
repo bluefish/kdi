@@ -138,9 +138,6 @@ bool PosixFilesystem::exists(string const & uri)
 
     struct stat st;
     int r = ::stat(path.c_str(), &st);
-    if(r != 0 && errno != ENOENT)
-        raise<IOError>("exists failed for '%s': %s", uri, getStdError());
-
     return (r == 0);
 }
 
@@ -150,9 +147,6 @@ bool PosixFilesystem::isDirectory(string const & uri)
 
     struct stat st;
     int r = ::stat(path.c_str(), &st);
-    if(r != 0 && errno != ENOENT)
-        raise<IOError>("isDirectory failed for '%s': %s", uri, getStdError());
-
     return (r == 0 && S_ISDIR(st.st_mode));
 }
 
@@ -162,9 +156,6 @@ bool PosixFilesystem::isFile(string const & uri)
 
     struct stat st;
     int r = ::stat(path.c_str(), &st);
-    if(r != 0 && errno != ENOENT)
-        raise<IOError>("isFile failed for '%s': %s", uri, getStdError());
-
     return (r == 0 && S_ISREG(st.st_mode));
 }
 
@@ -212,8 +203,6 @@ bool PosixFilesystem::isEmpty(string const & uri)
     {
         raise<IOError>("isEmpty called on non-file, non-directory '%s'", uri);
     }
-
-    return (r == 0 && S_ISREG(st.st_mode));
 }
 
 double PosixFilesystem::modificationTime(string const & uri)
