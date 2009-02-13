@@ -391,11 +391,14 @@ namespace {
 // SharedCompactor
 //----------------------------------------------------------------------------
 SharedCompactor::SharedCompactor(FragmentLoader * loader,
-                                 FragmentWriter * writer) :
+                                 FragmentWriter * writer,
+                                 warp::StatTracker * statTracker) :
     loader(loader),
     writer(writer),
+    statTracker(statTracker),
     disabled(0),
-    cancel(false)
+    cancel(false),
+    fragDag(statTracker)
 {
     EX_CHECK_NULL(loader);
     EX_CHECK_NULL(writer);

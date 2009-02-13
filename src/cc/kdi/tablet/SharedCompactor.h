@@ -28,6 +28,7 @@
 #include <boost/thread.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/noncopyable.hpp>
+#include <warp/StatTracker.h>
 #include <set>
 
 namespace kdi {
@@ -51,6 +52,7 @@ class kdi::tablet::SharedCompactor :
 
     FragmentLoader * loader;
     FragmentWriter * writer;
+    warp::StatTracker * statTracker;
 
     boost::mutex mutex;
     boost::condition wakeCond;
@@ -66,7 +68,11 @@ public:
     FragDag fragDag;
 
 public:
-    SharedCompactor(FragmentLoader * loader, FragmentWriter * writer);
+    SharedCompactor(
+      FragmentLoader * loader, 
+      FragmentWriter * writer,
+      warp::StatTracker * statTracker
+    );
     ~SharedCompactor();
 
     void disableCompactions();
