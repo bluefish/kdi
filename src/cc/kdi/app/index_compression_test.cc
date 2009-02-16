@@ -90,6 +90,28 @@ struct IndexStats
         }
     }
 
+    void set(kdi::local::disk::BlockIndexV1 const & idx)
+    {
+        clear();
+
+        nEntries = idx.blocks.size();
+        entrySz = sizeof(idx) + sizeof(idx.blocks[0]) * nEntries;
+
+        std::tr1::unordered_set<StringData const *> rows;
+
+        using kdi::local::disk::IndexEntryV1;
+        for(IndexEntryV1 const * ent = idx.blocks.begin();
+            ent != idx.blocks.end(); ++ent)
+        {
+            StringData const * row = ent->lastRow.get();
+            if(row && rows.insert(row).second)
+            {
+                ++nRows;
+                rowSz += sizeof(uint32_t) + alignUp(row->size(), 4);
+            }
+        }
+    }
+
     size_t size() const
     {
         return rowSz + columnSz + entrySz;
@@ -120,18 +142,33 @@ int main(int ac, char ** av)
         i != args.end(); ++i)
     {
         cout << *i << ": " << flush;
-        size_t dataSz = kdi::local::DiskTableV0::loadIndex(*i, r);
+        size_t dataSz = kdi::local::DiskTable::loadIndex(*i, r);
         size_t indexSz = r.getLength();
-        using kdi::local::disk::BlockIndexV0;
-        BlockIndexV0 const * idx = r.as<BlockIndexV0>();
-        IndexStats s;
-        s.set(*idx);
-        cout << sizeString(indexSz) << "/" << sizeString(dataSz)
-             << ", " << s << endl;
 
-        total += s;
         dataTot += dataSz;
         indexTot += indexSz;
+        cout << sizeString(indexSz) << "/" << sizeString(dataSz) << ", ";
+
+        IndexStats s;
+        using kdi::local::disk::BlockIndexV0;
+        using kdi::local::disk::BlockIndexV1;
+        if(BlockIndexV0 const * idx = r.tryAs<BlockIndexV0>())
+        {
+            s.set(*idx);
+            cout << "V0 ";
+        }
+        else if(BlockIndexV1 const * idx = r.tryAs<BlockIndexV1>())
+        {
+            s.set(*idx);
+            cout << "V1 ";
+        }
+        else
+        {
+            cout << "V? ";
+        }
+
+        total += s;
+        cout << s << endl;
     }
 
     cout << "Total: " << sizeString(indexTot) << "/" << sizeString(dataTot)
