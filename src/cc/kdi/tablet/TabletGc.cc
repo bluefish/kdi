@@ -103,29 +103,35 @@ void buildCandidateSet(
     }
     for(string path; dir->readPath(path);)
     {
-        if(fs::isDirectory(path))
+        try
         {
-            buildCandidateSet(path, dataDir, beforeTime, candidateSet, tableSet);
-            continue;
-        }
+            if(fs::isDirectory(path))
+            {
+                buildCandidateSet(path, dataDir, beforeTime, candidateSet, tableSet);
+                continue;
+            }
 
-        Timestamp mtime = Timestamp::fromSeconds(fs::modificationTime(path));
-        if(mtime >= beforeTime)
-        {
-            //cerr << "Ignoring: " << path << "   " << mtime << endl;
-            continue;
-        }
+            Timestamp mtime = Timestamp::fromSeconds(fs::modificationTime(path));
+            if(mtime >= beforeTime)
+            {
+                //cerr << "Ignoring: " << path << "   " << mtime << endl;
+                continue;
+            }
         
-        if(!addedTable)
-        {
-            string tableName = extractTableName(scanDir, dataDir);
-            tableSet.push_back(tableName);
-            //cerr << "Table: " << tableName << endl;
-            addedTable = true;
-        }
+            if(!addedTable)
+            {
+                string tableName = extractTableName(scanDir, dataDir);
+                tableSet.push_back(tableName);
+                //cerr << "Table: " << tableName << endl;
+                addedTable = true;
+            }
         
-        candidateSet.push_back(path);
-        //cerr << "Candidate: " << path << "   " << mtime << endl;
+            candidateSet.push_back(path);
+            //cerr << "Candidate: " << path << "   " << mtime << endl;
+        }
+        catch(IOError const &) {
+            // Ignore IO errors, just skip that file
+        }
     }
 }
 
