@@ -680,6 +680,9 @@ FragDag::chooseCompactionSet() const
         }
     } 
 
+    if(t != stablets.end())
+        ++t;
+
     for(; t != stablets.end(); ++t) {
         fragment_vec const & adjChain = (*t)->getMaxAdjacentChain(all_frags);
         if(adjChain.size() > smallest_chain/2) {
