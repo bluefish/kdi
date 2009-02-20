@@ -75,13 +75,31 @@ public:
     );
     ~SharedCompactor();
 
-    void disableCompactions();
-    void enableCompactions();
-
     void wakeup();
     void shutdown();
 
+    /// Disable new compactions for the lifetime of this (and any
+    /// other) Pause object.
+    class Pause
+    {
+        SharedCompactor & compactor;
+
+    public:
+        explicit Pause(SharedCompactor & compactor)
+            : compactor(compactor)
+        {
+            compactor.disableCompactions();
+        }
+        ~Pause()
+        {
+            compactor.enableCompactions();
+        }
+    };
+
 private:
+    void disableCompactions();
+    void enableCompactions();
+
     void compact(std::vector<CompactionList> const & compactions);
     void compactLoop();
 };

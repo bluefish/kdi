@@ -179,7 +179,7 @@ SuperTablet::SuperTablet(std::string const & name,
             name);
     }
 
-    compactor->disableCompactions();
+    SharedCompactor::Pause pause(*compactor);
 
     for(std::list<TabletConfig>::const_iterator i = cfgs.begin();
         i != cfgs.end(); ++i)
@@ -196,8 +196,6 @@ SuperTablet::SuperTablet(std::string const & name,
                 *i,
                 this));
     }
-
-    compactor->enableCompactions();
 }
 
 SuperTablet::~SuperTablet()
