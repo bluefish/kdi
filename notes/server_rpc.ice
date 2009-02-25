@@ -27,6 +27,8 @@ exception TabletNotLoadedError {};
 
 exception ScanModeError {};
 
+exception InvalidPredicateError {};
+
 
 exception InvalidCellsError {};
 
@@ -70,6 +72,7 @@ enum ScanMode {
 //----------------------------------------------------------------------------
 // TabletServer
 //----------------------------------------------------------------------------
+["ami,amd"]
 interface TabletServer
 {
     /// Apply a block of cells to the named table.  Cells must be
@@ -102,19 +105,20 @@ interface TabletServer
 
     /// Begin a scan on the named table, using the given predicate.
     /// All tablets necessary to fill the first result block must be
-    /// currently loaded on this server.  The scanMode parameter is
-    /// used to determine how transaction scan consistency issues
-    /// should be handled.  The first block of scan is read and
-    /// returned in the result parameter.  If the scan continues past
-    /// a single result block, a proxy to a server-side continuation
-    /// Scanner will be passed back in the scanner parameter.
+    /// currently loaded on this server.  The mode parameter is used
+    /// to determine how transaction scan consistency issues should be
+    /// handled.  The first block of scan is read and returned in the
+    /// result parameter.  If the scan continues past a single result
+    /// block, a proxy to a server-side continuation Scanner will be
+    /// passed back in the scanner parameter.
     void scan(string table,
               string predicate,
-              ScanMode scanMode,
+              ScanMode mode,
               ScanParams params,
               out ScanResult result,
               out Scanner * scanner)
         throws TabletNotLoadedError,
+               InvalidPredicateError,
                ScanModeError;
 };
 
@@ -122,6 +126,7 @@ interface TabletServer
 //----------------------------------------------------------------------------
 // Scanner
 //----------------------------------------------------------------------------
+["ami,amd"]
 interface Scanner
 {
     /// Continue a previously opened scan.  All tablets necessary to
