@@ -64,6 +64,7 @@ $$(warning Disabling $(MODULE) because of undefined variable(s): $(1))
 endif
 
 OBJ :=
+GEN :=
 MAGIC_MODULE_DEPS :=
 MAGIC_EXTERNAL_DEPS :=
 MAGIC_FLAGS_CPPFLAGS :=
@@ -104,6 +105,7 @@ KLIB_$(_LIBNAME)_XDEPS := $$(KLIB_$(_LIBNAME)_XDEPS) $$(KLIB_$(1)_XDEPS)
 KLIB_$(_LIBNAME)_FDEPS_CPPFLAGS := $$(KLIB_$(_LIBNAME)_FDEPS_CPPFLAGS) $$(KLIB_$(1)_FDEPS_CPPFLAGS)
 KLIB_$(_LIBNAME)_FDEPS_CXXFLAGS := $$(KLIB_$(_LIBNAME)_FDEPS_CXXFLAGS) $$(KLIB_$(1)_FDEPS_CXXFLAGS)
 KLIB_$(_LIBNAME)_FDEPS_CFLAGS := $$(KLIB_$(_LIBNAME)_FDEPS_CFLAGS) $$(KLIB_$(1)_FDEPS_CFLAGS)
+KLIB_$(_LIBNAME)_GEN := $$(KLIB_$(_LIBNAME)_GEN) $$(KLIB_$(1)_GEN)
 endef
 
 define _DEP_CLOSURE
@@ -112,6 +114,7 @@ KLIB_$(_LIBNAME)_XDEPS := $(MAGIC_EXTERNAL_DEPS)
 KLIB_$(_LIBNAME)_FDEPS_CPPFLAGS := $(MAGIC_FLAGS_CPPFLAGS)
 KLIB_$(_LIBNAME)_FDEPS_CXXFLAGS := $(MAGIC_FLAGS_CXXFLAGS)
 KLIB_$(_LIBNAME)_FDEPS_CFLAGS := $(MAGIC_FLAGS_CFLAGS)
+KLIB_$(_LIBNAME)_GEN := $(GEN)
 $$(foreach dep,$(MAGIC_MODULE_DEPS),$$(eval $$(call _DEP_UPDATE,$$(dep))))
 
 _UNIQ :=
@@ -138,6 +141,11 @@ _UNIQ :=
 $$(eval $$(call _DEP_UNIQ,$$(KLIB_$(_LIBNAME)_FDEPS_CFLAGS)))
 _FDEPS_CFLAGS := $$(strip $$(_UNIQ))
 KLIB_$(_LIBNAME)_FDEPS_CFLAGS := $$(_FDEPS_CFLAGS)
+
+_UNIQ :=
+$$(eval $$(call _DEP_UNIQ,$$(KLIB_$(_LIBNAME)_GEN)))
+_GEN := $$(strip $$(_UNIQ))
+KLIB_$(_LIBNAME)_GEN := $$(_GEN)
 endef
 
 
@@ -192,6 +200,16 @@ endef
 $(if $(_FDEPS_CPPFLAGS),$(eval $(call _ADD_FLAG_DEP,CPPFLAGS)))
 $(if $(_FDEPS_CXXFLAGS),$(eval $(call _ADD_FLAG_DEP,CXXFLAGS)))
 $(if $(_FDEPS_CFLAGS),$(eval $(call _ADD_FLAG_DEP,CFLAGS)))
+
+
+#----------------------------------------------------------------------------
+# Add generated header dependency template
+#----------------------------------------------------------------------------
+define _ADD_GEN_DEP
+$(OBJ) $(OBJ:$(build)/%.o=$(dep)/%.d): $(1)
+endef
+
+$(if $(_GEN),$(eval $(call _ADD_GEN_DEP,$(_GEN))))
 
 
 #----------------------------------------------------------------------------
