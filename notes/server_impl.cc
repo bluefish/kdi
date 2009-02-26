@@ -11,7 +11,7 @@ typedef boost::mutex::scoped_lock lock_t;
 // acquired in level order:
 //
 //  - TabletServer::serverMutex
-//  - TableInfo::tableMutex
+//  - Table::tableMutex
 //  - TableScanner::scannerMutex
 
 
@@ -28,9 +28,9 @@ public:
 };
 
 //----------------------------------------------------------------------------
-// TableInfo
+// Table
 //----------------------------------------------------------------------------
-class TableInfo
+class Table
 {
     boost::mutex tableMutex;
     std::string name;
@@ -54,6 +54,56 @@ public:
 };
 
 
+//----------------------------------------------------------------------------
+// TabletEventListener
+//----------------------------------------------------------------------------
+class TabletEventListener
+{
+public:
+    
+    /// Event: the tablet formerly covering the union of 'lo' and 'hi'
+    /// has been split into the given sub-ranges.
+    virtual void onTabletSplit(
+        Interval<string> const & lo,
+        Interval<string> const & hi) = 0;
+
+    /// Event: the formerly separate tablets covering 'lo' and 'hi'
+    /// have been merged into a single tablet.
+    virtual void onTabletMerge(
+        Interval<string> const & lo,
+        Interval<string> const & hi) = 0;
+
+    /// Event: the tablet covering the range 'r' has been dropped from
+    /// the server.
+    virtual void onTabletDrop(
+        Interval<string> const & r) = 0;
+
+protected:
+    ~TabletEventListener() {}
+};
+
+
+//----------------------------------------------------------------------------
+// FragmentEventListener
+//----------------------------------------------------------------------------
+class FragmentEventListener
+{
+    /// Event: a fragment 'f' has been created for the range 'r'.
+    virtual void onNewFragment(
+        Interval<string> const & r,
+        Fragment const * f) = 0;
+
+    /// Event: for the range 'r', all of the fragments in 'f1' have
+    /// been replaced by fragment 'f2'.  Note that 'f2' may be null,
+    /// meaning that the 'f1' fragments have simply been removed.
+    virtual void onReplaceFragments(
+        Interval<string> const & r,
+        vector<Fragment const *> const & f1,
+        Fragment const * f2);
+
+protected:
+    ~FragmentEventListener() {}
+};
 
 
 //----------------------------------------------------------------------------
@@ -63,10 +113,14 @@ class TableScanner
 {
     boost::mutex scannerMutex;
     
-    TableInfo * table;
+
+    Table * table;
     ScanPredicate pred;
 
-    FragmentMerge merge;
+    warp::Builder builder;
+    CellBlockBuilder cells;
+
+    boost::scoped_ptr<FragmentMerge> merge;
     int64_t scanTxn;
     Interval<string> rows;
 
@@ -77,7 +131,6 @@ class TableScanner
         string lastRow;
         int64_t scanTxn;
         bool scanContinues;
-        bool rowContinues;
     };
 
 
@@ -96,11 +149,43 @@ public:
     // be earlier.  The lastRow represents the first row that would
     // need to be examined should the scanner have to be restarted.
 
-
-    bool next(int64_t maxCells, int64_t maxSize,
-              CellBlockBuilder & cells,
-              ScanState & scanState)
+    TableScanner()
     {
+        lock_t tableLock(table->tableMutex);
+        table->addListener(this);
+    }
+    
+    ~TableScanner()
+    {
+        lock_t tableLock(table->tableMutex);
+        table->removeListener(this);
+    }
+
+    /// Get the last cell key seen by this scan.  This can be helpful
+    /// in reporting progress or starting a new scan where this one
+    /// left off.
+    CellKey const & getLastKey() const;
+
+    /// True if another call to scanMore() could yield more results.
+    bool scanContinues() const;
+
+    /// Get the transaction number for the most recent call to
+    /// scanMore().
+    int64_t getScanTransaction() const;
+
+    bool scanMore(size_t maxCells, size_t maxSize,
+                  PackedCells & packedCells)
+    {
+        // Clear the output buffer
+        cells.reset();
+
+        // Clamp maxCells and maxSize to sane minimums
+        if(!maxCells)
+            maxCells = 1
+        if(maxSize <= cells.getDataSize())
+            maxSize = cells.getDataSize() + 1;
+
+
         lock_t scannerLock(scannerMutex);
 
         // Open first range:
@@ -112,11 +197,11 @@ public:
         //      break  (don't want to mix newer results with old)
 
         // Return maxTxn
-
         
         bool firstRange = !merge;
         int64_t maxTxn = scanTxn;
 
+        bool scanComplete = false;
         bool noTablet = false;
         for(;;)
         {
@@ -125,7 +210,10 @@ public:
             {
                 pred = pred.clipRows(lastRow);
                 if(pred.getRowPredicate()->isEmpty())
+                {
+                    scanComplete = true;
                     break;
+                }
 
                 // Need table lock -- unlock scanner lock first
                 scannerLock.unlock();
@@ -142,10 +230,6 @@ public:
                     noTablet = true;
                     break;
                 }
-
-                // Register our interest in events for the new row
-                // range
-                table->addRowListener(rows, this);
 
                 // Done with table lock, need scanner lock again.
                 scannerLock.lock();
@@ -173,20 +257,108 @@ public:
 
             assert(merge);
 
-            // We have an active merge, get some (more) data
-            merge.next(maxCells - cells.getCellCount(),
-                       maxSize - cells.getDataSize(),
-                       cells,
-                       state);
+            // We have an active merge, get some (more) cells
+            bool eos = merge->next(maxCells - cells.getCellCount(),
+                                   maxSize - cells.getDataSize(),
+                                   cells, lastKey);
 
-            
+            // Did we get to the end of this range?
+            if(eos)
+            {
+                merge.reset();
+                
+                
 
+                if(rows.getUpperBound().isFinite())
+                {
+                    pred = pred.clip(
+                        Interval<string>()
+                        .setLowerBound(
+                            rows.getUpperBound().getAdjacentComplement()
+                            )
+                        .unsetUpperBound());
+                }
+                
+                // Unregister 
+            }
+
+            if(cells.getCellCount() >= maxCells ||
+               cells.getDataSize() >= maxSize)
+            {
+                break;
+            }
         }
+
+        // Build cells into packedCells
+        builder.finalize();
+        packedCells.resize(builder.getFinalSize());
+        builder.exportTo(&packedCells[0]);
 
     }
 
-    int64_t getScanTxn() const;
-    void getPackedCells(PackedCells & packedCells) const;
+    // FragmentEventListener
+
+    virtual void onNewFragment(
+        Interval<string> const & r,
+        Fragment const * f)
+    {
+        // If we're using SCAN_LATEST_ROW_TXN, we should reset the
+        // merge if the range overlaps.
+
+        // For now, we don't care.
+    }
+
+    virtual void onReplaceFragments(
+        Interval<string> const & r,
+        vector<Fragment const *> const & f1,
+        Fragment const * f2)
+    {
+        lock_t scannerLock(scannerMutex);
+        
+        // If we're doing read isolation, we'll need some smartness
+        // here so we don't wind up reading different transactions in
+        // the same row.
+
+        // Check to see if we care
+        if(!merge || !r.overlaps(rows))
+            return;
+
+        // Clear the merge and reopen it later
+        merge.reset();
+    }
+
+
+    // TabletEventListener
+
+    virtual void onTabletSplit(
+        Interval<string> const & lo,
+        Interval<string> const & hi)
+    {
+        // We don't care if the tablet interval assignments change.
+        // We only care if the range we're scanning gets dropped.
+    }
+
+    virtual void onTabletMerge(
+        Interval<string> const & lo,
+        Interval<string> const & hi)
+    {
+        // We don't care if the tablet interval assignments change.
+        // We only care if the range we're scanning gets dropped.
+    }
+
+    virtual void onTabletDrop(
+        Interval<string> const & r)
+    {
+        lock_t scannerLock(scannerMutex);
+        
+        // If the interval we're scanning gets dropped, we shouldn't
+        // continue to supply results.  Reset and let the next call
+        // for cells throw a TabletNotLoadedError.
+
+        if(merge && r.overlaps(rows))
+            merge.reset();
+    }
+
 };
 
 
@@ -199,9 +371,9 @@ class TabletServerI : public TabletServer
 
 private:
     CellBufferPtr decodeCells(PackedCells const & packedCells) const;
-    TableScannerPtr allocateScanner(TableInfo * tableInfo, ScanPredicate const & predicate, ScanMode mode) const;
+    TableScannerPtr allocateScanner(Table * table, ScanPredicate const & predicate, ScanMode mode) const;
 
-    TableInfo * getTable(string const & tableName) const;
+    Table * getTable(string const & tableName) const;
 
     int64_t getLastCommitTxn() const;
     int64_t assignCommitTxn();
@@ -244,7 +416,7 @@ public:
         lock_t lock(serverMutex);
 
         // Find the table
-        TableInfo * tableInfo = getTable(table);
+        Table * table = getTable(table);
         if(!table)
         {
             lock.unlock();
@@ -257,7 +429,7 @@ public:
         // they are ready.
         
         // Make sure all cells map to loaded tablets
-        if(!tableInfo->checkForLoadedTablets(cells))
+        if(!table->checkForLoadedTablets(cells))
         {
             lock.unlock();
             cb.ice_exception(TabletNotLoadedError());
@@ -268,7 +440,7 @@ public:
         // equal to commitMaxTxn (which is trivially true if
         // commitMaxTxn >= last commit)
         if(commitMaxTxn < getLastCommitTxn() &&
-           !tableInfo->checkRowCommits(cells, commitMaxTxn))
+           !table->checkRowCommits(cells, commitMaxTxn))
         {
             lock.unlock();
             cb.ice_exception(MutationConflictError());
@@ -306,7 +478,7 @@ public:
         int64_t txn = assignCommitTxn();
         
         // Update latest transaction number for all affected rows
-        tableInfo->updateRowCommits(cells, txn);
+        table->updateRowCommits(cells, txn);
         
         // Push the cells to the log queue
         queueCommit(cells, txn);
@@ -316,7 +488,7 @@ public:
         // Defer response if necessary
         if(waitForSync)
         {
-            deferUntilDurable(txn, cb);
+            deferUntilDurable(cb, txn);
             return;
         }
 
@@ -343,7 +515,7 @@ public:
         // Defer response if necessary
         if(waitForTxn > lastDurableTxn)
         {
-            deferUntilDurable(waitForTxn, cb);
+            deferUntilDurable(cb, waitForTxn);
             return;
         }
 
@@ -386,22 +558,22 @@ public:
         size_t scanId = assignScannerId();
 
         // Get the table for the scanner
-        TableInfo * tableInfo = getTable(table);
+        Table * table = getTable(table);
 
         lock.unlock();
 
-        if(!tableInfo)
+        if(!table)
         {
             cb->ice_exception(TabletNotLoadedError());
             return;
         }
         
         // Make a scanner object
-        TableScannerPtr scanner = allocateScanner(tableInfo, predicate, mode);
+        TableScannerPtr scanner = allocateScanner(table, predicate, mode);
 
         // Fetch the next result block
         ScanResult result;
-        result.endOfScan = !scanner->advance(
+        bool ok = scanner->next(
             params.maxCells,
             params.maxSize,
             result.cells,
