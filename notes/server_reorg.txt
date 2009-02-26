@@ -489,3 +489,103 @@ Cascade:  Table::open("foo")->set(X);
     - committedTxn = 4
   
 
+#----------------------------------------------------------------------------
+# Writing
+#----------------------------------------------------------------------------
+
+When cells are applied, the block is assigned a txn number and pushed
+to the logger thread's input queue.  At this point they are
+"committed" but not "active".
+
+The log thread wakes up and pulls blocks off the input queue, possibly
+several at once if they're ready to go.  The blocks are partitioned
+and merged to form a single block per table.  Each resulting block is
+assigned the maximum txn number that went into it.  The blocks are
+then serialized to a log file.  Once the log has been flushed to disk,
+the blocks are added to the readable memory pool.  Each affected table
+is notified of the new cell block.  The tables update transaction
+tracking and queue config updates if necessary.  At this point, they
+are "active" but not neccessarily "durable".  To be durable, any
+config update transactions that resulted from the table notification
+must also be durable.
+
+
+#----------------------------------------------------------------------------
+# Scanning
+#----------------------------------------------------------------------------
+
+When scanning, we create a TableScanner over a table.  The table
+scanner tracks the current tablet (row range) in the scan and the
+chain of fragments used from that tablet.  It provides a merged view
+of the fragment chain and tracks the necessary state to perform the
+merge in increments.  Maintenance threads may replace or remove
+fragments while the scan is in progress.  The scanner registers
+interest in these kinds of events and receives asynchronous
+notifications when they occur.
+
+When a scanner is notified that fragments are being removed, it should
+give up its references to them before returning from the notification
+call.  The next incremental read call can rebuild the merge on the
+new chain.
+
+Scanners wishing to provide snapshot isolation on reads can attempt to
+buffer cells needed from the current fragment chain.  The buffer
+should be placed in a LRU cache shared with all other scanners.
+Future reads may pull from the buffer, but the scanner should be able
+to deal with the buffer getting evicted.
+
+Scanners can also register for notification of fragments being added
+to their current row range.  This will allow scanners that want to
+read the absolute latest data to keep up to date.
+
+(What scan transaction should the scanner return, and how does it get
+that number?)
+
+Tablets may split during a scan.  This isn't a problem for the
+scanner, since it doesn't address tablets explicitly: it only cares
+about its current row range and the events on it.
+
+A tablet may be unloaded during a scan.  This should eventually cause
+the scanner to throw a TabletNotLoadedError.
+
+
+Table:
+
+    Get the ordered chain of fragments to merge for the first part of
+    the given predicate.  Returns true if such a chain is available
+    (may be false if the tablet corresponding to the first part of the
+    range is not loaded).  When the tablet is available, the fragment
+    chain is returned in proper merge order.  The row interval over
+    which the chain is valid is also returned.
+
+    bool getFirstFragmentChain(
+       ScanPredicate predicate,
+       out vector<Fragment const*> fragmentChain,
+       out Interval<string> rows) const;
+
+Scanner:
+
+   Table * table;
+   FragMerge currentMerge;
+   ScanPredicate pred;
+
+   getNext()
+   {
+      if(
+   }   
+
+#----------------------------------------------------------------------------
+# Fragments
+#----------------------------------------------------------------------------
+
+A fragment is an interface to a sorted, unique, immutable sequence of
+cells within a single locality group/table.  Some fragments are backed
+by a file on disk.  Some exist only in-memory (though they can be
+reconstructed by replaying a log file).
+
+Each fragment has an in-memory transaction number associated with it
+representing the maximum possible transaction in the fragment.
+Externally loaded fragments get the current transaction at load time.
+Internally created fragments get the maximum transaction number from
+the parts used to build it.
+

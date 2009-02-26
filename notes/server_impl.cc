@@ -4,12 +4,27 @@ typedef std::pair<char const *, char const *> PackedCells;
 typedef boost::mutex::scoped_lock lock_t;
 
 //----------------------------------------------------------------------------
+// Synchronization
+//----------------------------------------------------------------------------
+
+// Lock levels: if holding multiple locks, they must always be
+// acquired in level order:
+//
+//  - TabletServer::serverMutex
+//  - TableInfo::tableMutex
+//  - TableScanner::scannerMutex
+
+
+//----------------------------------------------------------------------------
 // CellBuffer
 //----------------------------------------------------------------------------
 class CellBuffer
 {
+    
+
 public:
     bool checkCellOrder() const;
+
 };
 
 //----------------------------------------------------------------------------
@@ -24,7 +39,21 @@ public:
     bool checkForLoadedTablets(CellBufferPtr const & cells) const;
     bool checkRowCommits(CellBufferPtr const & cells, int64_t commitMaxTxn) const;
     void updateRowCommits(CellBufferPtr const & cells, int64_t commitTxn);
+
+    /// Get the ordered chain of fragments to merge for the first part
+    /// of the given predicate.  Returns true if such a chain is
+    /// available (may be false if the tablet corresponding to the
+    /// first part of the range is not loaded).  When the tablet is
+    /// available, the fragment chain is returned in proper merge
+    /// order.  The row interval over which the chain is valid is also
+    /// returned.
+    bool getFirstFragmentChain(
+        ScanPredicate const & predicate,
+        vector<Fragment const *> & fragmentChain,
+        Interval<string> & rows) const;
 };
+
+
 
 
 //----------------------------------------------------------------------------
@@ -32,8 +61,130 @@ public:
 //----------------------------------------------------------------------------
 class TableScanner
 {
+    boost::mutex scannerMutex;
+    
+    TableInfo * table;
+    ScanPredicate pred;
+
+    FragmentMerge merge;
+    int64_t scanTxn;
+    Interval<string> rows;
+
+    CellKey lastKey;
+
+    struct ScanState
+    {
+        string lastRow;
+        int64_t scanTxn;
+        bool scanContinues;
+        bool rowContinues;
+    };
+
+
 public:
-    bool fetchNext(int64_t maxCells, int64_t maxSize);
+    // Read more data from the scan.  Try to limit the output to
+    // approximately maxCells or maxSize, whichever comes first.  The
+    // function returns true on success or false if the scan refers to
+    // an invalid range.  On success, the retrieved cells will be
+    // stored in packedCells.  It's possible for packedCells to be
+    // empty, even on a successful call.
+    //
+    // The incremental state of the scan is stored in scanState.  The state includes information necessary to restore a scan
+
+    // The last row seen is returned in lastRow.  It may be
+    // later than anything appearing in packedCells, but it will not
+    // be earlier.  The lastRow represents the first row that would
+    // need to be examined should the scanner have to be restarted.
+
+
+    bool next(int64_t maxCells, int64_t maxSize,
+              CellBlockBuilder & cells,
+              ScanState & scanState)
+    {
+        lock_t scannerLock(scannerMutex);
+
+        // Open first range:
+        //   maxTxn = getLastCommitTxn()  (may be >> than getMaxTxn(frags))
+        
+        // Open subsequent range:
+        //   lastTxn = getLastCommitTxn()
+        //   if lastTxn > maxTxn and getMaxTxn(frags) > maxTxn:
+        //      break  (don't want to mix newer results with old)
+
+        // Return maxTxn
+
+        
+        bool firstRange = !merge;
+        int64_t maxTxn = scanTxn;
+
+        bool noTablet = false;
+        for(;;)
+        {
+            // If merge is not active, set it up
+            if(!merge)
+            {
+                pred = pred.clipRows(lastRow);
+                if(pred.getRowPredicate()->isEmpty())
+                    break;
+
+                // Need table lock -- unlock scanner lock first
+                scannerLock.unlock();
+                lock_t tableLock(table->tableMutex);
+                
+                // Get the last commit transaction for the table
+                scanTxn = table->getLastCommitTxn();
+
+                // Get the next fragment chain
+                vector<Fragment const *> chain;
+                if(!table->getFirstFragmentChain(pred, chain, rows))
+                {
+                    // The next range isn't on this server
+                    noTablet = true;
+                    break;
+                }
+
+                // Register our interest in events for the new row
+                // range
+                table->addRowListener(rows, this);
+
+                // Done with table lock, need scanner lock again.
+                scannerLock.lock();
+                tableLock.unlock();
+
+                // Open the merge
+                merge.reset(new FragmentMerge(chain));
+
+                // If this is the first range we've scanned, set the
+                // max txn for the batch
+                if(firstRange)
+                {
+                    maxTxn = scanTxn;
+                    firstRange = false;
+                }
+                // Else if the max transaction for the new chain is
+                // greater than the transaction on the batch so far,
+                // end the batch.  We don't want to mix old data with
+                // new.
+                else if(scanTxn > maxTxn && getMaxTxn(chain) > maxTxn)
+                {
+                    break;
+                }
+            }
+
+            assert(merge);
+
+            // We have an active merge, get some (more) data
+            merge.next(maxCells - cells.getCellCount(),
+                       maxSize - cells.getDataSize(),
+                       cells,
+                       state);
+
+            
+
+        }
+
+    }
+
     int64_t getScanTxn() const;
     void getPackedCells(PackedCells & packedCells) const;
 };
@@ -250,9 +401,11 @@ public:
 
         // Fetch the next result block
         ScanResult result;
-        result.endOfScan = !scanner->fetchNext(params.maxCells, params.maxSize);
-        result.scanTxn = scanner->getScanTxn();
-        scanner->getPackedCells(result.cells);
+        result.endOfScan = !scanner->advance(
+            params.maxCells,
+            params.maxSize,
+            result.cells,
+            result.scanTxn);
         
         // If the client wants the scanner closed, close it
         if(params.close)

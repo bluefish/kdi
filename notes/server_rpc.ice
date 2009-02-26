@@ -16,7 +16,8 @@ struct ScanResult
 {
     PackedCells cells;  // encoded block of cells
     long scanTxn;       // server txn as of this batch
-    bool endOfScan;     // last batch in scan; implies scanner is closed
+    bool scanComplete;  // last batch in scan; implies scanClosed
+    bool scanClosed;    // scanner was closed on server
 };
 
 
