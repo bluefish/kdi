@@ -92,12 +92,12 @@ class kdi::server::FragmentMerge
         }
 
         /// Copy from the current block into cells until the end of
-        /// the block is reached or the given key is found.  If the
-        /// key is null, copy to the end of the block.  If the key is
-        /// the stopping condition, it will not be included in the
-        /// output.  Return true if there is more data, false if the
-        /// copy has exhausted the fragment.
-        bool copyUntil(CellKey const * key, CellBuilder & cells,
+        /// the block is reached or stopKey is found.  If stopKey is
+        /// null, copy to the end of the block.  If the key is the
+        /// stopping condition, it will not be included in the output.
+        /// Return true if there is more data, false if the copy has
+        /// exhausted the fragment.
+        bool copyUntil(CellKey const * stopKey, CellBuilder & cells,
                        BlockCache * cache, ScanPredicate const & pred)
         {
             assert(reader);

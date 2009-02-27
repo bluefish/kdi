@@ -46,10 +46,9 @@ public:
 class FragmentBlock
 {
 public:
-    virtual void getFirstKey(CellKey & key) const = 0;
-    virtual void getLastKey(CellKey & key) const = 0;
-
-    virtual FragmentBlockReader * makeReader() const = 0;
+    /// Create a reader over the block.  The reader will only return
+    /// cells matching the given predicate.
+    virtual FragmentBlockReader * makeReader(ScanPredicate const & pred) const = 0;
 };
 
 //----------------------------------------------------------------------------
@@ -58,11 +57,21 @@ public:
 class FragmentBlockReader
 {
 public:
-    virtual void skipTo(CellKey const & key) = 0;
-    virtual void skipPast(CellKey const & key) = 0;
-
+    /// Advance the reader to the next cell.  Returns true if there is
+    /// another cell, false if the end of the block has been reached.
+    /// The key for next cell, if any, is stored in nextKey.
+    virtual bool advance(CellKey & nextKey) = 0;
     
-    virtual bool copyUntil(CellKey const & key, CellBuilder & out) = 0;
+    /// Copy from the reader into the output builder until the end of
+    /// the block is reached or stopKey is found.  If stopKey is null,
+    /// copy to the end of the block.  If the key is the stopping
+    /// condition, it will not be included in the output.  Instead, it
+    /// will be the next key for advance().  Each call to copyUntil()
+    /// should be preceeded by a call to advance() to get the reader's
+    /// starting position set up properly.  Calling copyUntil()
+    /// multiple times without interleaved calls to advance() is
+    /// undefined.
+    virtual void copyUntil(CellKey const * stopKey, CellBuilder & out) = 0;
 };
 
 
