@@ -17,8 +17,16 @@ using namespace kdi::server;
 //----------------------------------------------------------------------------
 // Scanner
 //----------------------------------------------------------------------------
-Scanner::Scanner(Table * table, ScanPredicate const & pred, ScanMode mode)
+Scanner::Scanner(Table * table, ScanPredicate const & pred, ScanMode mode) :
+    table(table),
+    pred(pred),
+    builder(),
+    cells(&builder),
+    scanTxn(-1)
 {
+    if(mode != SCAN_ANY_TXN)
+        throw BadScanModeError(mode);
+
     lock_t tableLock(table->tableMutex);
     table->addListener(this);
 }
@@ -34,6 +42,7 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
     try {
         // Clear the output buffer
         cells.reset();
+        packed.clear();
 
         // Clamp maxCells and maxSize to sane minimums
         if(!maxCells)
@@ -41,101 +50,26 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
         if(maxSize <= cells.getDataSize())
             maxSize = cells.getDataSize() + 1;
 
-
         lock_t scannerLock(scannerMutex);
 
-        // Open first range:
-        //   maxTxn = getLastCommitTxn()  (may be >> than getMaxTxn(frags))
-        
-        // Open subsequent range:
-        //   lastTxn = getLastCommitTxn()
-        //   if lastTxn > maxTxn and getMaxTxn(frags) > maxTxn:
-        //      break  (don't want to mix newer results with old)
-
-        // Return maxTxn
-        
         bool firstRange = !merge;
-        int64_t maxTxn = scanTxn;
-
-        bool scanComplete = false;
-        bool noTablet = false;
         for(;;)
         {
-            // If merge is not active, set it up
             if(!merge)
             {
-                pred = pred.clipRows(lastRow);
-                if(pred.getRowPredicate()->isEmpty())
-                {
-                    scanComplete = true;
+                if(!startMerge(firstRange, scannerLock))
                     break;
-                }
-
-                // Need table lock -- unlock scanner lock first
-                scannerLock.unlock();
-                lock_t tableLock(table->tableMutex);
-                
-                // Get the last commit transaction for the table
-                scanTxn = table->getLastCommitTxn();
-
-                // Get the next fragment chain
-                vector<Fragment const *> chain;
-                if(!table->getFirstFragmentChain(pred, chain, rows))
-                {
-                    // The next range isn't on this server
-                    noTablet = true;
-                    break;
-                }
-
-                // Done with table lock, need scanner lock again.
-                scannerLock.lock();
-                tableLock.unlock();
-
-                // Open the merge
-                merge.reset(new FragmentMerge(chain));
-
-                // If this is the first range we've scanned, set the
-                // max txn for the batch
-                if(firstRange)
-                {
-                    maxTxn = scanTxn;
-                    firstRange = false;
-                }
-                // Else if the max transaction for the new chain is
-                // greater than the transaction on the batch so far,
-                // end the batch.  We don't want to mix old data with
-                // new.
-                else if(scanTxn > maxTxn && getMaxTxn(chain) > maxTxn)
-                {
-                    break;
-                }
+                firstRange = false;
             }
 
-            assert(merge);
-
-            // We have an active merge, get some (more) cells
-            bool eos = merge->next(maxCells - cells.getCellCount(),
+            bool eos = merge->more(maxCells - cells.getCellCount(),
                                    maxSize - cells.getDataSize(),
                                    cells, lastKey);
-
-            // Did we get to the end of this range?
+            
             if(eos)
             {
+                clipToRemainingRows();
                 merge.reset();
-                
-                
-
-                if(rows.getUpperBound().isFinite())
-                {
-                    pred = pred.clip(
-                        Interval<string>()
-                        .setLowerBound(
-                            rows.getUpperBound().getAdjacentComplement()
-                            )
-                        .unsetUpperBound());
-                }
-                
-                // Unregister 
             }
 
             if(cells.getCellCount() >= maxCells ||
@@ -145,12 +79,13 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
             }
         }
 
+        endOfScan = pred.getRowPredicate()->isEmpty();
+
         // Build cells into packed
         builder.finalize();
         packed.clear();
         packed.resize(builder.getFinalSize());
         builder.exportTo(&packed[0]);
-
     }
     catch(std::exception const & ex) {
         cb->error(ex);
@@ -158,6 +93,54 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
     catch(...) {
         cb->error(std::runtime_error("scan: unknown exception"));
     }
+}
+
+bool Scanner::startMerge(bool firstMerge, lock_t & scannerLock)
+{
+    if(endOfScan)
+        return false;
+
+    // Need table lock -- unlock scanner lock first
+    scannerLock.unlock();
+    lock_t tableLock(table->tableMutex);
+                
+    // Get the last commit transaction for the table
+    int64_t prevTxn = scanTxn;
+    scanTxn = table->getLastCommitTxn();
+
+    // Get the next fragment chain
+    vector<Fragment const *> chain;
+    table->getFirstFragmentChain(pred, chain, rows);
+
+    // Done with table lock, need scanner lock again.
+    scannerLock.lock();
+    tableLock.unlock();
+
+    // Open the merge after lastKey
+    merge.reset(new FragmentMerge(chain, lastKey));
+
+    // If we've already returned some data, we want to make sure
+    // future data is from the same transaction.
+    if(!firstRange && scanTxn > prevTxn)
+    {
+        // The table has moved on since our first scan -- has this
+        // fragment chain?
+        if(getMaxTxn(chain) > prevTxn)
+        {
+            // This chain has newer data.  Return what we have and
+            // wait for the next call before serving this chain.
+            return false;
+        }
+        else
+        {
+            // This chain hasn't had any updates more recent than our
+            // previous scan transaction.  Clamp the transaction
+            // number and continue.
+            scanTxn = prevTxn;
+        }
+    }
+
+    return true;
 }
 
 //----------------------------------------------------------------------------

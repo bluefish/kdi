@@ -21,6 +21,8 @@ namespace server {
 
     class Scanner;
 
+    class BadScanModeError;
+
 } // namespace server
 } // namespace kdi
 
@@ -114,6 +116,8 @@ public: // TabletEventListener
     virtual void onTabletDrop(
         warp::Interval<std::string> const & r);
 
+private:
+    bool startMerge(bool firstMerge, lock_t & scannerLock);
 
 private: // mess in progress
     boost::mutex scannerMutex;
