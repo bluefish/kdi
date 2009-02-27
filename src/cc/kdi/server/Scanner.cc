@@ -9,7 +9,7 @@
 // 
 //----------------------------------------------------------------------------
 
-#include "Scanner.h"
+#include <kdi/server/Scanner.h>
 
 using namespace kdi;
 using namespace kdi::server;
@@ -22,7 +22,8 @@ Scanner::Scanner(Table * table, ScanPredicate const & pred, ScanMode mode) :
     pred(pred),
     builder(),
     cells(&builder),
-    scanTxn(-1)
+    scanTxn(-1),
+    haveLastKey(false)
 {
     if(mode != SCAN_ANY_TXN)
         throw BadScanModeError(mode);
@@ -52,30 +53,13 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
 
         lock_t scannerLock(scannerMutex);
 
-        bool firstRange = !merge;
-        for(;;)
+        if(merge || startMerge(scannerLock))
         {
-            if(!merge)
+            bool hasMore = merge->copyMerged(maxCells, maxSize, cells);
+            if(!hasMore)
             {
-                if(!startMerge(firstRange, scannerLock))
-                    break;
-                firstRange = false;
-            }
-
-            bool eos = merge->more(maxCells - cells.getCellCount(),
-                                   maxSize - cells.getDataSize(),
-                                   cells, lastKey);
-            
-            if(eos)
-            {
-                clipToRemainingRows();
+                clipToFutureTablets(pred, rows);
                 merge.reset();
-            }
-
-            if(cells.getCellCount() >= maxCells ||
-               cells.getDataSize() >= maxSize)
-            {
-                break;
             }
         }
 
@@ -83,9 +67,24 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
 
         // Build cells into packed
         builder.finalize();
-        packed.clear();
         packed.resize(builder.getFinalSize());
         builder.exportTo(&packed[0]);
+
+        // Get the last key
+        CellBlock const * block =
+            reinterpret_cast<CellBlock const *>(&packed[0]);
+        if(!block->cells.empty())
+        {
+            CellData const * c = block->cells.end() - 1;
+            lastKey.setRow(*c->key.row);
+            lastKey.setColumn(*c->key.column);
+            lastKey.setTimestamp(c->key.timestamp);
+            haveLastKey = true;
+        }
+
+        // Return to callback
+        cb->done();
+
     }
     catch(std::exception const & ex) {
         cb->error(ex);
@@ -95,17 +94,21 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
     }
 }
 
-bool Scanner::startMerge(bool firstMerge, lock_t & scannerLock)
+bool Scanner::startMerge(lock_t & scannerLock)
 {
     if(endOfScan)
         return false;
+
+    // Clip the predicate so we ignore everything before lastKey, if
+    // we have one
+    if(haveLastKey)
+        clipToLastKey(pred, lastKey);
 
     // Need table lock -- unlock scanner lock first
     scannerLock.unlock();
     lock_t tableLock(table->tableMutex);
                 
     // Get the last commit transaction for the table
-    int64_t prevTxn = scanTxn;
     scanTxn = table->getLastCommitTxn();
 
     // Get the next fragment chain
@@ -116,29 +119,9 @@ bool Scanner::startMerge(bool firstMerge, lock_t & scannerLock)
     scannerLock.lock();
     tableLock.unlock();
 
-    // Open the merge after lastKey
-    merge.reset(new FragmentMerge(chain, lastKey));
-
-    // If we've already returned some data, we want to make sure
-    // future data is from the same transaction.
-    if(!firstRange && scanTxn > prevTxn)
-    {
-        // The table has moved on since our first scan -- has this
-        // fragment chain?
-        if(getMaxTxn(chain) > prevTxn)
-        {
-            // This chain has newer data.  Return what we have and
-            // wait for the next call before serving this chain.
-            return false;
-        }
-        else
-        {
-            // This chain hasn't had any updates more recent than our
-            // previous scan transaction.  Clamp the transaction
-            // number and continue.
-            scanTxn = prevTxn;
-        }
-    }
+    // Open the merge on this chain.  Have it pick up after lastKey,
+    // if we have one.
+    merge.reset(new FragmentMerge(chain, cache, pred, getLastKey()));
 
     return true;
 }

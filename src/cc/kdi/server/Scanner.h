@@ -81,8 +81,11 @@ public:
 
     /// Get the last cell key seen by this scan.  This can be helpful
     /// in reporting progress or starting a new scan where this one
-    /// left off.
-    CellKey const & getLastKey() const { return lastKey; }
+    /// left off.  Returns null if the scan has yet to return anything.
+    CellKey const * getLastKey() const
+    {
+        return haveLastKey ? &lastKey : 0;
+    }
 
     /// True if another call to scan could yield more results.
     bool scanContinues() const { return !endOfScan; }
@@ -117,7 +120,7 @@ public: // TabletEventListener
         warp::Interval<std::string> const & r);
 
 private:
-    bool startMerge(bool firstMerge, lock_t & scannerLock);
+    bool startMerge(lock_t & scannerLock);
 
 private: // mess in progress
     boost::mutex scannerMutex;
@@ -134,6 +137,7 @@ private: // mess in progress
     Interval<string> rows;
 
     CellKey lastKey;
+    bool haveLastKey;
 };
 
 
