@@ -10,6 +10,7 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/server/TabletServerI.h>
+#include <kdi/server/ScannerI.h>
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/Scanner.h>
 #include <kdi/server/ScannerLocator.h>
