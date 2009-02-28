@@ -1,5 +1,5 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// $Id: kdi/server/TabletServer.h $
+// $Id: kdi/server/TabletServerI.h $
 //
 // Created 2009/02/25
 //
@@ -9,17 +9,21 @@
 // 
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_TABLETSERVER_H
-#define KDI_SERVER_TABLETSERVER_H
+#ifndef KDI_SERVER_TABLETSERVERI_H
+#define KDI_SERVER_TABLETSERVERI_H
 
+#include <kdi/rpc/TabletServer.h>
+#include <kdi/server/ScannerLocator.h>
 #include <boost/noncopyable.hpp>
-#include <kdi/rpc/TableServer.h>
 
 namespace kdi {
 namespace server {
 
     class TabletServerI;
+
+    // Forward declarations
     class TabletServer;
+    class BlockCache;
 
 } // namespace server
 } // namespace kdi
@@ -39,7 +43,8 @@ public:
     typedef ::kdi::rpc::AMD_TabletServer_scanPtr     RpcScanCbPtr;
     typedef ::kdi::rpc::ScanMode                     RpcScanMode;
     typedef ::kdi::rpc::ScanParams                   RpcScanParams;
-    typedef ::std::pair<char const *,char const *>   RpcPackedCells;
+    typedef ::std::pair<Ice::Byte const *,
+                        Ice::Byte const *>           RpcPackedCells;
     typedef ::std::string                            RpcString;
 
     void apply_async(RpcApplyCbPtr const & cb,
@@ -65,8 +70,11 @@ private:
     class SyncCb;
     class ScanCb;
 
-    TabletServer * server;
-    ScannerLocator * locator;
+    ::kdi::server::TabletServer * server;
+    ::kdi::server::ScannerLocator * locator;
+    ::kdi::server::BlockCache * cache;
+
+    int64_t assignScannerId();
 };
 
-#endif // KDI_SERVER_TABLETSERVER_H
+#endif // KDI_SERVER_TABLETSERVERI_H

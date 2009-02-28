@@ -10,32 +10,64 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/server/Scanner.h>
+#include <kdi/server/Table.h>
+#include <kdi/server/FragmentMerge.h>
 
 using namespace kdi;
 using namespace kdi::server;
+using warp::Interval;
+using std::string;
+using std::vector;
+
+namespace {
+    
+    void clipToFutureRows(ScanPredicate & pred, CellKey const & last)
+    {
+        pred = pred.clipRows(
+            Interval<string>()
+            .setLowerBound(last.getRow(), warp::BT_INCLUSIVE)
+            .unsetUpperBound());
+    }
+
+    void clipToFutureRows(ScanPredicate & pred, Interval<string> const & last)
+    {
+        Interval<string> next;
+
+        if(last.getUpperBound().isFinite())
+            next.setLowerBound(last.getUpperBound().getAdjacentComplement())
+                .unsetUpperBound();
+        else
+            next.setEmpty();
+
+        pred = pred.clipRows(next);
+    }
+}
 
 //----------------------------------------------------------------------------
 // Scanner
 //----------------------------------------------------------------------------
-Scanner::Scanner(Table * table, ScanPredicate const & pred, ScanMode mode) :
+Scanner::Scanner(Table * table, BlockCache * cache,
+                 ScanPredicate const & pred, ScanMode mode) :
     table(table),
+    cache(cache),
     pred(pred),
-    builder(),
-    cells(&builder),
     scanTxn(-1),
-    haveLastKey(false)
+    haveLastKey(false),
+    endOfScan(false)
 {
     if(mode != SCAN_ANY_TXN)
         throw BadScanModeError(mode);
 
     lock_t tableLock(table->tableMutex);
-    table->addListener(this);
+    table->addFragmentListener(this);
+    table->addTabletListener(this);
 }
 
 Scanner::~Scanner()
 {
     lock_t tableLock(table->tableMutex);
-    table->removeListener(this);
+    table->removeTabletListener(this);
+    table->removeFragmentListener(this);
 }
 
 void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
@@ -47,7 +79,7 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
 
         // Clamp maxCells and maxSize to sane minimums
         if(!maxCells)
-            maxCells = 1
+            maxCells = 1;
         if(maxSize <= cells.getDataSize())
             maxSize = cells.getDataSize() + 1;
 
@@ -58,29 +90,17 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
             bool hasMore = merge->copyMerged(maxCells, maxSize, cells);
             if(!hasMore)
             {
-                clipToFutureTablets(pred, rows);
+                clipToFutureRows(pred, rows);
                 merge.reset();
             }
         }
 
         endOfScan = pred.getRowPredicate()->isEmpty();
 
-        // Build cells into packed
-        builder.finalize();
-        packed.resize(builder.getFinalSize());
-        builder.exportTo(&packed[0]);
-
-        // Get the last key
-        CellBlock const * block =
-            reinterpret_cast<CellBlock const *>(&packed[0]);
-        if(!block->cells.empty())
-        {
-            CellData const * c = block->cells.end() - 1;
-            lastKey.setRow(*c->key.row);
-            lastKey.setColumn(*c->key.column);
-            lastKey.setTimestamp(c->key.timestamp);
+        // Build cells into packed and get last key, if any
+        size_t nOut = cells.finish(packed, lastKey);
+        if(nOut > 0)
             haveLastKey = true;
-        }
 
         // Return to callback
         cb->done();
@@ -102,7 +122,7 @@ bool Scanner::startMerge(lock_t & scannerLock)
     // Clip the predicate so we ignore everything before lastKey, if
     // we have one
     if(haveLastKey)
-        clipToLastKey(pred, lastKey);
+        clipToFutureRows(pred, lastKey);
 
     // Need table lock -- unlock scanner lock first
     scannerLock.unlock();

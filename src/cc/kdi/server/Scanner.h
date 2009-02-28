@@ -12,16 +12,32 @@
 #ifndef KDI_SERVER_SCANNER_H
 #define KDI_SERVER_SCANNER_H
 
-#include <boost/noncopyable.hpp>
 #include <kdi/server/FragmentEventListener.h>
 #include <kdi/server/TabletEventListener.h>
+#include <kdi/server/CellBuilder.h>
+#include <kdi/CellKey.h>
+#include <kdi/scan_predicate.h>
+#include <warp/string_range.h>
+#include <warp/interval.h>
+#include <boost/thread/mutex.hpp>
+#include <boost/noncopyable.hpp>
+#include <boost/scoped_ptr.hpp>
+#include <boost/shared_ptr.hpp>
+#include <exception>
+#include <string>
 
 namespace kdi {
 namespace server {
 
     class Scanner;
+    typedef boost::shared_ptr<Scanner> ScannerPtr;
 
     class BadScanModeError;
+
+    // Forward declaration
+    class Table;
+    class FragmentMerge;
+    class BlockCache;
 
 } // namespace server
 } // namespace kdi
@@ -63,7 +79,8 @@ public:
     };
 
 public:
-    Scanner(Table * table, ScanPredicate const & pred, ScanMode mode);
+    Scanner(Table * table, BlockCache * cache,
+            ScanPredicate const & pred, ScanMode mode);
     ~Scanner();
 
 public:
@@ -120,24 +137,41 @@ public: // TabletEventListener
         warp::Interval<std::string> const & r);
 
 private:
+    typedef boost::mutex::scoped_lock lock_t;
+
     bool startMerge(lock_t & scannerLock);
 
 private: // mess in progress
     boost::mutex scannerMutex;
 
     Table * table;
+    BlockCache * cache;
     ScanPredicate pred;
 
-    warp::Builder builder;
-    CellBlockBuilder cells;
-    vector<char> packed;
+    CellBuilder cells;
+    std::vector<char> packed;
 
     boost::scoped_ptr<FragmentMerge> merge;
     int64_t scanTxn;
-    Interval<string> rows;
+    warp::Interval<std::string> rows;
 
     CellKey lastKey;
     bool haveLastKey;
+    
+    bool endOfScan;
+};
+
+//----------------------------------------------------------------------------
+// BadScanModeError
+//----------------------------------------------------------------------------
+class kdi::server::BadScanModeError
+    : public std::runtime_error
+{
+public:
+    BadScanModeError(Scanner::ScanMode mode) :
+        runtime_error("bad scan mode"), mode(mode) {}
+
+    Scanner::ScanMode mode;
 };
 
 

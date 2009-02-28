@@ -12,20 +12,34 @@
 #ifndef KDI_SERVER_FRAGMENT_H
 #define KDI_SERVER_FRAGMENT_H
 
+#include <stddef.h>
+
 namespace kdi {
 namespace server {
 
     class Fragment;
+    class FragmentBlock;
+    class FragmentBlockReader;
+
+    // Forward declarations
+    class CellBuilder;
 
 } // namespace server
+
+    // Forward declarations
+    class ScanPredicate;
+    class CellKey;
+
 } // namespace kdi
 
 //----------------------------------------------------------------------------
 // Fragment
 //----------------------------------------------------------------------------
-class Fragment
+class kdi::server::Fragment
 {
 public:
+    virtual ~Fragment() {}
+
     /// Get the address of the next block in this Fragment that could
     /// match the given predicate.  The minimum block to consider is
     /// given by minBlock.  This should be one past the last block
@@ -43,9 +57,11 @@ public:
 //----------------------------------------------------------------------------
 // FragmentBlock
 //----------------------------------------------------------------------------
-class FragmentBlock
+class kdi::server::FragmentBlock
 {
 public:
+    virtual ~FragmentBlock() {}
+
     /// Create a reader over the block.  The reader will only return
     /// cells matching the given predicate.
     virtual FragmentBlockReader * makeReader(ScanPredicate const & pred) const = 0;
@@ -54,9 +70,11 @@ public:
 //----------------------------------------------------------------------------
 // FragmentBlockReader
 //----------------------------------------------------------------------------
-class FragmentBlockReader
+class kdi::server::FragmentBlockReader
 {
 public:
+    virtual ~FragmentBlockReader() {}
+
     /// Advance the reader to the next cell.  Returns true if there is
     /// another cell, false if the end of the block has been reached.
     /// The key for next cell, if any, is stored in nextKey.

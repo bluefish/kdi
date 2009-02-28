@@ -12,10 +12,16 @@
 #ifndef KDI_SERVER_BLOCKCACHE_H
 #define KDI_SERVER_BLOCKCACHE_H
 
+#include <stddef.h>
+
 namespace kdi {
 namespace server {
 
     class BlockCache;
+
+    // Forward declaration
+    class Fragment;
+    class FragmentBlock;
 
 } // namespace server
 } // namespace kdi
@@ -23,13 +29,14 @@ namespace server {
 //----------------------------------------------------------------------------
 // BlockCache
 //----------------------------------------------------------------------------
-class BlockCache
+class kdi::server::BlockCache
 {
 public:
     /// Get the FragmentBlock at blockAddr for the given Fragment.
     /// The returned block must eventually be released with a balanced
     /// call to releaseBlock().
-    virtual FragmentBlock const * getBlock(Fragment const * fragment, size_t blockAddr) = 0;
+    virtual FragmentBlock const * getBlock(
+        Fragment const * fragment, size_t blockAddr) = 0;
 
     /// Release a FragmentBlock previously acquired by getBlock().
     virtual void releaseBlock(FragmentBlock const * block) = 0;

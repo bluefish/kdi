@@ -11,15 +11,19 @@
 
 #include <kdi/server/TabletServerI.h>
 #include <kdi/server/TabletServer.h>
+#include <kdi/server/Scanner.h>
+#include <kdi/server/ScannerLocator.h>
+#include <Ice/Ice.h>
 
 using namespace kdi;
 using namespace kdi::server;
 
+
 //----------------------------------------------------------------------------
-// TabletServerI::ApplyCb
+// TabletServerI:ApplyCb
 //----------------------------------------------------------------------------
 class TabletServerI::ApplyCb
-    : public TabletServer::ApplyCb
+    : public ::kdi::server::TabletServer::ApplyCb
 {
     RpcApplyCbPtr cb;
 
@@ -45,7 +49,7 @@ public:
 // TabletServerI::SyncCb
 //----------------------------------------------------------------------------
 class TabletServerI::SyncCb
-    : public TabletServer::SyncCb
+    : public ::kdi::server::TabletServer::SyncCb
 {
     RpcSyncCbPtr cb;
 
@@ -77,16 +81,19 @@ class TabletServerI::ScanCb
     ScannerPtr scanner;
     size_t scanId;
     ScannerLocator * locator;
+    Ice::ObjectAdapterPtr adapter;
 
 public:
     ScanCb(RpcScanCbPtr const & cb,
            ScannerPtr const & scanner,
            size_t scanId,
-           ScannerLocator * locator) :
+           ScannerLocator * locator,
+           Ice::ObjectAdapterPtr const & adapter) :
         cb(cb),
         scanner(scanner),
         scanId(scanId),
-        locator(locator)
+        locator(locator),
+        adapter(adapter)
     {
     }
 
@@ -99,30 +106,32 @@ public:
         result.scanClosed = true;
 
         // If there's more to scan, set up a continuation object
-        ScannerPrx scanContinuation;
+        ::kdi::rpc::ScannerPrx scanContinuation;
         if(locator && !result.scanComplete)
         {
             // Make identity
             Ice::Identity id;
             id.category = "scan";
-            id.name = scanLocator->getNameFromId(scanId);
+            id.name = locator->getNameFromId(scanId);
 
             // Make ICE object for scanner
-            ScannerIPtr obj = new ScannerI(scanner, locator);
+            Ice::ObjectPtr obj = new ScannerI(scanner, locator);
 
             // Add it to the scanner locator
-            scanLocator->add(scanId, obj);
+            locator->add(scanId, obj);
 
             // Set the continuation proxy
-            scanContinuation = ScannerPrx::uncheckedCast(
-                cur.adapter->createProxy(id));
+            scanContinuation = ::kdi::rpc::ScannerPrx::uncheckedCast(
+                adapter->createProxy(id));
 
             // Note that the scanner is open
-            results.scanClosed = false;
+            result.scanClosed = false;
         }
 
         cb->ice_response(
-            RpcPackedCells(cells.begin(), cells.end()),
+            RpcPackedCells(
+                reinterpret_cast<Ice::Byte const *>(cells.begin()),
+                reinterpret_cast<Ice::Byte const *>(cells.end())),
             result,
             scanContinuation);
         delete this;
@@ -151,7 +160,7 @@ void TabletServerI::apply_async(
     server->apply_async(
         new ApplyCb(cb),
         table,
-        StringRange(cells.first, cells.second),
+        warp::binary_data(cells.first, cells.second - cells.first),
         commitMaxTxn,
         waitForSync);
 }
@@ -186,7 +195,7 @@ void TabletServerI::scan_async(
             m = Scanner::SCAN_LATEST_ROW_TXN;
             break;
         default:
-            cb->ice_exception(ScanModeError());
+            cb->ice_exception(::kdi::rpc::ScanModeError());
             return;
     }
 
@@ -196,7 +205,7 @@ void TabletServerI::scan_async(
         pred = ScanPredicate(predicate);
     }
     catch(...) {
-        cb->ice_exception(InvalidPredicateError());
+        cb->ice_exception(::kdi::rpc::InvalidPredicateError());
         return;
     }
 
@@ -204,7 +213,7 @@ void TabletServerI::scan_async(
     Table * t = server->tryGetTable(table);
     if(!t)
     {
-        cb->ice_exception(TabletNotLoadedError());
+        cb->ice_exception(::kdi::rpc::TabletNotLoadedError());
         return;
     }
 
@@ -212,7 +221,7 @@ void TabletServerI::scan_async(
     size_t scanId = assignScannerId();
 
     // Make a scanner
-    ScannerPtr scanner(new Scanner(t, pred, m));
+    ScannerPtr scanner(new Scanner(t, cache, pred, m));
 
     // Start the scan
     scanner->scan_async(
@@ -220,8 +229,9 @@ void TabletServerI::scan_async(
             cb,
             scanner,
             scanId,
-            params.close ? 0 : locator
+            params.close ? 0 : locator,
+            cur.adapter
             ),
-        maxCells,
-        maxSize);
+        params.maxCells,
+        params.maxSize);
 }

@@ -12,12 +12,22 @@
 #ifndef KDI_SERVER_TABLETSERVER_H
 #define KDI_SERVER_TABLETSERVER_H
 
+#include <kdi/strref.h>
+#include <boost/shared_ptr.hpp>
 #include <boost/noncopyable.hpp>
+#include <boost/thread/mutex.hpp>
+#include <string>
+#include <exception>
 
 namespace kdi {
 namespace server {
 
     class TabletServer;
+
+    // Forward declarations
+    class Table;
+    class CellBuffer;
+    typedef boost::shared_ptr<CellBuffer> CellBufferPtr;
 
 } // namespace server
 } // namespace kdi
@@ -49,7 +59,7 @@ public:
 
 public:
     void apply_async(ApplyCb * cb,
-                     strref_t table,
+                     strref_t tableName,
                      strref_t packedCells,
                      int64_t commitMaxTxn,
                      bool waitForSync);
@@ -57,13 +67,19 @@ public:
     void sync_async(SyncCb * cb, int64_t waitForTxn);
 
 
-private: // mess in progress
+    // mess in progress
+public:
+    Table * tryGetTable(strref_t tableName) const;
+
+private:
     CellBufferPtr decodeCells(strref_t packedCells) const;
 
-    Table * getTable(string const & tableName) const;
+    Table * getTable(strref_t tableName) const;
 
     int64_t getLastCommitTxn() const;
     int64_t assignCommitTxn();
+
+    int64_t getLastDurableTxn() const;
 
     size_t assignScannerId();
 

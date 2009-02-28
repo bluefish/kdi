@@ -9,14 +9,20 @@
 // 
 //----------------------------------------------------------------------------
 
-#include "TabletServerI.h"
+#include <kdi/server/TabletServer.h>
+#include <kdi/server/CellBuffer.h>
+#include <kdi/server/Table.h>
 
 using namespace kdi;
 using namespace kdi::server;
 
+namespace {
+    typedef boost::mutex::scoped_lock lock_t;
+}
+
 void TabletServer::apply_async(
     ApplyCb * cb,
-    strref_t table,
+    strref_t tableName,
     strref_t packedCells,
     int64_t commitMaxTxn,
     bool waitForSync)
@@ -29,20 +35,20 @@ void TabletServer::apply_async(
         lock_t lock(serverMutex);
 
         // Find the table
-        Table * table = getTable(table);
+        Table * table = getTable(tableName);
 
         // Note: if the tablets are assigned to this server but still
         // in the process of being loaded, may want to defer until
         // they are ready.
         
         // Make sure all cells map to loaded tablets
-        table->verifyTabletsAreLoaded(cells);
+        table->verifyTabletsAreLoaded(cells.get());
 
         // Make sure the last transaction in each row is less than or
         // equal to commitMaxTxn (which is trivially true if
         // commitMaxTxn >= last commit)
         if(commitMaxTxn < getLastCommitTxn())
-            table->verifyCommitApplies(cells, commitMaxTxn);
+            table->verifyCommitApplies(cells.get(), commitMaxTxn);
 
         // How to throttle?
 
@@ -75,7 +81,7 @@ void TabletServer::apply_async(
         int64_t txn = assignCommitTxn();
         
         // Update latest transaction number for all affected rows
-        table->updateRowCommits(cells, txn);
+        table->updateRowCommits(cells.get(), txn);
         
         // Push the cells to the log queue
         queueCommit(cells, txn);
@@ -112,7 +118,7 @@ void TabletServer::sync_async(SyncCb * cb, int64_t waitForTxn)
         lock.unlock();
 
         // Defer response if necessary
-        if(waitForTxn > lastDurableTxn)
+        if(waitForTxn > syncTxn)
             deferUntilDurable(cb, waitForTxn);
         else
             cb->done(syncTxn);
@@ -122,47 +128,5 @@ void TabletServer::sync_async(SyncCb * cb, int64_t waitForTxn)
     }
     catch(...) {
         cb->error(std::runtime_error("sync: unknown exception"));
-    }
-}
-
-void TabletServer::scan_async(
-    ScanCb * cb,
-    strref_t table,
-    ScanPredicate const & pred,
-    ScanMode mode,
-    size_t maxCells,
-    size_t maxSize)
-{
-    try {
-        // Get the table for the scanner
-        Table * table;
-        {
-            lock_t lock(serverMutex);
-            table = getTable(table);
-        }
-
-        // Make a scanner object
-        ScannerPtr scanner(new Scanner(table, pred, mode));
-
-        // Fetch the first result block
-        bool ok = scanner->next(
-            maxCells,
-            maxSize,
-            result.cells,
-            result.scanTxn);
-        
-        // If the client wants the scanner closed, close it
-        if(params.close)
-            result.endOfScan = true;
-
-        // Return the results
-        cb->done(cells, scanTxn, scanner);
-        return;
-    }
-    catch(std::exception const & ex) {
-        cb->error(ex);
-    }
-    catch(...) {
-        cb->error(std::runtime_error("scan: unknown exception"));
     }
 }

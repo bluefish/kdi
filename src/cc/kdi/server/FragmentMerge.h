@@ -21,7 +21,15 @@ namespace server {
 
     class FragmentMerge;
 
+    // Forward declarations
+    class BlockCache;
+    class Fragment;
+    class CellBuilder;
+
 } // namespace server
+
+    class CellKey;
+
 } // namespace kdi
 
 //----------------------------------------------------------------------------

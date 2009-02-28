@@ -10,6 +10,12 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/server/FragmentMerge.h>
+#include <kdi/server/Fragment.h>
+#include <kdi/server/BlockCache.h>
+#include <kdi/server/CellBuilder.h>
+#include <kdi/CellKey.h>
+#include <warp/util.h>
+#include <boost/scoped_ptr.hpp>
 
 using namespace kdi;
 using namespace kdi::server;
@@ -65,7 +71,7 @@ public:
     void cleanup(BlockCache * cache)
     {
         if(block)
-            cache->release(block);
+            cache->releaseBlock(block);
     }
 
     /// Advance reader to the next key.  Returns true if the
@@ -96,7 +102,7 @@ public:
                    BlockCache * cache, ScanPredicate const & pred)
     {
         assert(reader);
-        reader->copyUntil(key, cells);
+        reader->copyUntil(stopKey, cells);
         return advance(cache, pred);
     }
         
@@ -147,7 +153,7 @@ FragmentMerge::FragmentMerge(
         bool more = input->advance(cache, pred);
         if(startAfter)
         {
-            while(more && !(*startAfter < input->getNextKey())))
+            while(more && !(*startAfter < input->getNextKey()))
                 more = input->advance(cache, pred);
         }
         if(more)
@@ -158,7 +164,7 @@ FragmentMerge::FragmentMerge(
 FragmentMerge::~FragmentMerge()
 {
     for(size_t i = 0; i < nInputs; ++i)
-        inputs[i]->cleanup(cache);
+        inputs[i].cleanup(cache);
 }
 
 bool FragmentMerge::copyMerged(size_t maxCells, size_t maxSize,
