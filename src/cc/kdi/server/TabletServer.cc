@@ -12,6 +12,7 @@
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/CellBuffer.h>
 #include <kdi/server/Table.h>
+#include <kdi/server/Fragment.h>
 
 using namespace kdi;
 using namespace kdi::server;
@@ -29,7 +30,7 @@ void TabletServer::apply_async(
 {
     try {
         // Decode and validate cells
-        CellBufferPtr cells = decodeCells(packedCells);
+        FragmentCPtr fragment = decodeCells(packedCells);
 
         // Try to apply the commit
         lock_t lock(serverMutex);
@@ -41,14 +42,12 @@ void TabletServer::apply_async(
         // in the process of being loaded, may want to defer until
         // they are ready.
         
-        // Make sure all cells map to loaded tablets
-        table->verifyTabletsAreLoaded(cells.get());
-
-        // Make sure the last transaction in each row is less than or
-        // equal to commitMaxTxn (which is trivially true if
-        // commitMaxTxn >= last commit)
-        if(commitMaxTxn < getLastCommitTxn())
-            table->verifyCommitApplies(cells.get(), commitMaxTxn);
+        // Make sure all cells map to loaded tablets and that the
+        // transaction will apply.  The transaction can proceed only
+        // if the last transaction in each row is less than or equal
+        // to commitMaxTxn.
+        table->verifyCommitApplies(
+            fragment->makeRowIterator(), commitMaxTxn);
 
         // How to throttle?
 
@@ -76,15 +75,15 @@ void TabletServer::apply_async(
         // Throttle later...
 
 
-
         // Assign transaction number to commit
         int64_t txn = assignCommitTxn();
         
         // Update latest transaction number for all affected rows
-        table->updateRowCommits(cells.get(), txn);
+        table->updateRowCommits(
+            fragment->makeRowIterator(), txn);
         
         // Push the cells to the log queue
-        queueCommit(cells, txn);
+        queueCommit(fragment, txn);
 
         lock.unlock();
 
@@ -101,7 +100,6 @@ void TabletServer::apply_async(
         cb->error(std::runtime_error("apply: unknown exception"));
     }
 }
-
 
 void TabletServer::sync_async(SyncCb * cb, int64_t waitForTxn)
 {

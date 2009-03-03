@@ -12,6 +12,9 @@
 #ifndef KDI_SERVER_FRAGMENT_H
 #define KDI_SERVER_FRAGMENT_H
 
+#include <warp/Iterator.h>
+#include <warp/string_range.h>
+#include <memory>
 #include <stddef.h>
 
 namespace kdi {
@@ -20,6 +23,8 @@ namespace server {
     class Fragment;
     class FragmentBlock;
     class FragmentBlockReader;
+
+    typedef warp::Iterator<warp::StringRange> FragmentRowIterator;
 
     // Forward declarations
     class CellBuilder;
@@ -51,7 +56,12 @@ public:
     
     /// Allocate and load the block for this fragment at the given
     /// address.  The address must have been returned by nextBlock().
-    virtual FragmentBlock * loadBlock(size_t blockAddr) const = 0;
+    virtual std::auto_ptr<FragmentBlock>
+    loadBlock(size_t blockAddr) const = 0;
+
+    /// Create an iterator over all rows in this Fragment.
+    virtual std::auto_ptr<FragmentRowIterator>
+    makeRowIterator() const = 0;
 };
 
 //----------------------------------------------------------------------------
@@ -64,7 +74,8 @@ public:
 
     /// Create a reader over the block.  The reader will only return
     /// cells matching the given predicate.
-    virtual FragmentBlockReader * makeReader(ScanPredicate const & pred) const = 0;
+    virtual std::auto_ptr<FragmentBlockReader>
+    makeReader(ScanPredicate const & pred) const = 0;
 };
 
 //----------------------------------------------------------------------------

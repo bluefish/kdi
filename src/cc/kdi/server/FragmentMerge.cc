@@ -44,7 +44,8 @@ private:
             return false;
 
         block = cache->getBlock(fragment, minBlock);
-        reader.reset(block->makeReader(pred));
+        reader.reset(block->makeReader(pred).release());
+        return true;
     }
 
     /// Finish with the current block and release it to the cache.
