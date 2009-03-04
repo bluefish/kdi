@@ -591,22 +591,26 @@ the parts used to build it.
 
 
 #----------------------------------------------------------------------------
-# Logging + Configuration state
+# Configuration layout
 #----------------------------------------------------------------------------
 
 We need to store some information about each tablet:
 
-  Location:  IP and port of current server (or last known server)
+  first-row: Lower bound for rows in the tablet
 
-  Log: Log directory of current server (or last known server)
+  last-row: Upper bound for rows in the tablet
+
+  location: IP and port of current server (or last known server)
+
+  log: Log directory of current server (or last known server)
   
-  Fragments:(group-name)
+  fragments:(group-name)
      Ordered list of serialized disk fragments in the given locality group
 
 
 We also want some information for each table.
 
-  Group:(name)
+  schema:(group-name)
      Included column families (space-sep word list or *)
      Automatic deletion policy (max-history=K and/or max-age=T)
      Compression settings (none, lzo, etc)
@@ -628,10 +632,55 @@ META1, would be a normal table that stores its config information in
 META0.  Every other table would store its config information in META1.
 
 
+The normal (non-root) tablets store their tablet configs their parent
+meta table as follows:
+
+  row="(table) (last-row)"    -- Tablets with a finite upper bound
+  row="(table)!"              -- Tablets with infinite upper bound
+
+  c="first:", t=(rev), v="(first-row)"
+     -- should match previous tablet's last-row
+     -- empty string for first tablet
+
+  c="location:", t=(rev), v="(ip) (port)"
+
+  c="log:", t=(rev), v="(log directory)"
+
+  c="fragments:(group)", t=(rev), v="(f1) (f2) ..."
+  
+The per-table config information is stored in the same parent meta
+table:
+
+  row="(table)"
+
+  c="schema:(group):columns", t=(rev), v="(c1) (c2) ..."
+
+  c="schema:(group):purge", t=(rev), v="(deletion-policy)"
+     -- policies:
+       -- "max-history=(num-revisions)"
+       -- "max-age=(microseconds)"
+       -- "and" / "or" combination (e.g. "max-age=T and max-history=K")
+
+  c="schema:(group):compression", t=(rev), v="(compressor-name)"
+
+  c="schema:(group):blocksize", t=(rev), v="(size-in-bytes)"
+
+  c="schema:(group):in-memory", t=(rev), v="true|false"
+
+
+The root table(t) has to store the same information in one or more
+global files.  However it all goes down, the "log:" and "fragments:"
+columns should be updated in a synchronized way, which means they
+should probably be in the same file.
+
+
+#----------------------------------------------------------------------------
+# More on Table Schemas
+#----------------------------------------------------------------------------
 
 Updating schemas...
 
-An external process will update the "group:(name)" columns for the
+An external process will update the "schema:(name)" columns for the
 last tablet in the table.  Then we can either: 1) signal that the
 tablet servers should reload the config, or 2) wait for the tablet
 servers to discover the new columns in their own time.
@@ -642,14 +691,14 @@ Fragments can be shared among multiple groups.  For example, suppose
 we have the following schema change:
 
   Old schema:
-     group:   columns="*"
-     group:A  columns="X Y"
-     group:B  columns="Z"
+     schema:   columns="*" ...
+     schema:A  columns="X Y" ...
+     schema:B  columns="Z" ...
 
   New schema:
-     group:   columns="*"
-     group:A  columns="X"
-     group:B  columns="Y"
+     schema:   columns="*" ...
+     schema:A  columns="X" ...
+     schema:B  columns="Y" ...
 
 If we have a fragment that was serialized under group A in the old
 schema, it may be shared between groups A and B under the new schema.
@@ -728,3 +777,77 @@ be loaded on-demand.
 In general, the servers will do what they can to optimize performance,
 but it may take time to rearrage data for efficient in-memory service
 after a schema change.
+
+
+#----------------------------------------------------------------------------
+# Loading a tablet
+#----------------------------------------------------------------------------
+
+As soon as a tablet load starts, a placeholder tablet should be
+created and registered in a loading state.  This tablet will not serve
+client requests, but requests may be deferred until the tablet
+completes loading (or fails to load).
+
+When loading a tablet, the tablet server should read the tablet's
+config information from its meta table.  It should also get a copy of
+the table schema if it doesn't have one or the cached copy is old.
+
+A tablet should only be served by one tablet server at a time.  Long
+term, we'll probably want this to be arbitrated by an external
+synchronization process.  As a sanity check, we could have the server
+try to read the tablet from the host at "location:", if any.  If that
+works, then some other server currently has an active copy of the
+tablet.  Bad news!  Abort!
+
+All fragments from all "fragments:" columns should be loaded up and
+put in their appropriate access groups.
+
+If the tablet has a "log:" column, then it wasn't unloaded cleanly.
+Maybe its old server crashed.  We need to examine the log directory
+and replay all logs that affect the tablet.  The logs must be replayed
+in proper order if there is more than one.  It doesn't matter if we
+replay more than we need to.
+
+There are a few ways we could do the replay:
+
+  1) Read the log(s), filter by tablet(s) to be loaded, and replay
+     into our own log.  This reuses some of the normal mutation path,
+     but it may involve special handling.  For example, if the log
+     fills up, we'll need to serialize and update our tablets.  We
+     don't want the loading tablet to perform any config updates until
+     it's completely loaded and we can switch it over.
+
+  2) Do what we're currently doing.  Load each log into memory, sort
+     it, and write out a serialized fragment.  Use the new fragment
+     instead.  This is simple, but it has potential scaling problems
+     if we want to increase the log size.  Actually, I guess it's easy
+     to write multiple fragments.  But it's still a rarely-used code
+     path waiting to break.
+
+  3) Perform a coordinated log rewrite after a server crash, like
+     BigTable.  This would prevent potential overload of too many
+     clients trying to read the log at once, but at our current scale
+     we don't have this problem.  This is something to consider for
+     the future.
+
+After log replay, we can update the "log:" and "fragments:" columns
+for the tablet to point to this server with the latest config.  Once
+these changes sync, we can make the tablet writable and update the
+"location:" column.  We can include the "location:" update in the
+commit, so long as clients are willing to retry us if they read the
+change and we haven't yet gotten the sync confirmation.
+
+
+#----------------------------------------------------------------------------
+# Unloading a tablet
+#----------------------------------------------------------------------------
+
+Stop accepting writes for the tablet.
+
+Serialize anything we have for the tablet to a new fragment.
+
+Stop accepting reads.
+
+Update config with new "fragments:" and remove "log:" and "location:" columns.
+
+Drop tablet.
