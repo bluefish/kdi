@@ -589,3 +589,142 @@ Externally loaded fragments get the current transaction at load time.
 Internally created fragments get the maximum transaction number from
 the parts used to build it.
 
+
+#----------------------------------------------------------------------------
+# Logging + Configuration state
+#----------------------------------------------------------------------------
+
+We need to store some information about each tablet:
+
+  Location:  IP and port of current server (or last known server)
+
+  Log: Log directory of current server (or last known server)
+  
+  Fragments:(group-name)
+     Ordered list of serialized disk fragments in the given locality group
+
+
+We also want some information for each table.
+
+  Group:(name)
+     Included column families (space-sep word list or *)
+     Automatic deletion policy (max-history=K and/or max-age=T)
+     Compression settings (none, lzo, etc)
+     Disk block size (64k)
+     In-memory setting (false/true)
+
+
+Most tablets (all but one) will store their config information in a
+parent meta-table.  The root meta tablet cannot store into a table so
+it stores into a global file.
+
+In current KDI, there is only one meta table (META).  It has only one
+tablet that can never split, and it is the root.
+
+As things grow, it may make sense to move to a two level approach.
+We'd have two meta tables.  The first, META0, would have the single,
+indivisible root tablet like the current implementation.  The second,
+META1, would be a normal table that stores its config information in
+META0.  Every other table would store its config information in META1.
+
+
+
+Updating schemas...
+
+An external process will update the "group:(name)" columns for the
+last tablet in the table.  Then we can either: 1) signal that the
+tablet servers should reload the config, or 2) wait for the tablet
+servers to discover the new columns in their own time.
+
+When a tablet server discovers a new schema, it re-partitions all the
+fragments it has for each tablet in the table into the new groups.
+Fragments can be shared among multiple groups.  For example, suppose
+we have the following schema change:
+
+  Old schema:
+     group:   columns="*"
+     group:A  columns="X Y"
+     group:B  columns="Z"
+
+  New schema:
+     group:   columns="*"
+     group:A  columns="X"
+     group:B  columns="Y"
+
+If we have a fragment that was serialized under group A in the old
+schema, it may be shared between groups A and B under the new schema.
+
+Each disk fragment should contain a compact list of all column
+families contained within.  The server will use this information in
+assigning it to a group.
+
+As compactions take place over time, the file structure on disk will
+gradually transition to reflect the schema's partitioning structure.
+
+
+Column family assignment...
+
+Each group in the schema either as a set of column families or
+wildcard meaning "every family not in another group".
+
+There can be at most one wildcard group in a schema, but there can be
+zero.  This restricts the column families in the table to a fixed set.
+Tablet servers should reject mutations on columns not contained in the
+set.
+
+When adding columns to the schema, it may take time for the schema
+changes to propagate to all tablet servers.  If clients need a known
+cut-over point, they may need to use the active signaling method
+mentioned above (1).
+
+When removing columns from a schema, servers will stop serving the
+columns and the old column data will eventually be filtered out by
+compactions.
+
+Updates to the schema columns should always be performed using row
+transactions and read using row isolation semantics to ensure
+consistency.
+
+
+Schema validity...
+
+Each column family can be in at most one group.  This implies there
+can be at most one group containing a family wildcard.  If a column
+could map to more than one group, the schema is invalid.
+
+In the event that a server sees an invalid schema during a periodic
+check, it should ignore the update and continue using the last valid
+schema.  If the server finds an invalid schema when loading a tablet,
+it should abort the load and return an error to the load RPC caller.
+If the server sees an invalid schema during an explicit reload call,
+it should return an error to the RPC caller and continue using the
+last valid schema.
+
+
+In-memory groups...
+
+A group can be marked for residence in memory.  Each tablet server has
+a fixed-size cache for fragment blocks.  When the server loads groups
+with the in-memory attribute set, it will try to keep all of the
+fragment blocks for that group in the cache at all times, allowing
+scans to proceed without needing to access the disk.
+
+In the event that the server is asked to load more fragment data than
+it can hold in the cache, it will simply load as much as it can and
+operate an an LRU fashion after that.
+
+When schema changes move column families around, we can wind up with
+fragments shared between multiple groups.  Cache priority is as
+follows:
+
+   1) All fragment columns in the same in-memory group
+   2) All fragment columns in two or more in-memory groups
+   3) Some fragment columns in at least one in-memory group
+   4) No fragment columns in an in-memory group
+
+Priorities 1-3 are all eligible for preloading.  Priority 4 will only
+be loaded on-demand.
+
+In general, the servers will do what they can to optimize performance,
+but it may take time to rearrage data for efficient in-memory service
+after a schema change.
