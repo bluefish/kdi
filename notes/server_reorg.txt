@@ -489,3 +489,365 @@ Cascade:  Table::open("foo")->set(X);
     - committedTxn = 4
   
 
+#----------------------------------------------------------------------------
+# Writing
+#----------------------------------------------------------------------------
+
+When cells are applied, the block is assigned a txn number and pushed
+to the logger thread's input queue.  At this point they are
+"committed" but not "active".
+
+The log thread wakes up and pulls blocks off the input queue, possibly
+several at once if they're ready to go.  The blocks are partitioned
+and merged to form a single block per table.  Each resulting block is
+assigned the maximum txn number that went into it.  The blocks are
+then serialized to a log file.  Once the log has been flushed to disk,
+the blocks are added to the readable memory pool.  Each affected table
+is notified of the new cell block.  The tables update transaction
+tracking and queue config updates if necessary.  At this point, they
+are "active" but not neccessarily "durable".  To be durable, any
+config update transactions that resulted from the table notification
+must also be durable.
+
+
+#----------------------------------------------------------------------------
+# Scanning
+#----------------------------------------------------------------------------
+
+When scanning, we create a TableScanner over a table.  The table
+scanner tracks the current tablet (row range) in the scan and the
+chain of fragments used from that tablet.  It provides a merged view
+of the fragment chain and tracks the necessary state to perform the
+merge in increments.  Maintenance threads may replace or remove
+fragments while the scan is in progress.  The scanner registers
+interest in these kinds of events and receives asynchronous
+notifications when they occur.
+
+When a scanner is notified that fragments are being removed, it should
+give up its references to them before returning from the notification
+call.  The next incremental read call can rebuild the merge on the
+new chain.
+
+Scanners wishing to provide snapshot isolation on reads can attempt to
+buffer cells needed from the current fragment chain.  The buffer
+should be placed in a LRU cache shared with all other scanners.
+Future reads may pull from the buffer, but the scanner should be able
+to deal with the buffer getting evicted.
+
+Scanners can also register for notification of fragments being added
+to their current row range.  This will allow scanners that want to
+read the absolute latest data to keep up to date.
+
+(What scan transaction should the scanner return, and how does it get
+that number?)
+
+Tablets may split during a scan.  This isn't a problem for the
+scanner, since it doesn't address tablets explicitly: it only cares
+about its current row range and the events on it.
+
+A tablet may be unloaded during a scan.  This should eventually cause
+the scanner to throw a TabletNotLoadedError.
+
+
+Table:
+
+    Get the ordered chain of fragments to merge for the first part of
+    the given predicate.  Returns true if such a chain is available
+    (may be false if the tablet corresponding to the first part of the
+    range is not loaded).  When the tablet is available, the fragment
+    chain is returned in proper merge order.  The row interval over
+    which the chain is valid is also returned.
+
+    bool getFirstFragmentChain(
+       ScanPredicate predicate,
+       out vector<Fragment const*> fragmentChain,
+       out Interval<string> rows) const;
+
+Scanner:
+
+   Table * table;
+   FragMerge currentMerge;
+   ScanPredicate pred;
+
+   getNext()
+   {
+      if(
+   }   
+
+#----------------------------------------------------------------------------
+# Fragments
+#----------------------------------------------------------------------------
+
+A fragment is an interface to a sorted, unique, immutable sequence of
+cells within a single locality group/table.  Some fragments are backed
+by a file on disk.  Some exist only in-memory (though they can be
+reconstructed by replaying a log file).
+
+Each fragment has an in-memory transaction number associated with it
+representing the maximum possible transaction in the fragment.
+Externally loaded fragments get the current transaction at load time.
+Internally created fragments get the maximum transaction number from
+the parts used to build it.
+
+
+#----------------------------------------------------------------------------
+# Configuration layout
+#----------------------------------------------------------------------------
+
+We need to store some information about each tablet:
+
+  first-row: Lower bound for rows in the tablet
+
+  last-row: Upper bound for rows in the tablet
+
+  location: IP and port of current server (or last known server)
+
+  log: Log directory of current server (or last known server)
+  
+  fragments:(group-name)
+     Ordered list of serialized disk fragments in the given locality group
+
+
+We also want some information for each table.
+
+  schema:(group-name)
+     Included column families (space-sep word list or *)
+     Automatic deletion policy (max-history=K and/or max-age=T)
+     Compression settings (none, lzo, etc)
+     Disk block size (64k)
+     In-memory setting (false/true)
+
+
+Most tablets (all but one) will store their config information in a
+parent meta-table.  The root meta tablet cannot store into a table so
+it stores into a global file.
+
+In current KDI, there is only one meta table (META).  It has only one
+tablet that can never split, and it is the root.
+
+As things grow, it may make sense to move to a two level approach.
+We'd have two meta tables.  The first, META0, would have the single,
+indivisible root tablet like the current implementation.  The second,
+META1, would be a normal table that stores its config information in
+META0.  Every other table would store its config information in META1.
+
+
+The normal (non-root) tablets store their tablet configs their parent
+meta table as follows:
+
+  row="(table) (last-row)"    -- Tablets with a finite upper bound
+  row="(table)!"              -- Tablets with infinite upper bound
+
+  c="first:", t=(rev), v="(first-row)"
+     -- should match previous tablet's last-row
+     -- empty string for first tablet
+
+  c="location:", t=(rev), v="(ip) (port)"
+
+  c="log:", t=(rev), v="(log directory)"
+
+  c="fragments:(group)", t=(rev), v="(f1) (f2) ..."
+  
+The per-table config information is stored in the same parent meta
+table:
+
+  row="(table)"
+
+  c="schema:(group):columns", t=(rev), v="(c1) (c2) ..."
+
+  c="schema:(group):purge", t=(rev), v="(deletion-policy)"
+     -- policies:
+       -- "max-history=(num-revisions)"
+       -- "max-age=(microseconds)"
+       -- "and" / "or" combination (e.g. "max-age=T and max-history=K")
+
+  c="schema:(group):compression", t=(rev), v="(compressor-name)"
+
+  c="schema:(group):blocksize", t=(rev), v="(size-in-bytes)"
+
+  c="schema:(group):in-memory", t=(rev), v="true|false"
+
+
+The root table(t) has to store the same information in one or more
+global files.  However it all goes down, the "log:" and "fragments:"
+columns should be updated in a synchronized way, which means they
+should probably be in the same file.
+
+
+#----------------------------------------------------------------------------
+# More on Table Schemas
+#----------------------------------------------------------------------------
+
+Updating schemas...
+
+An external process will update the "schema:(name)" columns for the
+last tablet in the table.  Then we can either: 1) signal that the
+tablet servers should reload the config, or 2) wait for the tablet
+servers to discover the new columns in their own time.
+
+When a tablet server discovers a new schema, it re-partitions all the
+fragments it has for each tablet in the table into the new groups.
+Fragments can be shared among multiple groups.  For example, suppose
+we have the following schema change:
+
+  Old schema:
+     schema:   columns="*" ...
+     schema:A  columns="X Y" ...
+     schema:B  columns="Z" ...
+
+  New schema:
+     schema:   columns="*" ...
+     schema:A  columns="X" ...
+     schema:B  columns="Y" ...
+
+If we have a fragment that was serialized under group A in the old
+schema, it may be shared between groups A and B under the new schema.
+
+Each disk fragment should contain a compact list of all column
+families contained within.  The server will use this information in
+assigning it to a group.
+
+As compactions take place over time, the file structure on disk will
+gradually transition to reflect the schema's partitioning structure.
+
+
+Column family assignment...
+
+Each group in the schema either as a set of column families or
+wildcard meaning "every family not in another group".
+
+There can be at most one wildcard group in a schema, but there can be
+zero.  This restricts the column families in the table to a fixed set.
+Tablet servers should reject mutations on columns not contained in the
+set.
+
+When adding columns to the schema, it may take time for the schema
+changes to propagate to all tablet servers.  If clients need a known
+cut-over point, they may need to use the active signaling method
+mentioned above (1).
+
+When removing columns from a schema, servers will stop serving the
+columns and the old column data will eventually be filtered out by
+compactions.
+
+Updates to the schema columns should always be performed using row
+transactions and read using row isolation semantics to ensure
+consistency.
+
+
+Schema validity...
+
+Each column family can be in at most one group.  This implies there
+can be at most one group containing a family wildcard.  If a column
+could map to more than one group, the schema is invalid.
+
+In the event that a server sees an invalid schema during a periodic
+check, it should ignore the update and continue using the last valid
+schema.  If the server finds an invalid schema when loading a tablet,
+it should abort the load and return an error to the load RPC caller.
+If the server sees an invalid schema during an explicit reload call,
+it should return an error to the RPC caller and continue using the
+last valid schema.
+
+
+In-memory groups...
+
+A group can be marked for residence in memory.  Each tablet server has
+a fixed-size cache for fragment blocks.  When the server loads groups
+with the in-memory attribute set, it will try to keep all of the
+fragment blocks for that group in the cache at all times, allowing
+scans to proceed without needing to access the disk.
+
+In the event that the server is asked to load more fragment data than
+it can hold in the cache, it will simply load as much as it can and
+operate an an LRU fashion after that.
+
+When schema changes move column families around, we can wind up with
+fragments shared between multiple groups.  Cache priority is as
+follows:
+
+   1) All fragment columns in the same in-memory group
+   2) All fragment columns in two or more in-memory groups
+   3) Some fragment columns in at least one in-memory group
+   4) No fragment columns in an in-memory group
+
+Priorities 1-3 are all eligible for preloading.  Priority 4 will only
+be loaded on-demand.
+
+In general, the servers will do what they can to optimize performance,
+but it may take time to rearrage data for efficient in-memory service
+after a schema change.
+
+
+#----------------------------------------------------------------------------
+# Loading a tablet
+#----------------------------------------------------------------------------
+
+As soon as a tablet load starts, a placeholder tablet should be
+created and registered in a loading state.  This tablet will not serve
+client requests, but requests may be deferred until the tablet
+completes loading (or fails to load).
+
+When loading a tablet, the tablet server should read the tablet's
+config information from its meta table.  It should also get a copy of
+the table schema if it doesn't have one or the cached copy is old.
+
+A tablet should only be served by one tablet server at a time.  Long
+term, we'll probably want this to be arbitrated by an external
+synchronization process.  As a sanity check, we could have the server
+try to read the tablet from the host at "location:", if any.  If that
+works, then some other server currently has an active copy of the
+tablet.  Bad news!  Abort!
+
+All fragments from all "fragments:" columns should be loaded up and
+put in their appropriate access groups.
+
+If the tablet has a "log:" column, then it wasn't unloaded cleanly.
+Maybe its old server crashed.  We need to examine the log directory
+and replay all logs that affect the tablet.  The logs must be replayed
+in proper order if there is more than one.  It doesn't matter if we
+replay more than we need to.
+
+There are a few ways we could do the replay:
+
+  1) Read the log(s), filter by tablet(s) to be loaded, and replay
+     into our own log.  This reuses some of the normal mutation path,
+     but it may involve special handling.  For example, if the log
+     fills up, we'll need to serialize and update our tablets.  We
+     don't want the loading tablet to perform any config updates until
+     it's completely loaded and we can switch it over.
+
+  2) Do what we're currently doing.  Load each log into memory, sort
+     it, and write out a serialized fragment.  Use the new fragment
+     instead.  This is simple, but it has potential scaling problems
+     if we want to increase the log size.  Actually, I guess it's easy
+     to write multiple fragments.  But it's still a rarely-used code
+     path waiting to break.
+
+  3) Perform a coordinated log rewrite after a server crash, like
+     BigTable.  This would prevent potential overload of too many
+     clients trying to read the log at once, but at our current scale
+     we don't have this problem.  This is something to consider for
+     the future.
+
+After log replay, we can update the "log:" and "fragments:" columns
+for the tablet to point to this server with the latest config.  Once
+these changes sync, we can make the tablet writable and update the
+"location:" column.  We can include the "location:" update in the
+commit, so long as clients are willing to retry us if they read the
+change and we haven't yet gotten the sync confirmation.
+
+
+#----------------------------------------------------------------------------
+# Unloading a tablet
+#----------------------------------------------------------------------------
+
+Stop accepting writes for the tablet.
+
+Serialize anything we have for the tablet to a new fragment.
+
+Stop accepting reads.
+
+Update config with new "fragments:" and remove "log:" and "location:" columns.
+
+Drop tablet.

@@ -67,6 +67,22 @@ struct InequalityParser
     std::ptrdiff_t
     operator()(ScannerT const & scan, result_t & result) const
     {
+        // This first assignment is unnecessary, but it seems to make
+        // some completely inscrutable spam in GCC 4.3 go away.  The
+        // spam is probably a bug in GCC -- Spirit is funky stuff.
+
+        result = OP_LT;
+
+        /* For posterity, here is the (complete) diagnostic emitted by
+         * GCC 4.3.0 when compiling this file without the above
+         * assignment:
+
+/usr/include/boost/spirit/utility/functor_parser.hpp: In member function 'typename boost::spirit::parser_result<boost::spirit::action<ParserT, ActionT>, ScannerT>::type boost::spirit::action<ParserT, ActionT>::parse(const ScannerT&) const [with ScannerT = boost::spirit::scanner<const char*, boost::spirit::scanner_policies<boost::spirit::skipper_iteration_policy<boost::spirit::iteration_policy>, boost::spirit::match_policy, boost::spirit::action_policy> >, ParserT = boost::spirit::functor_parser<<unnamed>::InequalityParser>, ActionT = boost::spirit::ref_value_actor<<unnamed>::OperatorType, boost::spirit::assign_action>]':
+/usr/include/boost/spirit/utility/functor_parser.hpp:55: note: 'result' was declared here
+
+         * (This super-informative message brought to you by GCC)
+         */
+
         return
             (
                 str_p("<=")  [ assign_a(result, OP_LTE) ] |

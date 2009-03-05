@@ -503,7 +503,7 @@ namespace warp
     /// strings are ordered before non-numeric strings.
     struct PseudoNumericLt
     {
-        bool operator()(std::string const & a, std::string const & b)
+        bool operator()(std::string const & a, std::string const & b) const
         {
             char const * a0 = a.c_str();
             char const * a1 = a0 + a.size();
