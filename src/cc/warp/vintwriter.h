@@ -31,6 +31,34 @@
 namespace warp
 {
     class VIntWriter;
+
+    /// Put a variable-length integer into a Buffer.  Return true if
+    /// there was enough room.
+    template <class Int>
+    bool putVInt(Buffer & buf, Int x)
+    {
+        uint64_t const  LOW_MASK(0x7f);
+        char const      HIGH_BIT(0x80);
+
+        char * p = buf.position();
+        char * pEnd = buf.limit();
+        uint64_t i(x);
+        while(p != pEnd)
+        {
+            if(i & ~LOW_MASK)
+            {
+                *p++ = char(i & LOW_MASK) | HIGH_BIT;
+                i >>= 7;
+            }
+            else
+            {
+                *p++ = char(i);
+                buf.position(p);
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 //----------------------------------------------------------------------------
