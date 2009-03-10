@@ -22,6 +22,7 @@
 #define KDI_RPC_PACKEDCELLREADER_H
 
 #include <kdi/strref.h>
+#include <kdi/CellKey.h>
 #include <warp/vint.h>
 #include <warp/adler.h>
 #include <warp/pack.h>
@@ -48,6 +49,13 @@ class kdi::rpc::PackedCellReaderV0
     : private boost::noncopyable
 {
 public:
+    PackedCellReaderV0() : cellBase(0) {}
+
+    explicit PackedCellReaderV0(strref_t packed)
+    {
+        reset(packed);
+    }
+
     /// Reset the reader with the given cell buffer.  The reader will
     /// not copy the buffer, so the external memory range must remain
     /// valid until the next call to reset().
@@ -172,6 +180,20 @@ public:
         //cerr << "  dt : " << deltaTime << endl;
 
         return true;
+    }
+
+    void getKey(CellKeyRef & key) const
+    {
+        key.setRow(getRow());
+        key.setColumn(getColumn());
+        key.setTimestamp(getTimestamp());
+    }
+
+    CellKeyRef getKey() const
+    {
+        CellKeyRef r;
+        getKey(r);
+        return r;
     }
 
     /// Get the row of the current cell.  Only valid if the last call
