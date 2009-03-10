@@ -1,15 +1,18 @@
-/*
- * Public domain implementation of Adler-32 checksum from http://en.wikipedia.org/wiki/Adler-32
- */
+//---------------------------------------------------------- -*- Mode: C++ -*-
+// Public domain implementation of Adler-32 checksum from
+// http://en.wikipedia.org/wiki/Adler-32
+//----------------------------------------------------------------------------
 
 #include <warp/adler.h>
 
 #define MOD_ADLER 65521
  
-uint32_t warp::adler(const uint8_t *data, size_t len) /* data: Pointer to the data to be summed; len is in bytes */
+/* data: Pointer to the data to be summed; len is in bytes */
+uint32_t warp::adler(void const * data_, size_t len)
 {
+    uint8_t const * data = reinterpret_cast<uint8_t const *>(data_);
     uint32_t a = 1, b = 0;
-       
+
     while (len > 0) 
     {
         size_t tlen = len > 5552 ? 5552 : len;
