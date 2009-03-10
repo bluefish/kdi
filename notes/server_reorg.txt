@@ -851,3 +851,31 @@ Stop accepting reads.
 Update config with new "fragments:" and remove "log:" and "location:" columns.
 
 Drop tablet.
+
+
+#----------------------------------------------------------------------------
+# Packed Formats
+#----------------------------------------------------------------------------
+
+Line format:
+
+  - Untrusted: should be able to accept any random data without crashing
+  - Fast and compact
+  - Ability to build in-place
+
+Log format:
+
+  - More trusted than line format.  Rely on checksum for corruption
+    detection but don't worry about malicious bits.
+
+Disk format:
+
+  - Efficient storage
+  - Pluggable compression
+  - Fast row seek
+
+
+struct LineFormat
+{
+    
+};
