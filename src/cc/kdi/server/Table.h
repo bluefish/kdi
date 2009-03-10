@@ -1,12 +1,21 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// $Id: kdi/server/Table.h $
+// Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
+// Created 2009-02-27
 //
-// Created 2009/02/27
+// This file is part of KDI.
 //
-// Copyright 2009 Kosmix Corporation.  All rights reserved.
-// Kosmix PROPRIETARY and CONFIDENTIAL.
+// KDI is free software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or any later version.
 //
-// 
+// KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
 #ifndef KDI_SERVER_TABLE_H
@@ -45,14 +54,17 @@ public:
     boost::mutex tableMutex;
 
 public:
-    /// Make sure that all of the given rows are currently loaded in
-    /// this Table and their max commit number is less than or equal
-    /// to maxTxn.
-    void verifyCommitApplies(std::auto_ptr<FragmentRowIterator> rows,
+    /// Make sure that the tablets containing all the given rows are
+    /// currently loaded in the table.
+    void verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const;
+    
+    /// Make sure that all of the given rows have a commit number less
+    /// than or equal to maxTxn.
+    void verifyCommitApplies(std::vector<warp::StringRange> const & rows,
                              int64_t maxTxn) const;
 
     /// Update the committed transaction number for the given rows.
-    void updateRowCommits(std::auto_ptr<FragmentRowIterator> rows,
+    void updateRowCommits(std::vector<warp::StringRange> const & rows,
                           int64_t commitTxn);
 
     void addFragmentListener(FragmentEventListener * listener);
@@ -60,6 +72,8 @@ public:
 
     void addTabletListener(TabletEventListener * listener);
     void removeTabletListener(TabletEventListener * listener);
+
+    void triggerNewFragmentEvent(Fragment const * frag);
 
     /// Get the last transaction committed to this Table.
     int64_t getLastCommitTxn() const;

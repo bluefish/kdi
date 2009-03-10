@@ -1,17 +1,28 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// $Id: kdi/server/TabletServer.h $
+// Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
+// Created 2009-02-25
 //
-// Created 2009/02/25
+// This file is part of KDI.
 //
-// Copyright 2009 Kosmix Corporation.  All rights reserved.
-// Kosmix PROPRIETARY and CONFIDENTIAL.
+// KDI is free software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or any later version.
 //
-// 
+// KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
 #ifndef KDI_SERVER_TABLETSERVER_H
 #define KDI_SERVER_TABLETSERVER_H
 
+#include <warp/syncqueue.h>
+#include <warp/util.h>
 #include <kdi/strref.h>
 #include <boost/shared_ptr.hpp>
 #include <boost/noncopyable.hpp>
@@ -29,6 +40,9 @@ namespace server {
     class Table;
     class Fragment;
     typedef boost::shared_ptr<Fragment const> FragmentCPtr;
+
+    class CellBuffer;
+    typedef boost::shared_ptr<CellBuffer const> CellBufferCPtr;
 
 } // namespace server
 } // namespace kdi
@@ -78,24 +92,58 @@ public:
     Table * tryGetTable(strref_t tableName) const;
 
 private:
-    FragmentCPtr decodeCells(strref_t packedCells) const;
-
     Table * getTable(strref_t tableName) const;
 
     int64_t getLastCommitTxn() const;
     int64_t assignCommitTxn();
 
     int64_t getLastDurableTxn() const;
+    void setLastDurableTxn(int64_t txn);
 
     size_t assignScannerId();
-
-    void queueCommit(FragmentCPtr const & fragment, int64_t commitTxn);
 
     void deferUntilDurable(ApplyCb * cb, int64_t commitTxn);
     void deferUntilDurable(SyncCb * cb, int64_t waitForTxn);
 
+    void logLoop();
+
+    void addMemFragment(strref_t tableName, Fragment const * fragment);
+
+    void scheduleSerialization();
+    bool serializationPending;
+
 private:
     std::tr1::unordered_map<std::string, Table *> tableMap;
+
+    struct Commit
+    {
+        std::string tableName;
+        int64_t txn;
+        CellBufferCPtr cells;
+        
+        bool operator<(Commit const & o) const
+        {
+            return warp::order(
+                tableName, o.tableName,
+                txn, o.txn);
+        }
+
+        struct TableNeq
+        {
+            std::string const & name;
+            TableNeq(std::string const & name) : name(name) {}
+
+            bool operator()(Commit const & c) const
+            {
+                return c.tableName != name;
+            }
+        };
+    };
+
+    warp::SyncQueue<Commit> logQueue;
+
+    size_t commitBufferSz;
+    size_t activeBufferSz;
 };
 
 #endif // KDI_SERVER_TABLETSERVER_H
