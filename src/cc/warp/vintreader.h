@@ -24,7 +24,6 @@
 
 #include <warp/file.h>
 #include <warp/buffer.h>
-#include <warp/vint.h>
 #include <boost/utility.hpp>
 
 namespace warp

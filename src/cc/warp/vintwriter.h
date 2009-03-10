@@ -24,7 +24,6 @@
 
 #include <warp/file.h>
 #include <warp/buffer.h>
-#include <warp/vint.h>
 #include <ex/exception.h>
 #include <boost/utility.hpp>
 
