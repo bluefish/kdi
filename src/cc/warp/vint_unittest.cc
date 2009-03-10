@@ -40,6 +40,9 @@ namespace
     };
 }
 
+//----------------------------------------------------------------------------
+// unsigned vint64
+//----------------------------------------------------------------------------
 BOOST_AUTO_UNIT_TEST(test_v64)
 {
     VIntTest<uint64_t> const tests[] = {
@@ -87,8 +90,9 @@ BOOST_AUTO_UNIT_TEST(test_v64)
     };
     size_t const N = sizeof(tests) / sizeof(*tests);
 
-    char buf[9];
+    char buf[MAX_VINT64_SIZE];
     uint64_t outputNumber;
+    uint64_t outputNumber2;
 
     for(size_t i = 0; i < N; ++i)
     {
@@ -96,9 +100,14 @@ BOOST_AUTO_UNIT_TEST(test_v64)
         BOOST_CHECK_EQUAL(encode(tests[i].inputNumber, buf), tests[i].encodedSize);
         BOOST_CHECK_EQUAL(decode(buf, outputNumber), tests[i].encodedSize);
         BOOST_CHECK_EQUAL(tests[i].inputNumber, outputNumber);
+        BOOST_CHECK_EQUAL(decodeSafe(buf, tests[i].encodedSize, outputNumber2), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(tests[i].inputNumber, outputNumber2);
     }
 }
 
+//----------------------------------------------------------------------------
+// unsigned vint32
+//----------------------------------------------------------------------------
 BOOST_AUTO_UNIT_TEST(test_v32)
 {
     VIntTest<uint32_t> const tests[] = {
@@ -126,8 +135,9 @@ BOOST_AUTO_UNIT_TEST(test_v32)
     };
     size_t const N = sizeof(tests) / sizeof(*tests);
 
-    char buf[5];
+    char buf[MAX_VINT32_SIZE];
     uint32_t outputNumber;
+    uint32_t outputNumber2;
 
     for(size_t i = 0; i < N; ++i)
     {
@@ -135,9 +145,143 @@ BOOST_AUTO_UNIT_TEST(test_v32)
         BOOST_CHECK_EQUAL(encode(tests[i].inputNumber, buf), tests[i].encodedSize);
         BOOST_CHECK_EQUAL(decode(buf, outputNumber), tests[i].encodedSize);
         BOOST_CHECK_EQUAL(tests[i].inputNumber, outputNumber);
+        BOOST_CHECK_EQUAL(decodeSafe(buf, tests[i].encodedSize, outputNumber2), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(tests[i].inputNumber, outputNumber2);
     }
 }
 
+//----------------------------------------------------------------------------
+// signed vint64
+//----------------------------------------------------------------------------
+BOOST_AUTO_UNIT_TEST(test_v64_signed)
+{
+    VIntTest<int64_t> const tests[] = {
+        {  0, 1 },                         //  0
+        {  1, 1 },                         //  1
+        { -1, 1 },                         // -1
+           
+        {  64, 2 },                        //  2^6
+        {  8192, 3 },                      //  2^13
+        {  1048576, 4 },                   //  2^20
+        {  134217728, 5 },                 //  2^27
+        {  17179869184, 6 },               //  2^34
+        {  2199023255552, 7 },             //  2^41
+        {  281474976710656, 8 },           //  2^48
+        {  36028797018963968, 9 },         //  2^55
+        {  4611686018427387904, 9 },       //  2^62
+           
+        {  63, 1 },                        //  2^6-1
+        {  8191, 2 },                      //  2^13-1
+        {  1048575, 3 },                   //  2^20-1
+        {  134217727, 4 },                 //  2^27-1
+        {  17179869183, 5 },               //  2^34-1
+        {  2199023255551, 6 },             //  2^41-1
+        {  281474976710655, 7 },           //  2^48-1
+        {  36028797018963967, 8 },         //  2^55-1
+        {  4611686018427387903, 9 },       //  2^62-1
+
+        { -64, 1 },                        // -2^6
+        { -8192, 2 },                      // -2^13
+        { -1048576, 3 },                   // -2^20
+        { -134217728, 4 },                 // -2^27
+        { -17179869184, 5 },               // -2^34
+        { -2199023255552, 6 },             // -2^41
+        { -281474976710656, 7 },           // -2^48
+        { -36028797018963968, 8 },         // -2^55
+        { -4611686018427387904, 9 },       // -2^62
+
+        {  9223372036854775807, 9 },       //  2^63-1
+        { -9223372036854775807-1, 9 },     // -2^63
+
+        {  1000, 2 },                      //  10^3
+        {  1000000, 3 },                   //  10^6
+        {  1000000000, 5 },                //  10^9
+        {  1000000000000, 6 },             //  10^12
+        {  1000000000000000, 8 },          //  10^15
+        {  1000000000000000000, 9 },       //  10^18
+
+        { -1000, 2 },                      // -10^3
+        { -1000000, 3 },                   // -10^6
+        { -1000000000, 5 },                // -10^9
+        { -1000000000000, 6 },             // -10^12
+        { -1000000000000000, 8 },          // -10^15
+        { -1000000000000000000, 9 },       // -10^18
+    };
+    size_t const N = sizeof(tests) / sizeof(*tests);
+
+    char buf[MAX_VINT64_SIZE];
+    int64_t outputNumber;
+    int64_t outputNumber2;
+
+    for(size_t i = 0; i < N; ++i)
+    {
+        BOOST_CHECK_EQUAL(zigzagDecode(zigzagEncode(tests[i].inputNumber)), tests[i].inputNumber);
+        BOOST_CHECK_EQUAL(getSignedEncodedLength(tests[i].inputNumber), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(encodeSigned(tests[i].inputNumber, buf), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(decodeSigned(buf, outputNumber), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(tests[i].inputNumber, outputNumber);
+        BOOST_CHECK_EQUAL(decodeSignedSafe(buf, tests[i].encodedSize, outputNumber2), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(tests[i].inputNumber, outputNumber2);
+    }
+}
+
+//----------------------------------------------------------------------------
+// signed vint32
+//----------------------------------------------------------------------------
+BOOST_AUTO_UNIT_TEST(test_v32_signed)
+{
+    VIntTest<int32_t> const tests[] = {
+        {  0, 1 },                         //  0
+        {  1, 1 },                         //  1
+        { -1, 1 },                         // -1
+           
+        {  64, 2 },                        //  2^6
+        {  8192, 3 },                      //  2^13
+        {  1048576, 4 },                   //  2^20
+        {  134217728, 5 },                 //  2^27
+           
+        {  63, 1 },                        //  2^6-1
+        {  8191, 2 },                      //  2^13-1
+        {  1048575, 3 },                   //  2^20-1
+        {  134217727, 4 },                 //  2^27-1
+
+        { -64, 1 },                        // -2^6
+        { -8192, 2 },                      // -2^13
+        { -1048576, 3 },                   // -2^20
+        { -134217728, 4 },                 // -2^27
+
+        {  2147483647, 5 },                //  2^31-1
+        { -2147483648, 5 },                // -2^31
+
+        {  1000, 2 },                      //  10^3
+        {  1000000, 3 },                   //  10^6
+        {  1000000000, 5 },                //  10^9
+
+        { -1000, 2 },                      // -10^3
+        { -1000000, 3 },                   // -10^6
+        { -1000000000, 5 },                // -10^9
+    };
+    size_t const N = sizeof(tests) / sizeof(*tests);
+
+    char buf[MAX_VINT64_SIZE];
+    int32_t outputNumber;
+    int32_t outputNumber2;
+
+    for(size_t i = 0; i < N; ++i)
+    {
+        BOOST_CHECK_EQUAL(zigzagDecode(zigzagEncode(tests[i].inputNumber)), tests[i].inputNumber);
+        BOOST_CHECK_EQUAL(getSignedEncodedLength(tests[i].inputNumber), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(encodeSigned(tests[i].inputNumber, buf), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(decodeSigned(buf, outputNumber), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(tests[i].inputNumber, outputNumber);
+        BOOST_CHECK_EQUAL(decodeSignedSafe(buf, tests[i].encodedSize, outputNumber2), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(tests[i].inputNumber, outputNumber2);
+    }
+}
+
+//----------------------------------------------------------------------------
+// unsigned quad vint32
+//----------------------------------------------------------------------------
 BOOST_AUTO_UNIT_TEST(test_vquad)
 {
     VQuadTest const tests[] = {
@@ -153,8 +297,9 @@ BOOST_AUTO_UNIT_TEST(test_vquad)
     };
     size_t const N = sizeof(tests) / sizeof(*tests);
 
-    char buf[17];
+    char buf[MAX_QUAD_SIZE];
     uint32_t outputQuad[4];
+    uint32_t outputQuad2[4];
 
     for(size_t i = 0; i < N; ++i)
     {
@@ -165,8 +310,12 @@ BOOST_AUTO_UNIT_TEST(test_vquad)
 
         BOOST_CHECK_EQUAL(encodeQuad(tests[i].inputQuad, buf), tests[i].encodedSize);
         BOOST_CHECK_EQUAL(decodeQuad(buf, outputQuad), tests[i].encodedSize);
+        BOOST_CHECK_EQUAL(decodeQuadSafe(buf, tests[i].encodedSize, outputQuad2), tests[i].encodedSize);
 
         for(size_t j = 0; j < 4; ++j)
+        {
             BOOST_CHECK_EQUAL(tests[i].inputQuad[j], outputQuad[j]);
+            BOOST_CHECK_EQUAL(tests[i].inputQuad[j], outputQuad2[j]);
+        }
     }
 }

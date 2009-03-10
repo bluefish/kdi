@@ -24,10 +24,21 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 namespace warp {
 namespace vint {
 
+    enum {
+        MAX_VINT32_SIZE = 5,
+        MAX_VINT64_SIZE = 9,
+        MAX_VINT_SIZE = MAX_VINT64_SIZE,
+        MAX_QUAD_SIZE = 17,
+    };
+
+    //------------------------------------------------------------------------
+    // unsigned vint64
+    //------------------------------------------------------------------------
     inline size_t getEncodedLength(uint64_t x)
     {
         if(x < 128u) return 1;
@@ -39,67 +50,6 @@ namespace vint {
         if(x < 562949953421312u) return 7;
         if(x < 72057594037927936u) return 8;
         return 9;
-    }
-
-    inline size_t getEncodedLength(uint32_t x)
-    {
-        if(x < 128u) return 1;
-        if(x < 16384u) return 2;
-        if(x < 2097152u) return 3;
-        if(x < 268435456u) return 4;
-        return 5;
-    }
-
-    inline size_t decode(void const * src, uint64_t & x)
-    {
-        uint8_t const * p = static_cast<uint8_t const *>(src);
-            
-        x = p[0] & 0x7f;
-        if((p[0] & 0x80) == 0) return 1;
-
-        x |= uint64_t(p[1] & 0x7f) << 7;
-        if((p[1] & 0x80) == 0) return 2;
-
-        x |= uint64_t(p[2] & 0x7f) << 14;
-        if((p[2] & 0x80) == 0) return 3;
-
-        x |= uint64_t(p[3] & 0x7f) << 21;
-        if((p[3] & 0x80) == 0) return 4;
-
-        x |= uint64_t(p[4] & 0x7f) << 28;
-        if((p[4] & 0x80) == 0) return 5;
-
-        x |= uint64_t(p[5] & 0x7f) << 35;
-        if((p[5] & 0x80) == 0) return 6;
-
-        x |= uint64_t(p[6] & 0x7f) << 42;
-        if((p[6] & 0x80) == 0) return 7;
-
-        x |= uint64_t(p[7] & 0x7f) << 49;
-        if((p[7] & 0x80) == 0) return 8;
-
-        x |= uint64_t(p[8]) << 56;
-        return 9;
-    }
-
-    inline size_t decode(void const * src, uint32_t & x)
-    {
-        uint8_t const * p = static_cast<uint8_t const *>(src);
-            
-        x = p[0] & 0x7f;
-        if((p[0] & 0x80) == 0) return 1;
-
-        x |= uint32_t(p[1] & 0x7f) << 7;
-        if((p[1] & 0x80) == 0) return 2;
-
-        x |= uint32_t(p[2] & 0x7f) << 14;
-        if((p[2] & 0x80) == 0) return 3;
-
-        x |= uint32_t(p[3] & 0x7f) << 21;
-        if((p[3] & 0x80) == 0) return 4;
-
-        x |= uint32_t(p[4] & 0x0f) << 28;
-        return 5;
     }
 
     inline size_t encode(uint64_t x, void * dst)
@@ -158,6 +108,63 @@ namespace vint {
         return 9;
     }
 
+    inline size_t decode(void const * src, uint64_t & x)
+    {
+        uint8_t const * p = static_cast<uint8_t const *>(src);
+            
+        x = p[0] & 0x7f;
+        if((p[0] & 0x80) == 0) return 1;
+
+        x |= uint64_t(p[1] & 0x7f) << 7;
+        if((p[1] & 0x80) == 0) return 2;
+
+        x |= uint64_t(p[2] & 0x7f) << 14;
+        if((p[2] & 0x80) == 0) return 3;
+
+        x |= uint64_t(p[3] & 0x7f) << 21;
+        if((p[3] & 0x80) == 0) return 4;
+
+        x |= uint64_t(p[4] & 0x7f) << 28;
+        if((p[4] & 0x80) == 0) return 5;
+
+        x |= uint64_t(p[5] & 0x7f) << 35;
+        if((p[5] & 0x80) == 0) return 6;
+
+        x |= uint64_t(p[6] & 0x7f) << 42;
+        if((p[6] & 0x80) == 0) return 7;
+
+        x |= uint64_t(p[7] & 0x7f) << 49;
+        if((p[7] & 0x80) == 0) return 8;
+
+        x |= uint64_t(p[8]) << 56;
+        return 9;
+    }
+
+    inline size_t decodeSafe(void const * src, size_t len, uint64_t & x)
+    {
+        char buf[MAX_VINT_SIZE];
+        if(len < MAX_VINT_SIZE)
+        {
+            memcpy(buf, src, len);
+            memset(buf+len, 0, MAX_VINT_SIZE - len);
+            src = buf;
+        }
+        size_t sz = decode(src, x);
+        return sz > len ? 0 : sz;
+    }
+
+    //------------------------------------------------------------------------
+    // unsigned vint32
+    //------------------------------------------------------------------------
+    inline size_t getEncodedLength(uint32_t x)
+    {
+        if(x < 128u) return 1;
+        if(x < 16384u) return 2;
+        if(x < 2097152u) return 3;
+        if(x < 268435456u) return 4;
+        return 5;
+    }
+
     inline size_t encode(uint32_t x, void * dst)
     {
         uint8_t * p = static_cast<uint8_t *>(dst);
@@ -190,49 +197,141 @@ namespace vint {
         return 5;
     }
 
+    inline size_t decode(void const * src, uint32_t & x)
+    {
+        uint8_t const * p = static_cast<uint8_t const *>(src);
+            
+        x = p[0] & 0x7f;
+        if((p[0] & 0x80) == 0) return 1;
+
+        x |= uint32_t(p[1] & 0x7f) << 7;
+        if((p[1] & 0x80) == 0) return 2;
+
+        x |= uint32_t(p[2] & 0x7f) << 14;
+        if((p[2] & 0x80) == 0) return 3;
+
+        x |= uint32_t(p[3] & 0x7f) << 21;
+        if((p[3] & 0x80) == 0) return 4;
+
+        x |= uint32_t(p[4] & 0x0f) << 28;
+        return 5;
+    }
+
+    inline size_t decodeSafe(void const * src, size_t len, uint32_t & x)
+    {
+        char buf[MAX_VINT_SIZE];
+        if(len < MAX_VINT_SIZE)
+        {
+            memcpy(buf, src, len);
+            memset(buf+len, 0, MAX_VINT_SIZE - len);
+            src = buf;
+        }
+        uint64_t xx;
+        size_t sz = decode(src, xx);
+        if((xx & 0xffffffff00000000u) || sz > len)
+            return 0;
+        x = uint32_t(xx);
+        return sz;
+    }
+
+    //------------------------------------------------------------------------
+    // signed vint64
+    //------------------------------------------------------------------------
+    inline uint64_t zigzagEncode(int64_t x)
+    {
+        return uint64_t((x << 1) ^ (x >> 63));
+    }
+
+    inline int64_t zigzagDecode(uint64_t x)
+    {
+        return int64_t((x >> 1) ^ (int64_t(x << 63) >> 63));
+        //return int64_t((x >> 1) ^ ~((x & 1) - 1));
+    }
+
+    inline size_t getSignedEncodedLength(int64_t x)
+    {
+        return getEncodedLength(zigzagEncode(x));
+    }
+
+    inline size_t encodeSigned(int64_t x, void * dst)
+    {
+        return encode(zigzagEncode(x), dst);
+    }
+
+    inline size_t decodeSigned(void const * src, int64_t & x)
+    {
+        uint64_t y;
+        size_t sz = decode(src, y);
+        x = zigzagDecode(y);
+        return sz;
+    }
+
+    inline size_t decodeSignedSafe(void const * src, size_t len, int64_t & x)
+    {
+        uint64_t y;
+        if(size_t sz = decodeSafe(src, len, y))
+        {
+            x = zigzagDecode(y);
+            return sz;
+        }
+        else
+            return 0;
+    }
+
+    //------------------------------------------------------------------------
+    // signed vint32
+    //------------------------------------------------------------------------
+    inline uint32_t zigzagEncode(int32_t x)
+    {
+        return uint32_t((x << 1) ^ (x >> 31));
+    }
+
+    inline int32_t zigzagDecode(uint32_t x)
+    {
+        return int64_t((x >> 1) ^ (int32_t(x << 31) >> 31));
+        //return int32_t((x >> 1) ^ ~((x & 1) - 1));
+    }
+
+    inline size_t getSignedEncodedLength(int32_t x)
+    {
+        return getEncodedLength(zigzagEncode(x));
+    }
+
+    inline size_t encodeSigned(int32_t x, void * dst)
+    {
+        return encode(zigzagEncode(x), dst);
+    }
+
+    inline size_t decodeSigned(void const * src, int32_t & x)
+    {
+        uint32_t y;
+        size_t sz = decode(src, y);
+        x = zigzagDecode(y);
+        return sz;
+    }
+
+    inline size_t decodeSignedSafe(void const * src, size_t len, int32_t & x)
+    {
+        uint32_t y;
+        if(size_t sz = decodeSafe(src, len, y))
+        {
+            x = zigzagDecode(y);
+            return sz;
+        }
+        else
+            return 0;
+    }
+
+    //------------------------------------------------------------------------
+    // unsigned quad vint32
+    //------------------------------------------------------------------------
     struct QuadInfo
     {
         uint8_t dataLen;
         uint8_t offset[15];
     };
     extern QuadInfo const QUAD_INFO[256];
-
         
-    inline size_t decodeQuad(void const * src, uint32_t * x)
-    {
-        uint8_t const * p = static_cast<uint8_t const *>(src);
-        uint8_t * d = reinterpret_cast<uint8_t *>(x);
-            
-        QuadInfo const & q = QUAD_INFO[p[0]];
-
-        x[0] = 0;
-        x[1] = 0;
-        x[2] = 0;
-        x[3] = 0;
-            
-        ++p;
-        switch(q.dataLen)
-        {
-            case 16: d[q.offset[14]] = p[15];
-            case 15: d[q.offset[13]] = p[14];
-            case 14: d[q.offset[12]] = p[13];
-            case 13: d[q.offset[11]] = p[12];
-            case 12: d[q.offset[10]] = p[11];
-            case 11: d[q.offset[9]]  = p[10];
-            case 10: d[q.offset[8]]  = p[9];
-            case 9:  d[q.offset[7]]  = p[8];
-            case 8:  d[q.offset[6]]  = p[7];
-            case 7:  d[q.offset[5]]  = p[6];
-            case 6:  d[q.offset[4]]  = p[5];
-            case 5:  d[q.offset[3]]  = p[4];
-            case 4:  d[q.offset[2]]  = p[3];
-                     d[q.offset[1]]  = p[2];
-                     d[q.offset[0]]  = p[1];
-                     d[0]            = p[0];
-        }
-        return q.dataLen+1;
-    }
-
     inline uint8_t getByteLength(uint32_t x)
     {
         if(x < 256u) return 1;
@@ -274,6 +373,54 @@ namespace vint {
                      p[0]  = s[0];
         }
         return q.dataLen+1;
+    }
+
+    inline size_t decodeQuad(void const * src, uint32_t * x)
+    {
+        uint8_t const * p = static_cast<uint8_t const *>(src);
+        uint8_t * d = reinterpret_cast<uint8_t *>(x);
+            
+        QuadInfo const & q = QUAD_INFO[p[0]];
+
+        x[0] = 0;
+        x[1] = 0;
+        x[2] = 0;
+        x[3] = 0;
+            
+        ++p;
+        switch(q.dataLen)
+        {
+            case 16: d[q.offset[14]] = p[15];
+            case 15: d[q.offset[13]] = p[14];
+            case 14: d[q.offset[12]] = p[13];
+            case 13: d[q.offset[11]] = p[12];
+            case 12: d[q.offset[10]] = p[11];
+            case 11: d[q.offset[9]]  = p[10];
+            case 10: d[q.offset[8]]  = p[9];
+            case 9:  d[q.offset[7]]  = p[8];
+            case 8:  d[q.offset[6]]  = p[7];
+            case 7:  d[q.offset[5]]  = p[6];
+            case 6:  d[q.offset[4]]  = p[5];
+            case 5:  d[q.offset[3]]  = p[4];
+            case 4:  d[q.offset[2]]  = p[3];
+                     d[q.offset[1]]  = p[2];
+                     d[q.offset[0]]  = p[1];
+                     d[0]            = p[0];
+        }
+        return q.dataLen+1;
+    }
+
+    inline size_t decodeQuadSafe(void const * src, size_t len, uint32_t * x)
+    {
+        char buf[MAX_QUAD_SIZE];
+        if(len < MAX_QUAD_SIZE)
+        {
+            memcpy(buf, src, len);
+            memset(buf+len, 0, MAX_QUAD_SIZE - len);
+            src = buf;
+        }
+        size_t sz = decodeQuad(src, x);
+        return sz > len ? 0 : sz;
     }
 
 } // namespace vint
