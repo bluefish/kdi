@@ -1,12 +1,21 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// $Id: kdi/server/FragmentMerge.cc $
+// Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
+// Created 2009-02-27
 //
-// Created 2009/02/27
+// This file is part of KDI.
 //
-// Copyright 2009 Kosmix Corporation.  All rights reserved.
-// Kosmix PROPRIETARY and CONFIDENTIAL.
+// KDI is free software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or any later version.
 //
-// 
+// KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
 #include <kdi/server/FragmentMerge.h>
@@ -99,11 +108,12 @@ public:
     /// stopping condition, it will not be included in the output.
     /// Return true if there is more data, false if the copy has
     /// exhausted the fragment.
-    bool copyUntil(CellKey const * stopKey, CellBuilder & cells,
-                   BlockCache * cache, ScanPredicate const & pred)
+    bool copyUntil(CellKey const * stopKey, ScanPredicate const & pred,
+                   bool filterErasures, BlockCache * cache,
+                   CellBuilder & cells)
     {
         assert(reader);
-        reader->copyUntil(stopKey, cells);
+        reader->copyUntil(stopKey, filterErasures, cells);
         return advance(cache, pred);
     }
         
@@ -169,7 +179,7 @@ FragmentMerge::~FragmentMerge()
 }
 
 bool FragmentMerge::copyMerged(size_t maxCells, size_t maxSize,
-                               CellBuilder & cells)
+                               bool filterErasures, CellBuilder & cells)
 {
     size_t const MAX_BLOCKS = 64;
     size_t nBlocks = 0;
@@ -189,7 +199,7 @@ bool FragmentMerge::copyMerged(size_t maxCells, size_t maxSize,
 
         bool hasMore = top->copyUntil(
             heap.empty() ? 0 : &heap.top()->getNextKey(),
-            cells, cache, pred);
+            pred, filterErasures, cache, cells);
             
         if(hasMore)
             heap.push(top);
