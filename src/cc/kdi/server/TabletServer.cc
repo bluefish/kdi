@@ -31,6 +31,31 @@ using namespace kdi::server;
 
 namespace {
     typedef boost::mutex::scoped_lock lock_t;
+
+
+    class DeferredApplyCb
+        : public TransactionCounter::DurableCb
+    {
+        TabletServer::ApplyCb * cb;
+
+    public:
+        explicit DeferredApplyCb(TabletServer::ApplyCb * cb) : cb(cb) {}
+        void done(int64_t waitTxn, int64_t lastDurableTxn) {
+            cb->done(waitTxn);
+        }
+    };
+
+    class DeferredSyncCb
+        : public TransactionCounter::DurableCb
+    {
+        TabletServer::SyncCb * cb;
+
+    public:
+        explicit DeferredSyncCb(TabletServer::SyncCb * cb) : cb(cb) {}
+        void done(int64_t waitTxn, int64_t lastDurableTxn) {
+            cb->done(lastDurableTxn);
+        }
+    };
 }
 
 void TabletServer::apply_async(
@@ -68,7 +93,7 @@ void TabletServer::apply_async(
         // transaction will apply.  The transaction can proceed only
         // if the last transaction in each row is less than or equal
         // to commitMaxTxn.
-        if(getLastCommitTxn() > commitMaxTxn)
+        if(txnCounter.getLastCommit() > commitMaxTxn)
             table->verifyCommitApplies(rows, commitMaxTxn);
 
         // How to throttle?
@@ -98,22 +123,27 @@ void TabletServer::apply_async(
 
 
         // Assign transaction number to commit
-        commit.txn = assignCommitTxn();
+        commit.txn = txnCounter.assignCommit();
         
         // Update latest transaction number for all affected rows
         table->updateRowCommits(rows, commit.txn);
         
+        tableLock.unlock();
+
         // Push the cells to the log queue
         logQueue.push(commit);
 
-        tableLock.unlock();
-        serverLock.unlock();
-
         // Defer response if necessary
         if(waitForSync)
-            deferUntilDurable(cb, commit.txn);
-        else
-            cb->done(commit.txn);
+        {
+            txnCounter.deferUntilDurable(new DeferredApplyCb(cb), commit.txn);
+            return;
+        }
+
+        serverLock.unlock();
+
+        // Callback now
+        cb->done(commit.txn);
     }
     catch(std::exception const & ex) {
         cb->error(ex);
@@ -126,22 +156,26 @@ void TabletServer::apply_async(
 void TabletServer::sync_async(SyncCb * cb, int64_t waitForTxn)
 {
     try {
-        lock_t lock(serverMutex);
+        lock_t serverLock(serverMutex);
 
         // Clip waitForTxn to the last committed transaction
-        if(waitForTxn > getLastCommitTxn())
-            waitForTxn = getLastCommitTxn();
-
-        // Get the last durable transaction;
-        int64_t syncTxn = getLastDurableTxn();
+        if(waitForTxn > txnCounter.getLastCommit())
+            waitForTxn = txnCounter.getLastCommit();
         
-        lock.unlock();
+        // Get the last durable transaction
+        int64_t syncTxn = txnCounter.getLastDurable();
 
         // Defer response if necessary
         if(waitForTxn > syncTxn)
-            deferUntilDurable(cb, waitForTxn);
-        else
-            cb->done(syncTxn);
+        {
+            txnCounter.deferUntilDurable(new DeferredSyncCb(cb), waitForTxn);
+            return;
+        }
+        
+        serverLock.unlock();
+
+        // Callback now
+        cb->done(syncTxn);
     }
     catch(std::exception const & ex) {
         cb->error(ex);
@@ -287,7 +321,9 @@ void TabletServer::logLoop()
             }
 
             // Update last durable txn and schedule deferred callbacks
-            setLastDurableTxn(maxTxn);
+            warp::Runnable * r = txnCounter.setLastDurable(maxTxn);
+            if(r)
+                workerPool->submit(r);
 
             // Update queue sizes
             commitBufferSz -= commitSz;

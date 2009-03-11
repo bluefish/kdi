@@ -21,7 +21,9 @@
 #ifndef KDI_SERVER_TABLETSERVER_H
 #define KDI_SERVER_TABLETSERVER_H
 
+#include <kdi/server/TransactionCounter.h>
 #include <warp/syncqueue.h>
+#include <warp/WorkerPool.h>
 #include <warp/util.h>
 #include <kdi/strref.h>
 #include <boost/shared_ptr.hpp>
@@ -97,16 +99,8 @@ public:
 private:
     Table * getTable(strref_t tableName) const;
 
-    int64_t getLastCommitTxn() const;
-    int64_t assignCommitTxn();
-
-    int64_t getLastDurableTxn() const;
-    void setLastDurableTxn(int64_t txn);
 
     size_t assignScannerId();
-
-    void deferUntilDurable(ApplyCb * cb, int64_t commitTxn);
-    void deferUntilDurable(SyncCb * cb, int64_t waitForTxn);
 
     void logLoop();
 
@@ -118,6 +112,9 @@ private:
 private:
     typedef std::tr1::unordered_map<std::string, Table *> table_map;
     table_map tableMap;
+
+    TransactionCounter txnCounter;
+    warp::WorkerPool * workerPool;
 
     struct Commit
     {
