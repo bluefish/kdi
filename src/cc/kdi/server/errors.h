@@ -38,6 +38,9 @@ namespace server {
 
     KDI_SERVER_EXCEPTION(ServerError,                     std::exception);
     KDI_SERVER_EXCEPTION(  BadScanModeError,              ServerError);
+    KDI_SERVER_EXCEPTION(  NotLoadedError,                ServerError);
+    KDI_SERVER_EXCEPTION(    TableNotLoadedError,         NotLoadedError);
+    KDI_SERVER_EXCEPTION(    TabletNotLoadedError,        NotLoadedError);
     KDI_SERVER_EXCEPTION(  CellDataError,                 ServerError);
     KDI_SERVER_EXCEPTION(    BadMagicError,               CellDataError);
     KDI_SERVER_EXCEPTION(    BadChecksumError,            CellDataError);
