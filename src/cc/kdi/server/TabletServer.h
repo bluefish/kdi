@@ -54,6 +54,9 @@ class kdi::server::TabletServer
     : private boost::noncopyable
 {
 public:
+    enum { MAX_TXN = 9223372036854775807 };
+
+public:
     boost::mutex serverMutex;
 
 public:
@@ -113,7 +116,8 @@ private:
     bool serializationPending;
 
 private:
-    std::tr1::unordered_map<std::string, Table *> tableMap;
+    typedef std::tr1::unordered_map<std::string, Table *> table_map;
+    table_map tableMap;
 
     struct Commit
     {

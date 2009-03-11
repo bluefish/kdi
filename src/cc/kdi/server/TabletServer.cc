@@ -22,6 +22,7 @@
 #include <kdi/server/CellBuffer.h>
 #include <kdi/server/Table.h>
 #include <kdi/server/Fragment.h>
+#include <kdi/server/errors.h>
 #include <boost/scoped_ptr.hpp>
 #include <algorithm>
 
@@ -148,6 +149,15 @@ void TabletServer::sync_async(SyncCb * cb, int64_t waitForTxn)
     catch(...) {
         cb->error(std::runtime_error("sync: unknown exception"));
     }
+}
+
+Table * TabletServer::getTable(strref_t tableName) const
+{
+    table_map::const_iterator i = tableMap.find(
+        tableName.toString());
+    if(i == tableMap.end())
+        throw TableNotLoadedError();
+    return i->second;
 }
 
 class LogWriter
