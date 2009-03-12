@@ -22,6 +22,7 @@
 #define KDI_SERVER_TABLE_H
 
 #include <kdi/server/Fragment.h>
+#include <kdi/server/CommitRing.h>
 #include <warp/interval.h>
 #include <boost/thread/mutex.hpp>
 #include <string>
@@ -88,6 +89,17 @@ public:
     void getFirstFragmentChain(ScanPredicate const & pred,
                                std::vector<Fragment const *> & chain,
                                warp::Interval<std::string> & rows) const;
+
+private:
+    class Tablet;
+    class TabletLt;
+
+    typedef std::vector<Tablet *> tablet_vec;
+    tablet_vec tablets;
+
+    CommitRing rowCommits;
+    
+    inline Tablet * findTablet(strref_t row) const;
 };
 
 #endif // KDI_SERVER_TABLE_H
