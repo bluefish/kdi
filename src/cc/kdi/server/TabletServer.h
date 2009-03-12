@@ -22,12 +22,14 @@
 #define KDI_SERVER_TABLETSERVER_H
 
 #include <kdi/server/TransactionCounter.h>
+#include <kdi/server/LogWriter.h>
 #include <warp/syncqueue.h>
 #include <warp/WorkerPool.h>
 #include <warp/util.h>
 #include <kdi/strref.h>
 #include <boost/shared_ptr.hpp>
 #include <boost/noncopyable.hpp>
+#include <boost/function.hpp>
 #include <boost/thread/mutex.hpp>
 #include <string>
 #include <exception>
@@ -115,6 +117,7 @@ private:
 
     TransactionCounter txnCounter;
     warp::WorkerPool * workerPool;
+    LogWriterFactory createNewLog;
 
     struct Commit
     {

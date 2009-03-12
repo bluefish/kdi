@@ -194,24 +194,9 @@ Table * TabletServer::getTable(strref_t tableName) const
     return i->second;
 }
 
-class LogWriter
-{
-public:
-    void writeCells(strref_t tableName, CellBufferCPtr const & cells);
-    void sync();
-    void close();
-};
-
-LogWriter * startNewLogger();
 
 template <class It>
 CellBufferCPtr mergeCommits(It first, It last);
-
-class LogFactory
-{
-public:
-};
-
 
 Fragment const * makeMemFragment(CellBufferCPtr const & cells, int txn);
 
@@ -246,7 +231,7 @@ void TabletServer::logLoop()
 
         // Make a new logger if necessary
         if(!log)
-            log.reset(startNewLogger());
+            log.reset(createNewLog());
 
         // Process commits grouped by table
         int64_t maxTxn = commits.front().txn;
