@@ -21,6 +21,7 @@
 #ifndef KDI_SERVER_CELLBUFFER_H
 #define KDI_SERVER_CELLBUFFER_H
 
+#include <kdi/server/Fragment.h>
 #include <kdi/strref.h>
 #include <warp/string_range.h>
 #include <boost/noncopyable.hpp>
@@ -40,7 +41,8 @@ namespace server {
 // CellBuffer
 //----------------------------------------------------------------------------
 class kdi::server::CellBuffer
-    : private boost::noncopyable
+    : public kdi::server::Fragment,
+      private boost::noncopyable
 {
 public:
     CellBuffer(strref_t data);
@@ -54,9 +56,16 @@ public:
     /// Get the approximate amount of memory used by this buffer.
     size_t getDataSize() const { return data.size(); }
 
+public:  // Fragment interface
+    size_t nextBlock(ScanPredicate const & pred, size_t minBlock) const;
+    std::auto_ptr<FragmentBlock> loadBlock(size_t blockAddr) const;
+
 private:
     std::vector<char> data;
     size_t nCells;
+
+    class Block;
+    class BlockReader;
 };
 
 #endif // KDI_SERVER_CELLBUFFER_H
