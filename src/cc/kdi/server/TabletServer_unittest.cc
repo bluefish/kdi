@@ -124,19 +124,37 @@ namespace {
             return new NullLogWriter;
         }
     };
+
+    std::string getTestCells()
+    {
+        kdi::rpc::PackedCellWriter writer;
+        writer.append("dingos", "ate", 42, "babies");
+        writer.finish();
+        return writer.getPacked().toString();
+    }
+}
+
+BOOST_AUTO_UNIT_TEST(notable_test)
+{
+    TabletServer server(&NullLogWriter::make, 0);
+
+    TestApplyCb applyCb;
+    server.apply_async(&applyCb, "table", getTestCells(),
+                       TabletServer::MAX_TXN, false);
+
+    applyCb.wait();
+    
+    BOOST_CHECK_EQUAL(applyCb.succeeded, false);
+    BOOST_CHECK_EQUAL(applyCb.errorMsg, "TableNotLoadedError");
 }
 
 BOOST_AUTO_UNIT_TEST(simple_test)
 {
-    warp::WorkerPool pool(1, "Test", true);
+    warp::WorkerPool pool(1, "pool", true);
     TabletServer server(&NullLogWriter::make, &pool);
 
-    kdi::rpc::PackedCellWriter writer;
-    writer.append("dingos", "ate", 42, "babies");
-    writer.finish();
-
     TestApplyCb applyCb;
-    server.apply_async(&applyCb, "facts", writer.getPacked(),
+    server.apply_async(&applyCb, "table", getTestCells(),
                        TabletServer::MAX_TXN, false);
 
     applyCb.wait();
