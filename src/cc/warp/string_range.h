@@ -85,6 +85,10 @@ namespace warp {
             return std::string(begin_, end_);
         }
 
+        void toString(std::string & s) const {
+            s.assign(begin_, end_);
+        }
+
         size_t size() const { return end_ - begin_; }
         bool empty() const { return begin_ == end_; }
         
