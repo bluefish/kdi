@@ -37,6 +37,9 @@ namespace server {
         virtual void writeCells(strref_t tableName,
                                 CellBufferCPtr const & cells) = 0;
 
+        /// Get the approximate size of the log on disk
+        virtual size_t getDiskSize() const = 0;
+
         /// Make sure all cells written so far are durable on
         /// permanent storage
         virtual void sync() = 0;

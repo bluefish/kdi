@@ -101,15 +101,7 @@ public:
 private:
     Table * getTable(strref_t tableName) const;
 
-
-    size_t assignScannerId();
-
     void logLoop();
-
-    void addMemFragment(strref_t tableName, Fragment const * fragment);
-
-    void scheduleSerialization();
-    bool serializationPending;
 
 private:
     typedef std::tr1::unordered_map<std::string, Table *> table_map;
@@ -145,9 +137,7 @@ private:
     };
 
     warp::SyncQueue<Commit> logQueue;
-
-    size_t commitBufferSz;
-    size_t activeBufferSz;
+    size_t logPendingSz;
 };
 
 #endif // KDI_SERVER_TABLETSERVER_H

@@ -128,9 +128,13 @@ void TabletServer::apply_async(
         // Update latest transaction number for all affected rows
         table->updateRowCommits(rows, commit.txn);
         
+        // Add the new fragment to the table's active list
+        table->addMemoryFragment(commit.cells, commit.cells->getDataSize());
+
         tableLock.unlock();
 
         // Push the cells to the log queue
+        logPendingSz += commit.cells->getDataSize();
         logQueue.push(commit);
 
         // Defer response if necessary
@@ -194,13 +198,6 @@ Table * TabletServer::getTable(strref_t tableName) const
     return i->second;
 }
 
-
-template <class It>
-CellBufferCPtr mergeCommits(It first, It last);
-
-Fragment const * makeMemFragment(CellBufferCPtr const & cells, int txn);
-
-
 void TabletServer::logLoop()
 {
     typedef std::vector<Commit> commit_vec;
@@ -226,16 +223,17 @@ void TabletServer::logLoop()
             commits.push_back(commit);
         }
 
-        //- organize commit(s) by table, then by commit
-        std::sort(commits.begin(), commits.end());
-
-        // Make a new logger if necessary
+        // Start a new log if necessary
         if(!log)
             log.reset(createNewLog());
 
+#if 0
+
+        //- organize commit(s) by table, then by commit
+        int64_t maxTxn = commits.back().txn;
+        std::sort(commits.begin(), commits.end());
+
         // Process commits grouped by table
-        int64_t maxTxn = commits.front().txn;
-        size_t activeSz = 0;
         for(commit_vec::const_iterator i = commits.begin();
             i != commits.end(); )
         {
@@ -245,8 +243,6 @@ void TabletServer::logLoop()
 
             // Get the last transaction for the commit range
             int64_t txn = (i2-1)->txn;
-            if(txn > maxTxn)
-                maxTxn = txn;
 
             // If the range is more than one commit, merge all the
             // cell buffers into a single buffer
@@ -259,71 +255,44 @@ void TabletServer::logLoop()
             // Write cells to log file with checksum
             log->writeCells(i->tableName, cells);
 
-            // Make a fragment out of the committed cells
-            Fragment const * frag = makeMemFragment(cells, txn);
-
-            // Add the fragment to the list of things to add to the
-            // active set.  Track the size of the data we're adding to
-            // the active set.
-            frags.push_back(make_pair(&i->tableName, frag));
-            activeSz += cells->getDataSize();
-
             // Move iterator to next table
             i = i2;
         }
+
+#else
+
+        // Feeling lazy: don't bother reordering or merging, just log
+        // the commits in the order we received them
+        int64_t maxTxn = commits.back().txn;
+        for(commit_vec::const_iterator i = commits.begin();
+            i != commits.end(); ++i)
+        {
+            log->writeCells(i->tableName, i->cells);
+        }
+
+#endif
 
         // Sync log to disk.  After this, commits up to maxTxn are
         // durable.
         log->sync();
 
-        
-        // Under server lock:
-        //   1) notify FragmentEventListeners of new fragments
-        //   2) add the new fragments to the active set
-        //   3) update last durable transaction number
-        //   4) update queue size for throttling and accounting
-        //   5) maybe trigger a flush of the active set
-        bool resetLog = false;
-        {
-            lock_t serverLock(serverMutex);
+        lock_t serverLock(serverMutex);
 
-            // Notify listeners of new fragments
-            for(frag_vec::const_iterator i = frags.begin();
-                i != frags.end(); ++i)
-            {
-                Table * table = getTable(*i->first);
-            
-                lock_t tableLock(table->tableMutex);
-                table->triggerNewFragmentEvent(i->second);
-            }
+        // Update last durable txn
+        warp::Runnable * durableCallbacks = txnCounter.setLastDurable(maxTxn);
 
-            // Add fragments to shared memory pool
-            for(frag_vec::const_iterator i = frags.begin();
-                i != frags.end(); ++i)
-            {
-                // Add fragment to active mem table
-                addMemFragment(*i->first, i->second);
-            }
+        // Update queue sizes
+        logPendingSz -= commitSz;
 
-            // Update last durable txn and schedule deferred callbacks
-            warp::Runnable * r = txnCounter.setLastDurable(maxTxn);
-            if(r)
-                workerPool->submit(r);
+        serverLock.unlock();
 
-            // Update queue sizes
-            commitBufferSz -= commitSz;
-            activeBufferSz += activeSz;
-        
-            size_t const MAX_ACTIVE_SIZE = 128u << 20;
-            if(activeBufferSz >= MAX_ACTIVE_SIZE && !serializationPending)
-            {
-                scheduleSerialization();
-                resetLog = true;
-            }
-        }
+        // Schedule deferred callbacks
+        if(durableCallbacks)
+            workerPool->submit(durableCallbacks);
 
-        // Release the log if we just scheduled a serialization
-        if(resetLog)
+        // Roll log if it's big enough
+        size_t LOG_SIZE_LIMIT = 128u << 20;
+        if(log->getDiskSize() >= LOG_SIZE_LIMIT)
         {
             log->close();
             log.reset();

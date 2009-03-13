@@ -90,6 +90,11 @@ public:
                                std::vector<Fragment const *> & chain,
                                warp::Interval<std::string> & rows) const;
 
+    void addMemoryFragment(FragmentCPtr const & p, size_t sz)
+    {
+        memFrags.addFragment(p, sz);
+    }
+
 private:
     class Tablet;
     class TabletLt;
@@ -98,6 +103,33 @@ private:
     tablet_vec tablets;
 
     CommitRing rowCommits;
+    
+    class FragmentBuffer
+    {
+        typedef std::pair<FragmentCPtr, size_t> frag_pair;
+        typedef std::vector<frag_pair> frag_vec;
+        
+        frag_vec frags;
+        size_t totalSz;
+
+    public:
+        void addFragment(FragmentCPtr const & p, size_t sz)
+        {
+            frags.push_back(std::make_pair(p, sz));
+            totalSz += sz;
+        }
+
+        void getFragments(std::vector<Fragment const *> & out) const
+        {
+            for(frag_vec::const_iterator i = frags.begin();
+                i != frags.end(); ++i)
+            {
+                out.push_back(i->first.get());
+            }
+        }
+    };
+
+    FragmentBuffer memFrags;
     
     inline Tablet * findTablet(strref_t row) const;
 };
