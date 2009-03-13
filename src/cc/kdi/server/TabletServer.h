@@ -30,7 +30,7 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/noncopyable.hpp>
 #include <boost/function.hpp>
-#include <boost/thread/mutex.hpp>
+#include <boost/thread.hpp>
 #include <string>
 #include <exception>
 #include <tr1/unordered_map>
@@ -83,6 +83,10 @@ public:
     };
 
 public:
+    TabletServer(LogWriterFactory const & createNewLog,
+                 warp::WorkerPool * workerPool);
+    ~TabletServer();
+
     void apply_async(ApplyCb * cb,
                      strref_t tableName,
                      strref_t packedCells,
@@ -104,13 +108,6 @@ private:
     void logLoop();
 
 private:
-    typedef std::tr1::unordered_map<std::string, Table *> table_map;
-    table_map tableMap;
-
-    TransactionCounter txnCounter;
-    warp::WorkerPool * workerPool;
-    LogWriterFactory createNewLog;
-
     struct Commit
     {
         std::string tableName;
@@ -136,8 +133,19 @@ private:
         };
     };
 
+    typedef std::tr1::unordered_map<std::string, Table *> table_map;
+
+private:
+    LogWriterFactory const createNewLog;
+    warp::WorkerPool * const workerPool;
+
+    TransactionCounter txnCounter;
+    table_map tableMap;
+
     warp::SyncQueue<Commit> logQueue;
     size_t logPendingSz;
+
+    boost::thread_group threads;
 };
 
 #endif // KDI_SERVER_TABLETSERVER_H

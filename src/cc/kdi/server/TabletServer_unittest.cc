@@ -34,32 +34,42 @@ namespace {
     struct TestCb
     {
         bool succeeded;
-        bool failed;
+        bool triggered;
         std::string errorMsg;
         boost::mutex mutex;
         boost::condition cond;
 
-        TestCb() : succeeded(false), failed(false) {}
+        TestCb() :
+            succeeded(false),
+            triggered(false)
+        {
+        }
+
+        void trigger()
+        {
+            triggered = true;
+            cond.notify_all();
+        }
 
         void success()
         {
             boost::mutex::scoped_lock lock(mutex);
             succeeded = true;
-            cond.notify_all();
+            trigger();
         }
 
         void failure(std::string const & msg)
         {
             boost::mutex::scoped_lock lock(mutex);
-            failed = true;
+            succeeded = false;
             errorMsg = msg;
-            cond.notify_all();
+            trigger();
         }
 
         void wait()
         {
             boost::mutex::scoped_lock lock(mutex);
-            while(!succeeded && !failed)
+            while(!triggered)
                 cond.wait(lock);
         }
     };
@@ -100,11 +110,26 @@ namespace {
         }
     };
 
+    struct NullLogWriter
+        : public LogWriter
+    {
+    public:
+        void writeCells(strref_t tableName, CellBufferCPtr const & cells) {}
+        size_t getDiskSize() const { return 0; }
+        void sync() {}
+        void close() {}
+
+        static LogWriter * make()
+        {
+            return new NullLogWriter;
+        }
+    };
 }
 
 BOOST_AUTO_UNIT_TEST(simple_test)
 {
-    TabletServer server;
+    warp::WorkerPool pool(1, "Test", true);
+    TabletServer server(&NullLogWriter::make, &pool);
 
     kdi::rpc::PackedCellWriter writer;
     writer.append("dingos", "ate", 42, "babies");
@@ -117,6 +142,7 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     applyCb.wait();
     
     BOOST_CHECK_EQUAL(applyCb.succeeded, true);
+    BOOST_CHECK_EQUAL(applyCb.errorMsg, "");
 
     TestSyncCb syncCb;
     server.sync_async(&syncCb, TabletServer::MAX_TXN);
@@ -125,4 +151,5 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     
     BOOST_CHECK_EQUAL(syncCb.succeeded, true);
     BOOST_CHECK_EQUAL(syncCb.syncTxn, applyCb.commitTxn);
+    BOOST_CHECK_EQUAL(syncCb.errorMsg, "");
 }

@@ -23,7 +23,9 @@
 #include <kdi/server/Table.h>
 #include <kdi/server/Fragment.h>
 #include <kdi/server/errors.h>
+#include <warp/call_or_die.h>
 #include <boost/scoped_ptr.hpp>
+#include <boost/bind.hpp>
 #include <algorithm>
 
 using namespace kdi;
@@ -56,6 +58,26 @@ namespace {
             cb->done(lastDurableTxn);
         }
     };
+}
+
+//----------------------------------------------------------------------------
+// TabletServer
+//----------------------------------------------------------------------------
+TabletServer::TabletServer(LogWriterFactory const & createNewLog,
+                           warp::WorkerPool * workerPool) :
+    createNewLog(createNewLog),
+    workerPool(workerPool)
+{
+    threads.create_thread(
+        warp::callOrDie(
+            boost::bind(&TabletServer::logLoop, this),
+            "TabletServer::logLoop", true));
+}
+
+TabletServer::~TabletServer()
+{
+    logQueue.cancelWaits();
+    threads.join_all();
 }
 
 void TabletServer::apply_async(
