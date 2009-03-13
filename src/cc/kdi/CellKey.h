@@ -70,6 +70,8 @@ public:
     std::string const & getColumn() const  { return column; }
     int64_t getTimestamp() const           { return timestamp; }
 
+    inline CellKey & operator=(CellKeyRef const & o);
+
     template <class T>
     bool operator<(T const & o) const
     {
@@ -136,6 +138,18 @@ namespace kdi {
     inline int64_t getCellTimestamp(CellKeyRef const & x)
     {
         return x.getTimestamp();
+    }
+
+}
+
+namespace kdi {
+
+    CellKey & CellKey::operator=(CellKeyRef const & o)
+    {
+        o.getRow().toString(row);
+        o.getColumn().toString(column);
+        timestamp = o.getTimestamp();
+        return *this;
     }
 
 }
