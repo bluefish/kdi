@@ -55,6 +55,20 @@ public:
     boost::mutex tableMutex;
 
 public:
+    struct IsNameChar
+    {
+        inline bool operator()(char c) const
+        {
+            return ( ('a' <= c && c <= 'a') ||
+                     ('A' <= c && c <= 'Z') ||
+                     ('0' <= c && c <= '9') ||
+                     c == '/' ||
+                     c == '-' ||
+                     c == '_' );
+        }
+    };
+
+public:
     /// Make sure that the tablets containing all the given rows are
     /// currently loaded in the table.
     void verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const;
@@ -100,10 +114,7 @@ private:
     class TabletLt;
 
     typedef std::vector<Tablet *> tablet_vec;
-    tablet_vec tablets;
 
-    CommitRing rowCommits;
-    
     class FragmentBuffer
     {
         typedef std::pair<FragmentCPtr, size_t> frag_pair;
@@ -129,9 +140,13 @@ private:
         }
     };
 
-    FragmentBuffer memFrags;
-    
+private:
     inline Tablet * findTablet(strref_t row) const;
+
+private:
+    tablet_vec tablets;
+    CommitRing rowCommits;
+    FragmentBuffer memFrags;
 };
 
 #endif // KDI_SERVER_TABLE_H
