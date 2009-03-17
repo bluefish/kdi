@@ -20,10 +20,13 @@
 
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/CellBuffer.h>
+#include <kdi/server/ConfigReader.h>
 #include <kdi/server/Table.h>
 #include <kdi/server/Fragment.h>
+#include <kdi/server/tablet_name.h>
 #include <kdi/server/errors.h>
 #include <warp/call_or_die.h>
+#include <warp/functional.h>
 #include <boost/scoped_ptr.hpp>
 #include <boost/bind.hpp>
 #include <algorithm>
@@ -58,15 +61,102 @@ namespace {
             cb->done(lastDurableTxn);
         }
     };
+
 }
+
+
+//----------------------------------------------------------------------------
+// TabletServer::ConfigsLoadedCb
+//----------------------------------------------------------------------------
+class TabletServer::ConfigsLoadedCb
+    : public ConfigReader::ReadConfigsCb
+{
+    TabletServer * server;
+    LoadCb * cb;
+
+public:
+    ConfigsLoadedCb(TabletServer * server, LoadCb * cb) :
+        server(server),
+        cb(cb)
+    {
+    }
+
+    void done(std::vector<TabletConfig> const & configs)
+    {
+        try {
+            server->loadTablets(configs);
+            cb->done();
+        }
+        catch(std::exception const & ex) {
+            cb->error(ex);
+        }
+        catch(...) {
+            cb->error(std::runtime_error("load3: unknown exception"));
+        }
+        delete this;
+    }
+
+    void error(std::exception const & err)
+    {
+        cb->error(err);
+        delete this;
+    }
+};
+
+
+//----------------------------------------------------------------------------
+// TabletServer::SchemasLoadedCb
+//----------------------------------------------------------------------------
+class TabletServer::SchemasLoadedCb
+    : public ConfigReader::ReadSchemasCb
+{
+    TabletServer * server;
+    LoadCb * cb;
+    string_vec tablets;
+    
+public:
+    SchemasLoadedCb(TabletServer * server, LoadCb * cb,
+                    string_vec const & tablets) :
+        server(server),
+        cb(cb),
+        tablets(tablets)
+    {
+    }
+
+    void done(std::vector<TableSchema> const & schemas)
+    {
+        try {
+            server->applySchemas(schemas);
+            server->configReader->readConfigs_async(
+                new ConfigsLoadedCb(server, cb),
+                tablets);
+        }
+        catch(std::exception const & ex) {
+            cb->error(ex);
+        }
+        catch(...) {
+            cb->error(std::runtime_error("load2: unknown exception"));
+        }
+        delete this;
+    }
+
+    void error(std::exception const & err)
+    {
+        cb->error(err);
+        delete this;
+    }
+};
+
 
 //----------------------------------------------------------------------------
 // TabletServer
 //----------------------------------------------------------------------------
 TabletServer::TabletServer(LogWriterFactory const & createNewLog,
-                           warp::WorkerPool * workerPool) :
+                           warp::WorkerPool * workerPool,
+                           ConfigReader * configReader) :
     createNewLog(createNewLog),
-    workerPool(workerPool)
+    workerPool(workerPool),
+    configReader(configReader)
 {
     threads.create_thread(
         warp::callOrDie(
@@ -78,6 +168,89 @@ TabletServer::~TabletServer()
 {
     logQueue.cancelWaits();
     threads.join_all();
+}
+
+void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
+{
+    /*
+     *
+     * - Validate input tablets:
+     *   - Make sure each maps to a non-empty table name plus a last 
+     *     row (character after table name is either ' ' or '!')
+     *   - Filter out tablets that are already loaded
+     * - Get table names for all remaining tablets
+     * - Load any tables that aren't loaded yet
+     *   - Load schemas from ConfigReader
+     *   - Make sure loaded schemas are valid
+     * - Load tablet configs from ConfigReader
+     *   - (Optional) If config contains "location", make sure there 
+     *     isn't a server actively serving the tablet at that location
+     *   - If config contains "log", add (dir,tablet) to replay list
+     *
+     */
+
+    try {
+
+        string_vec neededTablets;
+        string_vec neededTables;
+        std::string tableName;
+
+        lock_t serverLock(serverMutex);
+
+        // Filter out tablets that are already loaded
+        for(string_vec::const_iterator i = tablets.begin();
+            i != tablets.end(); ++i)
+        {
+            tablet_name::getTable(*i).toString(tableName);
+            table_map::const_iterator j = tableMap.find(tableName);
+            if(j == tableMap.end())
+            {
+                neededTablets.push_back(*i);
+
+                if(neededTables.empty() || neededTables.back() != tableName)
+                    neededTables.push_back(tableName);
+
+                continue;
+            }
+
+            Table * table = j->second;
+            lock_t tableLock(table->tableMutex);
+            bool loaded = table->isTabletLoaded(*i);
+            tableLock.unlock();
+
+            if(!loaded)
+                neededTablets.push_back(*i);
+        }
+
+        serverLock.unlock();
+
+        // If we need to load tables, do so
+        if(!neededTables.empty())
+        {
+            configReader->readSchemas_async(
+                new SchemasLoadedCb(this, cb, neededTablets),
+                neededTables);
+            return;
+        }
+
+        // If we need to load tablets, do so
+        if(!neededTablets.empty())
+        {
+            configReader->readConfigs_async(
+                new ConfigsLoadedCb(this, cb),
+                neededTablets);
+            return;
+        }
+
+        // We have nothing to load
+        cb->done();
+    }
+    catch(std::exception const & ex) {
+        cb->error(ex);
+    }
+    catch(...) {
+        cb->error(std::runtime_error("load: unknown exception"));
+    }
 }
 
 void TabletServer::apply_async(
@@ -325,4 +498,20 @@ void TabletServer::logLoop()
         frags.clear();
         commit = Commit();
     }
+}
+
+void TabletServer::applySchemas(std::vector<TableSchema> const & schemas)
+{
+    // For each schema:
+    //   if the referenced table doesn't already exist, create it
+    //   tell the table to update its schema
+}
+
+void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
+{
+    // For each config:
+    //   if the table is not loaded, error
+    //   if the tablet is already loaded, skip
+    //   if the tablet is loading, wait for it to finish or fail
+    //   otherwise, load the tablet
 }

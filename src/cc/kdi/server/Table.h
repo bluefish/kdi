@@ -22,7 +22,9 @@
 #define KDI_SERVER_TABLE_H
 
 #include <kdi/server/Fragment.h>
+#include <kdi/server/TableSchema.h>
 #include <kdi/server/CommitRing.h>
+#include <kdi/server/tablet_name.h>
 #include <warp/interval.h>
 #include <boost/thread/mutex.hpp>
 #include <string>
@@ -55,20 +57,6 @@ public:
     boost::mutex tableMutex;
 
 public:
-    struct IsNameChar
-    {
-        inline bool operator()(char c) const
-        {
-            return ( ('a' <= c && c <= 'a') ||
-                     ('A' <= c && c <= 'Z') ||
-                     ('0' <= c && c <= '9') ||
-                     c == '/' ||
-                     c == '-' ||
-                     c == '_' );
-        }
-    };
-
-public:
     /// Make sure that the tablets containing all the given rows are
     /// currently loaded in the table.
     void verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const;
@@ -92,6 +80,9 @@ public:
 
     /// Get the last transaction committed to this Table.
     int64_t getLastCommitTxn() const;
+
+    /// Return true if the named tablet is loaded in this table.
+    bool isTabletLoaded(strref_t tabletName) const;
 
     /// Get the ordered chain of fragments to merge for the first part
     /// of the given predicate.  Throws and error if such a chain is
@@ -147,6 +138,7 @@ private:
     tablet_vec tablets;
     CommitRing rowCommits;
     FragmentBuffer memFrags;
+    TableSchema schema;
 };
 
 #endif // KDI_SERVER_TABLE_H

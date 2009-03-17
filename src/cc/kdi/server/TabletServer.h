@@ -32,6 +32,7 @@
 #include <boost/function.hpp>
 #include <boost/thread.hpp>
 #include <string>
+#include <vector>
 #include <exception>
 #include <tr1/unordered_map>
 
@@ -43,6 +44,9 @@ namespace server {
     // Forward declarations
     class Table;
     class Fragment;
+    class ConfigReader;
+    class TableSchema;
+    class TabletConfig;
     typedef boost::shared_ptr<Fragment const> FragmentCPtr;
 
     class CellBuffer;
@@ -82,21 +86,57 @@ public:
         ~SyncCb() {}
     };
 
+    class LoadCb
+    {
+    public:
+        virtual void done() = 0;
+        virtual void error(std::exception const & err) = 0;
+    protected:
+        ~LoadCb() {}
+    };
+
+    class UnloadCb
+    {
+    public:
+        virtual void done() = 0;
+        virtual void error(std::exception const & err) = 0;
+    protected:
+        ~UnloadCb() {}
+    };
+
+    typedef std::vector<std::string> string_vec;
+
 public:
     TabletServer(LogWriterFactory const & createNewLog,
-                 warp::WorkerPool * workerPool);
+                 warp::WorkerPool * workerPool,
+                 ConfigReader * configReader);
     ~TabletServer();
 
+    /// Load some tablets.  Tablet names should be given in sorted
+    /// order for best performance.
+    void load_async(LoadCb * cb, string_vec const & tablets);
+
+    /// Unload some tablets.
+    void unload_async(UnloadCb * cb, string_vec const & tablets);
+
+    /// Apply block of cells to the named table.  The cells will only
+    /// be applied if the server can guarantee that none of the rows
+    /// in packedCells have been modified more recently than
+    /// commitMaxTxn.  If the mutation should be applied
+    /// unconditionally, use MAX_TXN.  If waitForSync is true, wait
+    /// until the commit has been made durable before issuing the
+    /// callback.
     void apply_async(ApplyCb * cb,
                      strref_t tableName,
                      strref_t packedCells,
                      int64_t commitMaxTxn,
                      bool waitForSync);
 
+    /// Wait until the given commit transaction has been made durable.
+    /// If the given transaction is greater than the last assigned
+    /// commit number, wait for the last assigned commit instead.
     void sync_async(SyncCb * cb, int64_t waitForTxn);
 
-
-    // mess in progress
 public:
     /// Get the tabled Table.  Returns null if the table is not
     /// loaded.
@@ -106,6 +146,9 @@ private:
     Table * getTable(strref_t tableName) const;
 
     void logLoop();
+
+    void applySchemas(std::vector<TableSchema> const & schemas);
+    void loadTablets(std::vector<TabletConfig> const & configs);
 
 private:
     struct Commit
@@ -133,11 +176,15 @@ private:
         };
     };
 
+    class ConfigsLoadedCb;
+    class SchemasLoadedCb;
+
     typedef std::tr1::unordered_map<std::string, Table *> table_map;
 
 private:
     LogWriterFactory const createNewLog;
     warp::WorkerPool * const workerPool;
+    ConfigReader * const configReader;
 
     TransactionCounter txnCounter;
     table_map tableMap;

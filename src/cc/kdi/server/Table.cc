@@ -54,7 +54,10 @@ class Table::TabletLt
 
     inline static warp::IntervalPoint<std::string> const &
     get(Tablet const * x) { return x->getMaxRow(); }
-        
+
+    inline static warp::IntervalPoint<std::string> const &
+    get(warp::IntervalPoint<std::string> const & x) { return x; }
+
     inline static strref_t get(strref_t x) { return x; }
 
 public:
@@ -80,6 +83,23 @@ Table::Tablet * Table::findTablet(strref_t row) const
         return 0;
 
     return *i;
+}
+
+bool Table::isTabletLoaded(strref_t tabletName) const
+{
+    std::string table;
+    warp::IntervalPoint<std::string> last;
+    tablet_name::decode(tabletName, table, last);
+
+    assert(table == schema.name);
+
+    tablet_vec::const_iterator i = std::lower_bound(
+        tablets.begin(), tablets.end(), last, TabletLt());
+    if(i == tablets.end())
+        return false;
+    
+    warp::IntervalPointOrder<warp::less> lt;
+    return !lt(last, (*i)->getMaxRow());
 }
 
 void Table::verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const
