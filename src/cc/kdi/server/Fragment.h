@@ -100,7 +100,8 @@ public:
     /// starting position set up properly.  Calling copyUntil()
     /// multiple times without interleaved calls to advance() is
     /// undefined.
-    virtual void copyUntil(CellKey const * stopKey, CellBuilder & out) = 0;
+    virtual void copyUntil(CellKey const * stopKey, 
+                           CellBuilder & out) = 0;
 };
 
 

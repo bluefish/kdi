@@ -31,6 +31,7 @@
 #include <warp/adler.h>
 #include <warp/bloom_filter.h>
 #include <warp/log.h>
+#include <warp/util.h>
 #include <ex/exception.h>
 
 using namespace std;
@@ -77,30 +78,40 @@ namespace
             return lt(*a.lastRow, b);
         }
     };
+
+    bool operator<(CellData const & a, kdi::CellKey const & b)
+    {
+        return warp::order(
+            static_cast<strref_t>(*a.key.row), static_cast<strref_t>(b.getRow()),
+            static_cast<strref_t>(*a.key.column), static_cast<strref_t>(b.getColumn()),
+            a.key.timestamp, b.getTimestamp());
+    }
 }
 
 //----------------------------------------------------------------------------
 // DiskBlockReader
 //----------------------------------------------------------------------------
 DiskBlockReader::DiskBlockReader(Record const & blockRec) :
-    blockRec(blockRec)
+    blockRec(blockRec),
+    block(blockRec.cast<CellBlock>()),
+    cellIt(block->cells.begin()),
+    cellEnd(block->cells.end())
 {
 }
 
 bool DiskBlockReader::advance(CellKey & nextKey)
 {
-    // Move the reader along
-    return false;
+    if(cellIt == cellEnd) return false;
+
+    nextKey.setRow(*cellIt->key.row);
+    nextKey.setColumn(*cellIt->key.column);
+    nextKey.setTimestamp(cellIt->key.timestamp);
+    return true;
 }
 
 void kdi::server::DiskBlockReader::copyUntil(CellKey const * stopKey, CellBuilder & out)
 {
-    // Got one -- reset Cell iterators
-    CellBlock const * block = blockRec.cast<CellBlock>();
-    CellData const * cellIt = block->cells.begin();
-    CellData const * cellEnd = block->cells.end();
-
-    for(; cellIt != cellEnd; ++cellIt)
+    for(; cellIt != cellEnd && (!stopKey || *cellIt < *stopKey); ++cellIt)
     {
         out.appendCell(*cellIt->key.row, *cellIt->key.column, cellIt->key.timestamp, 
                        *cellIt->value);
