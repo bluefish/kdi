@@ -24,12 +24,34 @@
 
 #include <warp/file.h>
 #include <warp/buffer.h>
-#include <warp/vint.h>
 #include <boost/utility.hpp>
 
 namespace warp
 {
     class VIntReader;
+
+    /// Get a variable-length integer from a Buffer.  Return true if
+    /// Buffer contained a complete int.
+    template <class Int>
+    bool getVInt(Buffer & buf, Int & x)
+    {
+        char * p = buf.position();
+        char * pEnd = buf.limit();
+
+        uint64_t i = 0;
+        for(int shift = 0; p != pEnd; shift += 7)
+        {
+            char b = *p++;
+            i |= uint64_t(b & 0x7f) << shift;
+            if((b & 0x80) == 0)
+            {
+                buf.position(p);
+                x = i;
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 //----------------------------------------------------------------------------

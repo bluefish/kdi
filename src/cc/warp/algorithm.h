@@ -74,6 +74,27 @@ namespace warp
             ++it;
         return it;
     }
+
+    //------------------------------------------------------------------------
+    // is_increasing
+    //------------------------------------------------------------------------
+    template <class It, class Lt>
+    bool is_increasing(It begin, It end, Lt const & lt)
+    {
+        if(begin == end)
+            return true;
+
+        --end;
+        while(begin != end)
+        {
+            if(!lt(*begin, *begin+1))
+                return false;
+            ++begin;
+        }
+
+        return true;
+    }
+
 }
 
 #endif // WARP_ALGORITHM_H

@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-02-27
+// Created 2009-03-11
 //
 // This file is part of KDI.
 //
@@ -18,17 +18,39 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_SCANNERLOCATOR_H
-#define KDI_SERVER_SCANNERLOCATOR_H
+#ifndef KDI_SERVER_LOGWRITER_H
+#define KDI_SERVER_LOGWRITER_H
 
-#include <kdi/net/ScannerLocator.h>
+#include <kdi/server/CellBuffer.h>
+#include <kdi/strref.h>
+#include <boost/function.hpp>
 
 namespace kdi {
 namespace server {
 
-    using kdi::net::ScannerLocator;
+    class LogWriter
+    {
+    public:
+        virtual ~LogWriter() {}
+
+        /// Record a block of cells for the named table in the log
+        virtual void writeCells(strref_t tableName,
+                                CellBufferCPtr const & cells) = 0;
+
+        /// Get the approximate size of the log on disk
+        virtual size_t getDiskSize() const = 0;
+
+        /// Make sure all cells written so far are durable on
+        /// permanent storage
+        virtual void sync() = 0;
+
+        /// Close the log
+        virtual void close() = 0;
+    };
+
+    typedef boost::function<LogWriter * ()> LogWriterFactory;
 
 } // namespace server
 } // namespace kdi
 
-#endif // KDI_SERVER_SCANNERLOCATOR_H
+#endif // KDI_SERVER_LOGWRITER_H

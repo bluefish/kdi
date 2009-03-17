@@ -83,6 +83,29 @@ namespace warp
     };
 
     //------------------------------------------------------------------------
+    // logical_not
+    //------------------------------------------------------------------------
+    /// Functor that returns the logical negation of another functor.
+    /// This functor simply applies the logical negation operator
+    /// (operator!) to the result of the encapsulated functor and
+    /// expects that result to be convertible to bool.  This functor
+    /// is defined for up to three arguments.
+    template <class T>
+    struct logical_not
+    {
+        T t;
+        explicit logical_not(T const & t=T()) : t(t) {}
+    
+        bool operator()() const { return !t(); }
+    
+        template <class A>
+        bool operator()(A const & a) const { return !t(a); }
+
+        template <class A, class B>
+        bool operator()(A const & a, B const & b) const { return !t(a,b); }
+    };
+
+    //------------------------------------------------------------------------
     // less
     //------------------------------------------------------------------------
     /// Binary functor that returns true iff its first argument is

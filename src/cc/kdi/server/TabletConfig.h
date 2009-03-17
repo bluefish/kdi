@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-02-27
+// Created 2009-03-13
 //
 // This file is part of KDI.
 //
@@ -18,17 +18,28 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_SCANNERLOCATOR_H
-#define KDI_SERVER_SCANNERLOCATOR_H
+#ifndef KDI_SERVER_TABLETCONFIG_H
+#define KDI_SERVER_TABLETCONFIG_H
 
-#include <kdi/net/ScannerLocator.h>
+#include <warp/interval.h>
+#include <vector>
+#include <string>
 
 namespace kdi {
 namespace server {
 
-    using kdi::net::ScannerLocator;
+    struct TabletConfig
+    {
+        std::string tableName;
+        warp::Interval<std::string> rows;
+        std::vector<std::string> fragments;
+        std::string log;
+        std::string location;
+
+        std::string getTabletName() const;
+    };
 
 } // namespace server
 } // namespace kdi
 
-#endif // KDI_SERVER_SCANNERLOCATOR_H
+#endif // KDI_SERVER_TABLETCONFIG_H

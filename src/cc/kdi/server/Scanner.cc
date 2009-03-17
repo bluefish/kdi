@@ -1,17 +1,27 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// $Id: kdi/server/Scanner.cc $
+// Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
+// Created 2009-02-26
 //
-// Created 2009/02/26
+// This file is part of KDI.
 //
-// Copyright 2009 Kosmix Corporation.  All rights reserved.
-// Kosmix PROPRIETARY and CONFIDENTIAL.
+// KDI is free software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or any later version.
 //
-// 
+// KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
 #include <kdi/server/Scanner.h>
 #include <kdi/server/Table.h>
 #include <kdi/server/FragmentMerge.h>
+#include <kdi/server/errors.h>
 
 using namespace kdi;
 using namespace kdi::server;
@@ -56,7 +66,7 @@ Scanner::Scanner(Table * table, BlockCache * cache,
     endOfScan(false)
 {
     if(mode != SCAN_ANY_TXN)
-        throw BadScanModeError(mode);
+        throw BadScanModeError();
 
     lock_t tableLock(table->tableMutex);
     table->addFragmentListener(this);
@@ -87,7 +97,7 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
 
         if(merge || startMerge(scannerLock))
         {
-            bool hasMore = merge->copyMerged(maxCells, maxSize, cells);
+            bool hasMore = merge->copyMerged(maxCells, maxSize, true, cells);
             if(!hasMore)
             {
                 clipToFutureRows(pred, rows);

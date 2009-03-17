@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-02-27
+// Created 2009-03-13
 //
 // This file is part of KDI.
 //
@@ -18,45 +18,60 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_TABLETEVENTLISTENER_H
-#define KDI_SERVER_TABLETEVENTLISTENER_H
+#ifndef KDI_SERVER_CONFIGREADER_H
+#define KDI_SERVER_CONFIGREADER_H
 
-#include <warp/interval.h>
+#include <kdi/server/TableSchema.h>
+#include <kdi/server/TabletConfig.h>
+#include <vector>
 #include <string>
+#include <exception>
 
 namespace kdi {
 namespace server {
 
-    class TabletEventListener;
+    class ConfigReader;
 
 } // namespace server
 } // namespace kdi
 
+
 //----------------------------------------------------------------------------
-// TabletEventListener
+// ConfigReader
 //----------------------------------------------------------------------------
-class kdi::server::TabletEventListener
+class kdi::server::ConfigReader
 {
 public:
-    /// Event: the tablet formerly covering the union of 'lo' and 'hi'
-    /// has been split into the given sub-ranges.
-    virtual void onTabletSplit(
-        warp::Interval<std::string> const & lo,
-        warp::Interval<std::string> const & hi) = 0;
+    class ReadSchemasCb
+    {
+    public:
+        virtual void done(std::vector<TableSchema> const & schemas) = 0;
+        virtual void error(std::exception const & err) = 0;
+    protected:
+        ~ReadSchemasCb() {}
+    };
 
-    /// Event: the formerly separate tablets covering 'lo' and 'hi'
-    /// have been merged into a single tablet.
-    virtual void onTabletMerge(
-        warp::Interval<std::string> const & lo,
-        warp::Interval<std::string> const & hi) = 0;
+    class ReadConfigsCb
+    {
+    public:
+        virtual void done(std::vector<TabletConfig> const & configs) = 0;
+        virtual void error(std::exception const & err) = 0;
+    protected:
+        ~ReadConfigsCb() {}
+    };
 
-    /// Event: the tablet covering the range 'r' has been dropped from
-    /// the server.
-    virtual void onTabletDrop(
-        warp::Interval<std::string> const & r) = 0;
+public:
+    virtual void readSchemas_async(
+        ReadSchemasCb * cb,
+        std::vector<std::string> const & tableNames) = 0;
+
+    virtual void readConfigs_async(
+        ReadConfigsCb * cb,
+        std::vector<std::string> const & tabletNames) = 0;
 
 protected:
-    ~TabletEventListener() {}
+    ~ConfigReader() {}
 };
 
-#endif // KDI_SERVER_TABLETEVENTLISTENER_H
+
+#endif // KDI_SERVER_CONFIGREADER_H

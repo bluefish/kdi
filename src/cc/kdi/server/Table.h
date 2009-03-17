@@ -1,18 +1,30 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// $Id: kdi/server/Table.h $
+// Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
+// Created 2009-02-27
 //
-// Created 2009/02/27
+// This file is part of KDI.
 //
-// Copyright 2009 Kosmix Corporation.  All rights reserved.
-// Kosmix PROPRIETARY and CONFIDENTIAL.
+// KDI is free software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or any later version.
 //
-// 
+// KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
 #ifndef KDI_SERVER_TABLE_H
 #define KDI_SERVER_TABLE_H
 
 #include <kdi/server/Fragment.h>
+#include <kdi/server/TableSchema.h>
+#include <kdi/server/CommitRing.h>
+#include <kdi/server/tablet_name.h>
 #include <warp/interval.h>
 #include <boost/thread/mutex.hpp>
 #include <string>
@@ -45,14 +57,17 @@ public:
     boost::mutex tableMutex;
 
 public:
-    /// Make sure that all of the given rows are currently loaded in
-    /// this Table and their max commit number is less than or equal
-    /// to maxTxn.
-    void verifyCommitApplies(std::auto_ptr<FragmentRowIterator> rows,
+    /// Make sure that the tablets containing all the given rows are
+    /// currently loaded in the table.
+    void verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const;
+    
+    /// Make sure that all of the given rows have a commit number less
+    /// than or equal to maxTxn.
+    void verifyCommitApplies(std::vector<warp::StringRange> const & rows,
                              int64_t maxTxn) const;
 
     /// Update the committed transaction number for the given rows.
-    void updateRowCommits(std::auto_ptr<FragmentRowIterator> rows,
+    void updateRowCommits(std::vector<warp::StringRange> const & rows,
                           int64_t commitTxn);
 
     void addFragmentListener(FragmentEventListener * listener);
@@ -61,8 +76,13 @@ public:
     void addTabletListener(TabletEventListener * listener);
     void removeTabletListener(TabletEventListener * listener);
 
+    void triggerNewFragmentEvent(Fragment const * frag);
+
     /// Get the last transaction committed to this Table.
     int64_t getLastCommitTxn() const;
+
+    /// Return true if the named tablet is loaded in this table.
+    bool isTabletLoaded(strref_t tabletName) const;
 
     /// Get the ordered chain of fragments to merge for the first part
     /// of the given predicate.  Throws and error if such a chain is
@@ -74,6 +94,51 @@ public:
     void getFirstFragmentChain(ScanPredicate const & pred,
                                std::vector<Fragment const *> & chain,
                                warp::Interval<std::string> & rows) const;
+
+    void addMemoryFragment(FragmentCPtr const & p, size_t sz)
+    {
+        memFrags.addFragment(p, sz);
+    }
+
+private:
+    class Tablet;
+    class TabletLt;
+
+    typedef std::vector<Tablet *> tablet_vec;
+
+    class FragmentBuffer
+    {
+        typedef std::pair<FragmentCPtr, size_t> frag_pair;
+        typedef std::vector<frag_pair> frag_vec;
+        
+        frag_vec frags;
+        size_t totalSz;
+
+    public:
+        void addFragment(FragmentCPtr const & p, size_t sz)
+        {
+            frags.push_back(std::make_pair(p, sz));
+            totalSz += sz;
+        }
+
+        void getFragments(std::vector<Fragment const *> & out) const
+        {
+            for(frag_vec::const_iterator i = frags.begin();
+                i != frags.end(); ++i)
+            {
+                out.push_back(i->first.get());
+            }
+        }
+    };
+
+private:
+    inline Tablet * findTablet(strref_t row) const;
+
+private:
+    tablet_vec tablets;
+    CommitRing rowCommits;
+    FragmentBuffer memFrags;
+    TableSchema schema;
 };
 
 #endif // KDI_SERVER_TABLE_H

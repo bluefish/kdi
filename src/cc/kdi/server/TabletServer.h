@@ -1,22 +1,38 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
-// $Id: kdi/server/TabletServer.h $
+// Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
+// Created 2009-02-25
 //
-// Created 2009/02/25
+// This file is part of KDI.
 //
-// Copyright 2009 Kosmix Corporation.  All rights reserved.
-// Kosmix PROPRIETARY and CONFIDENTIAL.
+// KDI is free software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or any later version.
 //
-// 
+// KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
 #ifndef KDI_SERVER_TABLETSERVER_H
 #define KDI_SERVER_TABLETSERVER_H
 
+#include <kdi/server/TransactionCounter.h>
+#include <kdi/server/LogWriter.h>
+#include <warp/syncqueue.h>
+#include <warp/WorkerPool.h>
+#include <warp/util.h>
 #include <kdi/strref.h>
 #include <boost/shared_ptr.hpp>
 #include <boost/noncopyable.hpp>
-#include <boost/thread/mutex.hpp>
+#include <boost/function.hpp>
+#include <boost/thread.hpp>
 #include <string>
+#include <vector>
 #include <exception>
 #include <tr1/unordered_map>
 
@@ -28,7 +44,13 @@ namespace server {
     // Forward declarations
     class Table;
     class Fragment;
+    class ConfigReader;
+    class TableSchema;
+    class TabletConfig;
     typedef boost::shared_ptr<Fragment const> FragmentCPtr;
+
+    class CellBuffer;
+    typedef boost::shared_ptr<CellBuffer const> CellBufferCPtr;
 
 } // namespace server
 } // namespace kdi
@@ -39,6 +61,9 @@ namespace server {
 class kdi::server::TabletServer
     : private boost::noncopyable
 {
+public:
+    enum { MAX_TXN = 9223372036854775807 };
+
 public:
     boost::mutex serverMutex;
 
@@ -61,41 +86,113 @@ public:
         ~SyncCb() {}
     };
 
+    class LoadCb
+    {
+    public:
+        virtual void done() = 0;
+        virtual void error(std::exception const & err) = 0;
+    protected:
+        ~LoadCb() {}
+    };
+
+    class UnloadCb
+    {
+    public:
+        virtual void done() = 0;
+        virtual void error(std::exception const & err) = 0;
+    protected:
+        ~UnloadCb() {}
+    };
+
+    typedef std::vector<std::string> string_vec;
+
 public:
+    TabletServer(LogWriterFactory const & createNewLog,
+                 warp::WorkerPool * workerPool,
+                 ConfigReader * configReader);
+    ~TabletServer();
+
+    /// Load some tablets.  Tablet names should be given in sorted
+    /// order for best performance.
+    void load_async(LoadCb * cb, string_vec const & tablets);
+
+    /// Unload some tablets.
+    void unload_async(UnloadCb * cb, string_vec const & tablets);
+
+    /// Apply block of cells to the named table.  The cells will only
+    /// be applied if the server can guarantee that none of the rows
+    /// in packedCells have been modified more recently than
+    /// commitMaxTxn.  If the mutation should be applied
+    /// unconditionally, use MAX_TXN.  If waitForSync is true, wait
+    /// until the commit has been made durable before issuing the
+    /// callback.
     void apply_async(ApplyCb * cb,
                      strref_t tableName,
                      strref_t packedCells,
                      int64_t commitMaxTxn,
                      bool waitForSync);
 
+    /// Wait until the given commit transaction has been made durable.
+    /// If the given transaction is greater than the last assigned
+    /// commit number, wait for the last assigned commit instead.
     void sync_async(SyncCb * cb, int64_t waitForTxn);
 
-
-    // mess in progress
 public:
     /// Get the tabled Table.  Returns null if the table is not
     /// loaded.
     Table * tryGetTable(strref_t tableName) const;
 
 private:
-    FragmentCPtr decodeCells(strref_t packedCells) const;
-
     Table * getTable(strref_t tableName) const;
 
-    int64_t getLastCommitTxn() const;
-    int64_t assignCommitTxn();
+    void logLoop();
 
-    int64_t getLastDurableTxn() const;
-
-    size_t assignScannerId();
-
-    void queueCommit(FragmentCPtr const & fragment, int64_t commitTxn);
-
-    void deferUntilDurable(ApplyCb * cb, int64_t commitTxn);
-    void deferUntilDurable(SyncCb * cb, int64_t waitForTxn);
+    void applySchemas(std::vector<TableSchema> const & schemas);
+    void loadTablets(std::vector<TabletConfig> const & configs);
 
 private:
-    std::tr1::unordered_map<std::string, Table *> tableMap;
+    struct Commit
+    {
+        std::string tableName;
+        int64_t txn;
+        CellBufferCPtr cells;
+        
+        bool operator<(Commit const & o) const
+        {
+            return warp::order(
+                tableName, o.tableName,
+                txn, o.txn);
+        }
+
+        struct TableNeq
+        {
+            std::string const & name;
+            TableNeq(std::string const & name) : name(name) {}
+
+            bool operator()(Commit const & c) const
+            {
+                return c.tableName != name;
+            }
+        };
+    };
+
+    class ConfigsLoadedCb;
+    class SchemasLoadedCb;
+
+    typedef std::tr1::unordered_map<std::string, Table *> table_map;
+
+private:
+    LogWriterFactory const createNewLog;
+    warp::WorkerPool * const workerPool;
+    ConfigReader * const configReader;
+
+    TransactionCounter txnCounter;
+    table_map tableMap;
+
+    warp::SyncQueue<Commit> logQueue;
+    size_t logPendingSz;
+
+    boost::thread_group threads;
 };
 
 #endif // KDI_SERVER_TABLETSERVER_H

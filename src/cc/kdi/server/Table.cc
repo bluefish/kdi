@@ -1,0 +1,141 @@
+//---------------------------------------------------------- -*- Mode: C++ -*-
+// Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
+// Created 2009-03-10
+//
+// This file is part of KDI.
+//
+// KDI is free software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation; either version 2 of the License, or any later version.
+//
+// KDI is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+//----------------------------------------------------------------------------
+
+#include <kdi/server/Table.h>
+#include <kdi/server/errors.h>
+
+using namespace kdi;
+using namespace kdi::server;
+
+//----------------------------------------------------------------------------
+// Table::Tablet
+//----------------------------------------------------------------------------
+class Table::Tablet
+{
+    warp::Interval<std::string> rows;
+    std::vector<Fragment const *> framents;
+
+public:
+    warp::IntervalPoint<std::string> const & getMinRow() const
+    {
+        return rows.getLowerBound();
+    }
+
+    warp::IntervalPoint<std::string> const & getMaxRow() const
+    {
+        return rows.getUpperBound();
+    }
+};
+
+
+//----------------------------------------------------------------------------
+// Table::TabletLt
+//----------------------------------------------------------------------------
+class Table::TabletLt
+{
+    warp::IntervalPointOrder<warp::less> lt;
+
+    inline static warp::IntervalPoint<std::string> const &
+    get(Tablet const * x) { return x->getMaxRow(); }
+
+    inline static warp::IntervalPoint<std::string> const &
+    get(warp::IntervalPoint<std::string> const & x) { return x; }
+
+    inline static strref_t get(strref_t x) { return x; }
+
+public:
+    template <class A, class B>
+    bool operator()(A const & a, B const & b) const
+    {
+        return lt(get(a), get(b));
+    }
+};
+
+//----------------------------------------------------------------------------
+// Table
+//----------------------------------------------------------------------------
+Table::Tablet * Table::findTablet(strref_t row) const
+{
+    tablet_vec::const_iterator i = std::lower_bound(
+        tablets.begin(), tablets.end(), row, TabletLt());
+    if(i == tablets.end())
+        return 0;
+    
+    warp::IntervalPointOrder<warp::less> lt;
+    if(!lt((*i)->getMinRow(), row))
+        return 0;
+
+    return *i;
+}
+
+bool Table::isTabletLoaded(strref_t tabletName) const
+{
+    std::string table;
+    warp::IntervalPoint<std::string> last;
+    tablet_name::decode(tabletName, table, last);
+
+    assert(table == schema.name);
+
+    tablet_vec::const_iterator i = std::lower_bound(
+        tablets.begin(), tablets.end(), last, TabletLt());
+    if(i == tablets.end())
+        return false;
+    
+    warp::IntervalPointOrder<warp::less> lt;
+    return !lt(last, (*i)->getMaxRow());
+}
+
+void Table::verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const
+{
+    for(std::vector<warp::StringRange>::const_iterator i = rows.begin();
+        i != rows.end(); ++i)
+    {
+        if(!findTablet(*i))
+            throw TabletNotLoadedError();
+    }
+}
+    
+void Table::verifyCommitApplies(std::vector<warp::StringRange> const & rows,
+                                int64_t maxTxn) const
+{
+    if(maxTxn >= rowCommits.getMaxCommit())
+        return;
+    
+    if(maxTxn < rowCommits.getMinCommit())
+        throw MutationConflictError();
+
+    for(std::vector<warp::StringRange>::const_iterator i = rows.begin();
+        i != rows.end(); ++i)
+    {
+        if(maxTxn < rowCommits.getCommit(*i))
+            throw MutationConflictError();
+    }
+}
+
+void Table::updateRowCommits(std::vector<warp::StringRange> const & rows,
+                             int64_t commitTxn)
+{
+    for(std::vector<warp::StringRange>::const_iterator i = rows.begin();
+        i != rows.end(); ++i)
+    {
+        rowCommits.setCommit(*i, commitTxn);
+    }
+}
+

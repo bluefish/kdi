@@ -509,6 +509,35 @@ are "active" but not neccessarily "durable".  To be durable, any
 config update transactions that resulted from the table notification
 must also be durable.
 
+Revision: How about this?
+
+  - As soon as the incoming block is verified and assigned a commit
+    txn, a fragment is built to wrap it, and it is added to the active
+    set for the Table.  The block is also queued for logging.
+
+  - Scanners can read active blocks immediately.  The data is not
+    durable until it gets written to the log, though.  This shouldn't
+    be a problem.  New RMW transactions can come in derived from the
+    active-but-not-yet-durable data.  They will be serialized after,
+    so if the earlier stuff doesn't make it, the later stuff won't
+    make it either.
+
+  - The log thread just pulls in commits, possibly aggregates, and
+    writes blocks to the log file.  Every so often, it rolls to a new
+    log file.  When a commit is sync'ed to disk, the transaction
+    counter is notified, which may generate some callbacks for clients
+    that were waiting on changes to become durable.  We track the
+    transaction range covered by each log file.
+
+  - Meanwhile, when adding these commit blocks to the active set, we
+    may trigger a flushing compaction.  If the active data buffered in
+    memory is too large, we want to compact at least some of it to
+    disk fragments.
+
+  - Log files can be reclaimed when the minimum transaction still held
+    in memory for each table is greater than the maximum transaction
+    held by the log file.
+
 
 #----------------------------------------------------------------------------
 # Scanning
@@ -851,3 +880,31 @@ Stop accepting reads.
 Update config with new "fragments:" and remove "log:" and "location:" columns.
 
 Drop tablet.
+
+
+#----------------------------------------------------------------------------
+# Packed Formats
+#----------------------------------------------------------------------------
+
+Line format:
+
+  - Untrusted: should be able to accept any random data without crashing
+  - Fast and compact
+  - Ability to build in-place
+
+Log format:
+
+  - More trusted than line format.  Rely on checksum for corruption
+    detection but don't worry about malicious bits.
+
+Disk format:
+
+  - Efficient storage
+  - Pluggable compression
+  - Fast row seek
+
+
+struct LineFormat
+{
+    
+};
