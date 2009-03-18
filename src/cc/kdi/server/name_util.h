@@ -60,10 +60,23 @@ namespace server {
             warp::logical_not<IsTableChar>());
 
         if(p == tabletName.begin() ||
-           p == tabletName.end() ||
-           !(*p == ' ' || *p == '!'))
+           p == tabletName.end())
         {
             throw BadTabletNameError();
+        }
+
+        switch(*p)
+        {
+            case ' ':
+                break;
+
+            case '!':
+                if(p+1 != tabletName.end())
+                    throw BadTabletNameError();
+                break;
+
+            default:
+                throw BadTabletNameError();
         }
 
         return warp::StringRange(tabletName.begin(), p);
