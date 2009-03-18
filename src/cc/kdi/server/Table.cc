@@ -19,31 +19,11 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/server/Table.h>
+#include <kdi/server/Tablet.h>
 #include <kdi/server/errors.h>
 
 using namespace kdi;
 using namespace kdi::server;
-
-//----------------------------------------------------------------------------
-// Table::Tablet
-//----------------------------------------------------------------------------
-class Table::Tablet
-{
-    warp::Interval<std::string> rows;
-    std::vector<Fragment const *> framents;
-
-public:
-    warp::IntervalPoint<std::string> const & getMinRow() const
-    {
-        return rows.getLowerBound();
-    }
-
-    warp::IntervalPoint<std::string> const & getMaxRow() const
-    {
-        return rows.getUpperBound();
-    }
-};
-
 
 //----------------------------------------------------------------------------
 // Table::TabletLt
@@ -71,7 +51,7 @@ public:
 //----------------------------------------------------------------------------
 // Table
 //----------------------------------------------------------------------------
-Table::Tablet * Table::findTablet(strref_t row) const
+Tablet * Table::findContainingTablet(strref_t row) const
 {
     tablet_vec::const_iterator i = std::lower_bound(
         tablets.begin(), tablets.end(), row, TabletLt());
@@ -85,6 +65,20 @@ Table::Tablet * Table::findTablet(strref_t row) const
     return *i;
 }
 
+Tablet * Table::findTablet(warp::IntervalPoint<std::string> const & last) const
+{
+    tablet_vec::const_iterator i = std::lower_bound(
+        tablets.begin(), tablets.end(), last, TabletLt());
+    if(i == tablets.end())
+        return 0;
+    
+    warp::IntervalPointOrder<warp::less> lt;
+    if(lt(last, (*i)->getMaxRow()))
+        return 0;
+
+    return *i;
+}
+
 bool Table::isTabletLoaded(strref_t tabletName) const
 {
     std::string table;
@@ -92,14 +86,7 @@ bool Table::isTabletLoaded(strref_t tabletName) const
     tablet_name::decode(tabletName, table, last);
 
     assert(table == schema.name);
-
-    tablet_vec::const_iterator i = std::lower_bound(
-        tablets.begin(), tablets.end(), last, TabletLt());
-    if(i == tablets.end())
-        return false;
-    
-    warp::IntervalPointOrder<warp::less> lt;
-    return !lt(last, (*i)->getMaxRow());
+    return findTablet(last) != 0;
 }
 
 void Table::verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const
@@ -107,7 +94,7 @@ void Table::verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) con
     for(std::vector<warp::StringRange>::const_iterator i = rows.begin();
         i != rows.end(); ++i)
     {
-        if(!findTablet(*i))
+        if(!findContainingTablet(*i))
             throw TabletNotLoadedError();
     }
 }
@@ -139,3 +126,13 @@ void Table::updateRowCommits(std::vector<warp::StringRange> const & rows,
     }
 }
 
+Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
+{
+    tablets.push_back(new Tablet(rows));
+    return tablets.back();
+}
+
+Table::~Table()
+{
+    std::for_each(tablets.begin(), tablets.end(), warp::delete_ptr());
+}

@@ -37,6 +37,7 @@ namespace server {
     class Table;
 
     // Forward declarations
+    class Tablet;
     class CellBuffer;
     class FragmentEventListener;
     class TabletEventListener;
@@ -57,6 +58,8 @@ public:
     boost::mutex tableMutex;
 
 public:
+    ~Table();
+
     /// Make sure that the tablets containing all the given rows are
     /// currently loaded in the table.
     void verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const;
@@ -84,6 +87,11 @@ public:
     /// Return true if the named tablet is loaded in this table.
     bool isTabletLoaded(strref_t tabletName) const;
 
+    Tablet * findTablet(warp::IntervalPoint<std::string> const & lastRow) const;
+
+    Tablet * createTablet(warp::Interval<std::string> const & rows);
+
+
     /// Get the ordered chain of fragments to merge for the first part
     /// of the given predicate.  Throws and error if such a chain is
     /// not available (maybe the tablet corresponding to the first
@@ -101,7 +109,6 @@ public:
     }
 
 private:
-    class Tablet;
     class TabletLt;
 
     typedef std::vector<Tablet *> tablet_vec;
@@ -132,7 +139,7 @@ private:
     };
 
 private:
-    inline Tablet * findTablet(strref_t row) const;
+    inline Tablet * findContainingTablet(strref_t row) const;
 
 private:
     tablet_vec tablets;
