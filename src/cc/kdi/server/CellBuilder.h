@@ -89,6 +89,11 @@ public:
     {
         return cells.getDataSize();
     }
+
+    void appendCell(strref_t row, strref_t column, int64_t timestamp, strref_t value)
+    {
+        cells.appendCell(row, column, timestamp, value);
+    }
 };
 
 #endif // KDI_SERVER_CELLBUILDER_H
