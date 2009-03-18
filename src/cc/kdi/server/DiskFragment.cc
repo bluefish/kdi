@@ -91,8 +91,9 @@ namespace
 //----------------------------------------------------------------------------
 // DiskBlockReader
 //----------------------------------------------------------------------------
-DiskBlockReader::DiskBlockReader(Record const & blockRec) :
+DiskBlockReader::DiskBlockReader(Record const & blockRec, ScanPredicate const & pred) :
     blockRec(blockRec),
+    pred(pred),
     block(blockRec.cast<CellBlock>()),
     cellIt(block->cells.begin()),
     cellEnd(block->cells.end())
@@ -109,7 +110,8 @@ bool DiskBlockReader::advance(CellKey & nextKey)
     return true;
 }
 
-void kdi::server::DiskBlockReader::copyUntil(CellKey const * stopKey, CellBuilder & out)
+void kdi::server::DiskBlockReader::copyUntil(CellKey const * stopKey, 
+        bool filterErasures, CellBuilder & out)
 {
     for(; cellIt != cellEnd && (!stopKey || *cellIt < *stopKey); ++cellIt)
     {
@@ -136,7 +138,8 @@ DiskBlock::~DiskBlock()
 std::auto_ptr<FragmentBlockReader> 
 DiskBlock::makeReader(ScanPredicate const & pred) const 
 {
-    return std::auto_ptr<FragmentBlockReader>(new DiskBlockReader(blockRec));    
+    return std::auto_ptr<FragmentBlockReader>(
+        new DiskBlockReader(blockRec, pred)); 
 }
 
 //----------------------------------------------------------------------------
@@ -155,6 +158,18 @@ size_t DiskFragment::nextBlock(ScanPredicate const & pred, size_t minBlock) cons
     if(minBlock >= index->blocks.size())
         return size_t(-1);
 
+    ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate();
+    IntervalSet<string>::const_iterator lowerBoundIt = rows->begin();
+
+    // Try finding the next block based on the index
+    IndexEntryV1 const * ent;
+    ent = std::lower_bound(
+            &index->blocks[minBlock], index->blocks.end(),
+            *lowerBoundIt, RowLt());
+
+    if(ent == index->blocks.end())
+        return size_t(-1);
+
     return minBlock;
 }
 
@@ -165,26 +180,7 @@ std::auto_ptr<FragmentBlock> DiskFragment::loadBlock(size_t blockAddr) const
     return std::auto_ptr<FragmentBlock>(new DiskBlock(fp, idx));
 }
 
-std::auto_ptr<FragmentRowIterator> DiskFragment::makeRowIterator() const
-{
-    return std::auto_ptr<FragmentRowIterator>(0);
-}
-
-/*  
-//----------------------------------------------------------------------------
-// DiskScanner
-//----------------------------------------------------------------------------
-namespace
-{
-    class DiskScanner : public CellStream
-    {
-        FileInput::handle_t input;
-
-        // Row range data for scans with predicates
-        ScanPredicate::StringSetCPtr rows;
-        IntervalSet<string>::const_iterator nextRowIt;
-        IntervalPoint<string> upperBound;
-
+/*
         // Column and timestamp ranges for filtering blocks
         boost::shared_ptr< vector<string> > columnFamilies;
         uint32_t colFamilyMask;
@@ -193,11 +189,6 @@ namespace
         // Index data
         CacheRecord indexRec;
         IndexEntryV1 const * indexIt;
-
-        // Current CellBlock
-        Record blockRec;
-        CellData const * cellIt;
-        CellData const * cellEnd;
 
         /// Read the next CellBlock record from the input stream.  If
         /// there is a block, set the cell iterators to the full range

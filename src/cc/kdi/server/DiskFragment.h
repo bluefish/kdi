@@ -18,6 +18,7 @@
 #include <memory>
 #include <stddef.h>
 
+#include <kdi/scan_predicate.h>
 #include <kdi/server/Fragment.h>
 #include <kdi/local/table_types.h>
 #include <kdi/local/index_cache.h>
@@ -54,9 +55,6 @@ public:
     
     virtual std::auto_ptr<FragmentBlock>
     loadBlock(size_t blockAddr) const;
-
-    virtual std::auto_ptr<FragmentRowIterator>
-    makeRowIterator() const;
 };
 
 //----------------------------------------------------------------------------
@@ -83,15 +81,18 @@ class kdi::server::DiskBlockReader
     : public kdi::server::FragmentBlockReader
 {
     oort::Record blockRec;
+    ScanPredicate pred;
     kdi::marshal::CellBlock const * block;
     kdi::marshal::CellData const * cellIt;
     kdi::marshal::CellData const * cellEnd;
 
 public:
-    DiskBlockReader(oort::Record const & r);
+    DiskBlockReader(oort::Record const & r, ScanPredicate const & pred);
     
     virtual bool advance(CellKey & nextKey);
-    virtual void copyUntil(const kdi::CellKey * stopKey, kdi::server::CellBuilder & out);
+    virtual void copyUntil(const kdi::CellKey * stopKey, 
+                           bool filterErasures,
+                           kdi::server::CellBuilder & out);
 };
 
 

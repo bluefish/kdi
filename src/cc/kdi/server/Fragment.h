@@ -100,12 +100,14 @@ public:
     /// the block is reached or stopKey is found.  If stopKey is null,
     /// copy to the end of the block.  If the key is the stopping
     /// condition, it will not be included in the output.  Instead, it
-    /// will be the next key for advance().  Each call to copyUntil()
-    /// should be preceeded by a call to advance() to get the reader's
-    /// starting position set up properly.  Calling copyUntil()
-    /// multiple times without interleaved calls to advance() is
-    /// undefined.
-    virtual void copyUntil(CellKey const * stopKey, 
+    /// will be the next key for advance().  If filterErasures is
+    /// true, do not include erasure cells in the output.  Otherwise
+    /// they should be included if they exist.  Each call to
+    /// copyUntil() should be preceeded by a call to advance() to get
+    /// the reader's starting position set up properly.  Calling
+    /// copyUntil() multiple times without interleaved calls to
+    /// advance() is undefined.
+    virtual void copyUntil(CellKey const * stopKey, bool filterErasures,
                            CellBuilder & out) = 0;
 };
 

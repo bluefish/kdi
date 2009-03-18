@@ -151,7 +151,11 @@ BOOST_AUTO_TEST_CASE(basic_test)
         {
             FragmentBlockPtr block = t.loadBlock(blockAddr);
             FragmentBlockReaderPtr reader = block->makeReader(pred);
-            reader->copyUntil(0, cellBuilder);
+
+            CellKey nextCell;
+            BOOST_CHECK(reader->advance(nextCell));
+            reader->copyUntil(0, false, cellBuilder);
+            BOOST_CHECK(!reader->advance(nextCell));
         }
 
         size_t nCells = cellBuilder.getCellCount();
