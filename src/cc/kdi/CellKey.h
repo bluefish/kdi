@@ -146,8 +146,8 @@ namespace kdi {
 
     CellKey & CellKey::operator=(CellKeyRef const & o)
     {
-        o.getRow().toString(row);
-        o.getColumn().toString(column);
+        o.getRow().assignTo(row);
+        o.getColumn().assignTo(column);
         timestamp = o.getTimestamp();
         return *this;
     }
