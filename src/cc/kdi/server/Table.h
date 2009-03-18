@@ -24,7 +24,7 @@
 #include <kdi/server/Fragment.h>
 #include <kdi/server/TableSchema.h>
 #include <kdi/server/CommitRing.h>
-#include <kdi/server/tablet_name.h>
+#include <kdi/server/name_util.h>
 #include <warp/interval.h>
 #include <boost/thread/mutex.hpp>
 #include <string>

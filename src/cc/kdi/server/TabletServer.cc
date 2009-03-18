@@ -29,7 +29,7 @@
 #include <kdi/server/LogPlayer.h>
 #include <kdi/server/ConfigWriter.h>
 
-#include <kdi/server/tablet_name.h>
+#include <kdi/server/name_util.h>
 #include <kdi/server/errors.h>
 #include <warp/call_or_die.h>
 #include <warp/functional.h>
@@ -263,7 +263,7 @@ void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
         for(string_vec::const_iterator i = tablets.begin();
             i != tablets.end(); ++i)
         {
-            tablet_name::getTable(*i).toString(tableName);
+            extractTableName(*i).assignTo(tableName);
             table_map::const_iterator j = tableMap.find(tableName);
             if(j == tableMap.end())
             {

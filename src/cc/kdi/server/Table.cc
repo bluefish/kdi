@@ -83,7 +83,7 @@ bool Table::isTabletLoaded(strref_t tabletName) const
 {
     std::string table;
     warp::IntervalPoint<std::string> last;
-    tablet_name::decode(tabletName, table, last);
+    decodeTabletName(tabletName, table, last);
 
     assert(table == schema.name);
     return findTablet(last) != 0;

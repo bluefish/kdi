@@ -20,7 +20,7 @@
 
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/ConfigReader.h>
-#include <kdi/server/tablet_name.h>
+#include <kdi/server/name_util.h>
 #include <kdi/rpc/PackedCellWriter.h>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition.hpp>
@@ -157,7 +157,7 @@ namespace {
             for(size_t i = 0; i < tabletNames.size(); ++i)
             {
                 warp::IntervalPoint<std::string> last;
-                tablet_name::decode(tabletNames[i], configs[i].tableName, last);
+                decodeTabletName(tabletNames[i], configs[i].tableName, last);
                 configs[i].rows.unsetLowerBound().setUpperBound(last);
             }
             cb->done(configs);
@@ -173,7 +173,7 @@ namespace {
     }
 }
 
-BOOST_AUTO_UNIT_TEST(notable_test)
+BOOST_AUTO_UNIT_TEST(no_table_test)
 {
     TabletServer::Bits bits;
     TabletServer server(bits);
