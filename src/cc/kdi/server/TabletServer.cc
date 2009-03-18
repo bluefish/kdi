@@ -22,7 +22,13 @@
 #include <kdi/server/CellBuffer.h>
 #include <kdi/server/ConfigReader.h>
 #include <kdi/server/Table.h>
+#include <kdi/server/Tablet.h>
 #include <kdi/server/Fragment.h>
+
+#include <kdi/server/FragmentLoader.h>
+#include <kdi/server/LogPlayer.h>
+#include <kdi/server/ConfigWriter.h>
+
 #include <kdi/server/tablet_name.h>
 #include <kdi/server/errors.h>
 #include <warp/call_or_die.h>
@@ -36,7 +42,6 @@ using namespace kdi::server;
 
 namespace {
     typedef boost::mutex::scoped_lock lock_t;
-
 
     class DeferredApplyCb
         : public TransactionCounter::DurableCb
@@ -59,6 +64,67 @@ namespace {
         explicit DeferredSyncCb(TabletServer::SyncCb * cb) : cb(cb) {}
         void done(int64_t waitTxn, int64_t lastDurableTxn) {
             cb->done(lastDurableTxn);
+        }
+    };
+
+    struct Loading
+    {
+        Tablet * tablet;
+        TabletConfig const * config;
+
+        Loading() : tablet(0), config(0) {}
+        Loading(Tablet * tablet, TabletConfig const * config) :
+            tablet(tablet), config(config) {}
+
+        bool operator<(Loading const & o) const
+        {
+            TabletConfig const & a = *config;
+            TabletConfig const & b = *o.config;
+
+            if(int c = warp::string_compare(a.log, b.log))
+                return c < 0;
+
+            if(int c = warp::string_compare(a.tableName, b.tableName))
+                return c < 0;
+
+            return a.rows.getUpperBound() < b.rows.getUpperBound();
+        }
+
+        struct LogNeq
+        {
+            strref_t log;
+            LogNeq(strref_t log) : log(log) {}
+            bool operator()(Loading const & x) const
+            {
+                return x.config->log != log;
+            }
+        };
+    };
+
+    class LoadCompleteCb
+        : public Tablet::LoadedCb
+    {
+        size_t nPending;
+        boost::mutex mutex;
+        boost::condition cond;
+
+    public:
+        LoadCompleteCb() : nPending(0) {}
+        
+        void increment() { ++nPending; }
+
+        void done()
+        {
+            lock_t lock(mutex);
+            if(!--nPending)
+                cond.notify_one();
+        }
+
+        void wait()
+        {
+            lock_t lock(mutex);
+            while(nPending)
+                cond.wait(lock);
         }
     };
 
@@ -127,7 +193,7 @@ public:
     {
         try {
             server->applySchemas(schemas);
-            server->configReader->readConfigs_async(
+            server->bits.configReader->readConfigs_async(
                 new ConfigsLoadedCb(server, cb),
                 tablets);
         }
@@ -151,12 +217,8 @@ public:
 //----------------------------------------------------------------------------
 // TabletServer
 //----------------------------------------------------------------------------
-TabletServer::TabletServer(LogWriterFactory const & createNewLog,
-                           warp::WorkerPool * workerPool,
-                           ConfigReader * configReader) :
-    createNewLog(createNewLog),
-    workerPool(workerPool),
-    configReader(configReader)
+TabletServer::TabletServer(Bits const & bits) :
+    bits(bits)
 {
     threads.create_thread(
         warp::callOrDie(
@@ -227,7 +289,7 @@ void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
         // If we need to load tables, do so
         if(!neededTables.empty())
         {
-            configReader->readSchemas_async(
+            bits.configReader->readSchemas_async(
                 new SchemasLoadedCb(this, cb, neededTablets),
                 neededTables);
             return;
@@ -236,7 +298,7 @@ void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
         // If we need to load tablets, do so
         if(!neededTablets.empty())
         {
-            configReader->readConfigs_async(
+            bits.configReader->readConfigs_async(
                 new ConfigsLoadedCb(this, cb),
                 neededTablets);
             return;
@@ -420,7 +482,7 @@ void TabletServer::logLoop()
 
         // Start a new log if necessary
         if(!log)
-            log.reset(createNewLog());
+            log.reset(bits.createNewLog());
 
 #if 0
 
@@ -483,7 +545,7 @@ void TabletServer::logLoop()
 
         // Schedule deferred callbacks
         if(durableCallbacks)
-            workerPool->submit(durableCallbacks);
+            bits.workerPool->submit(durableCallbacks);
 
         // Roll log if it's big enough
         size_t LOG_SIZE_LIMIT = 128u << 20;
@@ -509,9 +571,136 @@ void TabletServer::applySchemas(std::vector<TableSchema> const & schemas)
 
 void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
 {
-    // For each config:
-    //   if the table is not loaded, error
-    //   if the tablet is already loaded, skip
-    //   if the tablet is loading, wait for it to finish or fail
-    //   otherwise, load the tablet
+    // Issues:
+    //   - Tablets may be in mid-load from other callers
+    //   - Tablets may already be loaded on this server
+    //   - Tablets may have logs that need recovering
+    //   - Mutations or scan requests may arrive for tablets that
+    //     are currently loading.  These should be deferred.
+
+    // Stages:
+    //   - Lock server and walk through tablets
+    //   - Partition into 4 disjoint sets:
+    //     A: Already loaded
+    //     B: Currently loading
+    //     C: Not yet loading, needs log recovery
+    //     D: Not yet loading, no log recovery needed
+    //   - We don't care about set A
+    //   - Ask for completion notifications on set B
+    //   - Create inactive (loading) tablets for everything in (C+D)
+    //   - Unlock server
+    //   - For each tablet in C+D:
+    //     - Load each fragment for the tablet
+    //   - For each subset in C with the same log directory:
+    //     - Replay log directory for ranges in the subset
+    //   - For each tablet in C+D:
+    //     - Save new tablet config
+    //   - Sync configs
+    //   - Lock server
+    //   - For each tablet in C+D:
+    //     - Activate tablet
+    //     - Queue completion notifications
+    //   - Unlock server
+    //   - Issue queued completions
+    //   - Complete after all notifications from B
+
+
+    typedef std::vector<Loading> loading_vec;
+
+    loading_vec loading;
+
+    LoadCompleteCb loadCompleteCb;
+
+    lock_t serverLock(serverMutex);
+
+    for(std::vector<TabletConfig>::const_iterator i = configs.begin();
+        i != configs.end(); ++i)
+    {
+        Table * table = getTable(i->tableName);
+        lock_t tableLock(table->tableMutex);
+
+        Tablet * tablet = table->findTablet(i->rows.getUpperBound());
+        if(tablet)
+        {
+            if(tablet->isLoading())
+            {
+                loadCompleteCb.increment();
+                tablet->deferUntilLoaded(&loadCompleteCb);
+            }
+            continue;
+        }
+        tablet = table->createTablet(i->rows);
+        loading.push_back(Loading(tablet, &*i));
+    }
+
+    serverLock.unlock();
+
+    std::sort(loading.begin(), loading.end());
+
+    LogPlayer::filter_vec replayFilter;
+    for(loading_vec::const_iterator last, first = loading.begin();
+        first != loading.end(); first = last)
+    {
+        last = std::find_if<loading_vec::const_iterator>(
+            first+1, loading.end(),
+            Loading::LogNeq(first->config->log));
+
+        for(loading_vec::const_iterator i = first;
+            i != last; ++i)
+        {
+            string_vec const & frags = i->config->fragments;
+            for(string_vec::const_iterator f = frags.begin();
+                f != frags.end(); ++f)
+            {
+                FragmentCPtr frag = bits.fragmentLoader->load(*f);
+                i->tablet->addFragment(frag);
+            }
+        }
+
+        if(first->config->log.empty())
+            continue;
+
+        for(loading_vec::const_iterator i = first;
+            i != last; ++i)
+        {
+            replayFilter.push_back(
+                std::make_pair(
+                    i->config->tableName,
+                    i->config->rows));
+        }
+
+        bits.logPlayer->replay(first->config->log, replayFilter);
+        replayFilter.clear();
+    }
+
+    for(loading_vec::const_iterator i = loading.begin();
+        i != loading.end(); ++i)
+    {
+        bits.configWriter->saveTablet(i->tablet);
+    }
+    bits.configWriter->sync();
+
+        
+    typedef std::vector<warp::Runnable *> callback_vec;
+    callback_vec callbacks;
+
+    serverLock.lock();
+
+    for(loading_vec::const_iterator i = loading.begin();
+        i != loading.end(); ++i)
+    {
+        warp::Runnable * loadCallback = i->tablet->finishLoading();
+        if(loadCallback)
+            callbacks.push_back(loadCallback);
+    }
+
+    serverLock.unlock();
+
+    for(callback_vec::const_iterator i = callbacks.begin();
+        i != callbacks.end(); ++i)
+    {
+        (*i)->run();
+    }
+
+    loadCompleteCb.wait();
 }

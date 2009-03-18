@@ -136,7 +136,8 @@ namespace {
 
 BOOST_AUTO_UNIT_TEST(notable_test)
 {
-    TabletServer server(&NullLogWriter::make, 0, 0);
+    TabletServer::Bits bits;
+    TabletServer server(bits);
 
     TestApplyCb applyCb;
     server.apply_async(&applyCb, "table", getTestCells(),
@@ -151,7 +152,12 @@ BOOST_AUTO_UNIT_TEST(notable_test)
 BOOST_AUTO_UNIT_TEST(simple_test)
 {
     warp::WorkerPool pool(1, "pool", true);
-    TabletServer server(&NullLogWriter::make, &pool, 0);
+
+    TabletServer::Bits bits;
+    bits.createNewLog = &NullLogWriter::make;
+    bits.workerPool = &pool;
+    
+    TabletServer server(bits);
 
     TestApplyCb applyCb;
     server.apply_async(&applyCb, "table", getTestCells(),
