@@ -35,9 +35,9 @@ namespace tablet_name {
 
     inline bool isTableChar(char c)
     {
-        return ( ('a' <= c && c <= 'a') ||
+        return ( ('a' <= c && c <= 'z') ||
                  ('A' <= c && c <= 'Z') ||
-                     ('0' <= c && c <= '9') ||
+                 ('0' <= c && c <= '9') ||
                  c == '/' ||
                  c == '-' ||
                  c == '_' );
