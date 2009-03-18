@@ -38,6 +38,14 @@ namespace server {
             int64_t maxHistory;               // <= 0 means "keep all"
             size_t diskBlockSize;
             bool inMemory;
+
+            Group() :
+                maxAge(0),
+                maxHistory(0),
+                diskBlockSize(64<<10),
+                inMemory(false)
+            {
+            }
         };
 
         std::string tableName;
