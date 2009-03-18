@@ -108,6 +108,11 @@ public:
         memFrags.addFragment(p, sz);
     }
 
+    void applySchema(TableSchema const & s)
+    {
+        schema = s;
+    }
+
 private:
     class TabletLt;
 

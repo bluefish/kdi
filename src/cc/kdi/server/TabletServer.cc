@@ -230,6 +230,12 @@ TabletServer::~TabletServer()
 {
     logQueue.cancelWaits();
     threads.join_all();
+
+    for(table_map::const_iterator i = tableMap.begin();
+        i != tableMap.end(); ++i)
+    {
+        delete i->second;
+    }
 }
 
 void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
@@ -567,6 +573,19 @@ void TabletServer::applySchemas(std::vector<TableSchema> const & schemas)
     // For each schema:
     //   if the referenced table doesn't already exist, create it
     //   tell the table to update its schema
+
+    lock_t serverLock(serverMutex);
+
+    for(std::vector<TableSchema>::const_iterator i = schemas.begin();
+        i != schemas.end(); ++i)
+    {
+        Table * & table = tableMap[i->tableName];
+        if(!table)
+            table = new Table;
+
+        lock_t tableLock(table->tableMutex);
+        table->applySchema(*i);
+    }
 }
 
 void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)

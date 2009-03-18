@@ -20,6 +20,7 @@
 
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/ConfigReader.h>
+#include <kdi/server/ConfigWriter.h>
 #include <kdi/server/name_util.h>
 #include <kdi/rpc/PackedCellWriter.h>
 #include <boost/thread/mutex.hpp>
@@ -120,7 +121,6 @@ namespace {
     struct NullLogWriter
         : public LogWriter
     {
-    public:
         void writeCells(strref_t tableName, CellBufferCPtr const & cells) {}
         size_t getDiskSize() const { return 0; }
         void sync() {}
@@ -131,6 +131,14 @@ namespace {
             return new NullLogWriter;
         }
     };
+
+    struct NullConfigWriter
+        : public ConfigWriter
+    {
+        void saveTablet(Tablet const * tablet) {}
+        void sync() {}
+    };
+
 
     struct TestConfigReader
         : public ConfigReader
@@ -192,11 +200,13 @@ BOOST_AUTO_UNIT_TEST(simple_test)
 {
     warp::WorkerPool pool(1, "pool", true);
     TestConfigReader cfgReader;
+    NullConfigWriter cfgWriter;
 
     TabletServer::Bits bits;
     bits.createNewLog = &NullLogWriter::make;
     bits.workerPool = &pool;
     bits.configReader = &cfgReader;
+    bits.configWriter = &cfgWriter;
     
     TabletServer server(bits);
 
