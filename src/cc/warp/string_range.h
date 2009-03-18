@@ -85,7 +85,7 @@ namespace warp {
             return std::string(begin_, end_);
         }
 
-        void toString(std::string & s) const {
+        void assignTo(std::string & s) const {
             s.assign(begin_, end_);
         }
 
