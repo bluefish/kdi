@@ -159,16 +159,24 @@ size_t DiskFragment::nextBlock(ScanPredicate const & pred, size_t minBlock) cons
         return size_t(-1);
 
     ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate();
-    IntervalSet<string>::const_iterator lowerBoundIt = rows->begin();
 
-    // Try finding the next block based on the index
-    IndexEntryV1 const * ent;
-    ent = std::lower_bound(
-            &index->blocks[minBlock], index->blocks.end(),
-            *lowerBoundIt, RowLt());
+    if(rows)
+    {
+        IntervalSet<string>::const_iterator lowerBoundIt = rows->begin();
 
-    if(ent == index->blocks.end())
-        return size_t(-1);
+        // Try finding the next block based on the index
+        IndexEntryV1 const * ent;
+        ent = std::lower_bound(
+                &index->blocks[minBlock], index->blocks.end(),
+                *lowerBoundIt, RowLt());
+        
+        ent = &index->blocks[minBlock];
+
+        if(ent == index->blocks.end())
+            return size_t(-1);
+
+        return ent-index->blocks.begin();
+    }
 
     return minBlock;
 }
