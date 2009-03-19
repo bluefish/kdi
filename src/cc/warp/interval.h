@@ -700,6 +700,7 @@ private:
             points.begin(), points.end(),
             x, pointLt);
     }
+
 public:
     IntervalSet() {}
     explicit IntervalSet(Lt const & lt, A const & alloc=A()) :
@@ -733,15 +734,24 @@ public:
                 ++i != end() && i->isInfinite() );
     }
 
+    // True iff the set contains the value as defined by the given less-than
+    // ordering on point values.
+    template <class TT, class Lt2>  
+    bool contains(TT const & x, Lt2 const & lt) const
+    {
+        IntervalPointOrder<Lt2> plt(lt);
+
+        // Find the insertion point for 'x'.
+        citer_t it = std::lower_bound(points.begin(), points.end(), x, plt);
+
+        // We're in the set iff the insertion point is in a valid range.
+        return isInRange(it);
+    }
+
     /// True iff the set contains the value.
     bool contains(value_t const & x) const
     {
-        // Find the insertion point for 'x'.
-        citer_t it = lower_bound(point_t(x));
-
-        // We're in the set iff the insertion point is in a valid
-        // range.
-        return isInRange(it);
+        return contains(point_t(x), valueLt);
     }
 
     /// True iff the set contains the entire interval.

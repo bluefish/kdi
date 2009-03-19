@@ -113,15 +113,16 @@ bool DiskBlockReader::advance(CellKey & nextKey)
 void kdi::server::DiskBlockReader::copyUntil(CellKey const * stopKey, 
         bool filterErasures, CellBuilder & out)
 {
+    ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate();
     ScanPredicate::StringSetCPtr const & cols = pred.getColumnPredicate();
     ScanPredicate::TimestampSetCPtr const & times = pred.getTimePredicate();
 
     for(; cellIt != cellEnd && (!stopKey || *cellIt < *stopKey); ++cellIt)
     {
-        // Filter based on column and timestamp
+        // Filter cells not matching the predicate
         if(times && !times->contains(cellIt->key.timestamp)) continue;
-        //if(cols && !cols->contains(*cellIt->key.column)) continue;
-        //if(rows && !cols->contains(*cellIt->key.row)) continue;
+        if(cols && !cols->contains(*cellIt->key.column, warp::less())) continue;
+        if(rows && !rows->contains(*cellIt->key.row, warp::less())) continue;
 
         out.appendCell(*cellIt->key.row, *cellIt->key.column, cellIt->key.timestamp, 
                        *cellIt->value);
