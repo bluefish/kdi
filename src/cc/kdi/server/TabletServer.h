@@ -45,6 +45,9 @@ namespace server {
     class Table;
     class Fragment;
     class ConfigReader;
+    class ConfigWriter;
+    class LogPlayer;
+    class FragmentLoader;
     class TableSchema;
     class TabletConfig;
     typedef boost::shared_ptr<Fragment const> FragmentCPtr;
@@ -104,12 +107,28 @@ public:
         ~UnloadCb() {}
     };
 
+    struct Bits
+    {
+        LogWriterFactory     createNewLog;
+        warp::WorkerPool   * workerPool;
+        ConfigReader       * configReader;
+        FragmentLoader     * fragmentLoader;
+        ConfigWriter       * configWriter;
+        LogPlayer          * logPlayer;
+
+        Bits() :
+            workerPool(0),
+            configReader(0),
+            fragmentLoader(0),
+            configWriter(0),
+            logPlayer(0)
+        {}
+    };
+
     typedef std::vector<std::string> string_vec;
 
 public:
-    TabletServer(LogWriterFactory const & createNewLog,
-                 warp::WorkerPool * workerPool,
-                 ConfigReader * configReader);
+    explicit TabletServer(Bits const & bits);
     ~TabletServer();
 
     /// Load some tablets.  Tablet names should be given in sorted
@@ -182,9 +201,7 @@ private:
     typedef std::tr1::unordered_map<std::string, Table *> table_map;
 
 private:
-    LogWriterFactory const createNewLog;
-    warp::WorkerPool * const workerPool;
-    ConfigReader * const configReader;
+    Bits const bits;
 
     TransactionCounter txnCounter;
     table_map tableMap;

@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-03-13
+// Created 2009-03-17
 //
 // This file is part of KDI.
 //
@@ -18,41 +18,31 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_TABLESCHEMA_H
-#define KDI_SERVER_TABLESCHEMA_H
-
-#include <string>
-#include <vector>
+#ifndef KDI_SERVER_CONFIGWRITER_H
+#define KDI_SERVER_CONFIGWRITER_H
 
 namespace kdi {
 namespace server {
 
-    struct TableSchema
-    {
-        struct Group
-        {
-            std::string name;
-            std::string compressor;
-            std::vector<std::string> columns; // empty() means "include all"
-            int64_t maxAge;                   // <= 0 means "keep all"
-            int64_t maxHistory;               // <= 0 means "keep all"
-            size_t diskBlockSize;
-            bool inMemory;
+    class ConfigWriter;
 
-            Group() :
-                maxAge(0),
-                maxHistory(0),
-                diskBlockSize(64<<10),
-                inMemory(false)
-            {
-            }
-        };
-
-        std::string tableName;
-        std::vector<Group> groups;
-    };
+    // Forward declarations
+    class Tablet;
 
 } // namespace server
 } // namespace kdi
 
-#endif // KDI_SERVER_TABLESCHEMA_H
+//----------------------------------------------------------------------------
+// ConfigWriter
+//----------------------------------------------------------------------------
+class kdi::server::ConfigWriter
+{
+public:
+    virtual void saveTablet(Tablet const * tablet) = 0;
+    virtual void sync() = 0;
+
+protected:
+    ~ConfigWriter() {}
+};
+
+#endif // KDI_SERVER_CONFIGWRITER_H

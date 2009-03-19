@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-03-13
+// Created 2009-03-17
 //
 // This file is part of KDI.
 //
@@ -18,41 +18,39 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_TABLESCHEMA_H
-#define KDI_SERVER_TABLESCHEMA_H
+#ifndef KDI_SERVER_LOGPLAYER_H
+#define KDI_SERVER_LOGPLAYER_H
 
+#include <kdi/strref.h>
+#include <warp/interval.h>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace kdi {
 namespace server {
 
-    struct TableSchema
-    {
-        struct Group
-        {
-            std::string name;
-            std::string compressor;
-            std::vector<std::string> columns; // empty() means "include all"
-            int64_t maxAge;                   // <= 0 means "keep all"
-            int64_t maxHistory;               // <= 0 means "keep all"
-            size_t diskBlockSize;
-            bool inMemory;
-
-            Group() :
-                maxAge(0),
-                maxHistory(0),
-                diskBlockSize(64<<10),
-                inMemory(false)
-            {
-            }
-        };
-
-        std::string tableName;
-        std::vector<Group> groups;
-    };
+    class LogPlayer;
 
 } // namespace server
 } // namespace kdi
 
-#endif // KDI_SERVER_TABLESCHEMA_H
+
+//----------------------------------------------------------------------------
+// LogPlayer
+//----------------------------------------------------------------------------
+class kdi::server::LogPlayer
+{
+public:
+    typedef warp::Interval<std::string> row_interval;
+    typedef std::pair<std::string, row_interval> tablet_pair;
+    typedef std::vector<tablet_pair> filter_vec;
+
+public:
+    virtual void replay(strref_t logDir, filter_vec const & replayFilter) = 0;
+
+protected:
+    ~LogPlayer() {}
+};
+
+#endif // KDI_SERVER_LOGPLAYER_H

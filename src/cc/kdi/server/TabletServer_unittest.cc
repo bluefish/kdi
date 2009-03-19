@@ -19,6 +19,9 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/server/TabletServer.h>
+#include <kdi/server/ConfigReader.h>
+#include <kdi/server/ConfigWriter.h>
+#include <kdi/server/name_util.h>
 #include <kdi/rpc/PackedCellWriter.h>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition.hpp>
@@ -31,7 +34,9 @@ using namespace kdi::server;
 
 namespace {
 
+    template <class Base>
     struct TestCb
+        : public Base
     {
         bool succeeded;
         bool triggered;
@@ -72,11 +77,15 @@ namespace {
             while(!triggered)
                 cond.wait(lock);
         }
+
+        void error(std::exception const & ex)
+        {
+            failure(ex.what());
+        }
     };
 
     struct TestApplyCb
-        : public TabletServer::ApplyCb,
-          public TestCb
+        : public TestCb<TabletServer::ApplyCb>
     {
         int64_t commitTxn;
 
@@ -85,16 +94,10 @@ namespace {
             this->commitTxn = commitTxn;
             success();
         }
-
-        void error(std::exception const & ex)
-        {
-            failure(ex.what());
-        }
     };
 
     struct TestSyncCb
-        : public TabletServer::SyncCb,
-          public TestCb
+        : public TestCb<TabletServer::SyncCb>
     {
         int64_t syncTxn;
 
@@ -103,17 +106,21 @@ namespace {
             this->syncTxn = syncTxn;
             success();
         }
+    };
 
-        void error(std::exception const & ex)
+    struct TestLoadCb
+        : public TestCb<TabletServer::LoadCb>
+    {
+        void done()
         {
-            failure(ex.what());
+            success();
         }
     };
+
 
     struct NullLogWriter
         : public LogWriter
     {
-    public:
         void writeCells(strref_t tableName, CellBufferCPtr const & cells) {}
         size_t getDiskSize() const { return 0; }
         void sync() {}
@@ -122,6 +129,46 @@ namespace {
         static LogWriter * make()
         {
             return new NullLogWriter;
+        }
+    };
+
+    struct NullConfigWriter
+        : public ConfigWriter
+    {
+        void saveTablet(Tablet const * tablet) {}
+        void sync() {}
+    };
+
+
+    struct TestConfigReader
+        : public ConfigReader
+    {
+    public:
+        void readSchemas_async(
+            ReadSchemasCb * cb,
+            std::vector<std::string> const & tableNames)
+        {
+            std::vector<TableSchema> schemas(tableNames.size());
+            for(size_t i = 0; i < tableNames.size(); ++i)
+            {
+                schemas[i].tableName = tableNames[i];
+                schemas[i].groups.push_back(TableSchema::Group());
+            }
+            cb->done(schemas);
+        }
+        
+        void readConfigs_async(
+            ReadConfigsCb * cb,
+            std::vector<std::string> const & tabletNames)
+        {
+            std::vector<TabletConfig> configs(tabletNames.size());
+            for(size_t i = 0; i < tabletNames.size(); ++i)
+            {
+                warp::IntervalPoint<std::string> last;
+                decodeTabletName(tabletNames[i], configs[i].tableName, last);
+                configs[i].rows.unsetLowerBound().setUpperBound(last);
+            }
+            cb->done(configs);
         }
     };
 
@@ -134,9 +181,10 @@ namespace {
     }
 }
 
-BOOST_AUTO_UNIT_TEST(notable_test)
+BOOST_AUTO_UNIT_TEST(no_table_test)
 {
-    TabletServer server(&NullLogWriter::make, 0, 0);
+    TabletServer::Bits bits;
+    TabletServer server(bits);
 
     TestApplyCb applyCb;
     server.apply_async(&applyCb, "table", getTestCells(),
@@ -151,7 +199,26 @@ BOOST_AUTO_UNIT_TEST(notable_test)
 BOOST_AUTO_UNIT_TEST(simple_test)
 {
     warp::WorkerPool pool(1, "pool", true);
-    TabletServer server(&NullLogWriter::make, &pool, 0);
+    TestConfigReader cfgReader;
+    NullConfigWriter cfgWriter;
+
+    TabletServer::Bits bits;
+    bits.createNewLog = &NullLogWriter::make;
+    bits.workerPool = &pool;
+    bits.configReader = &cfgReader;
+    bits.configWriter = &cfgWriter;
+    
+    TabletServer server(bits);
+
+    TestLoadCb loadCb;
+    std::vector<std::string> tablets;
+    tablets.push_back("table!");
+    server.load_async(&loadCb, tablets);
+
+    loadCb.wait();
+
+    BOOST_CHECK_EQUAL(loadCb.succeeded, true);
+    BOOST_CHECK_EQUAL(loadCb.errorMsg, "");
 
     TestApplyCb applyCb;
     server.apply_async(&applyCb, "table", getTestCells(),

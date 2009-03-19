@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-03-16
+// Created 2009-03-18
 //
 // This file is part of KDI.
 //
@@ -18,8 +18,8 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_TABLET_NAME_H
-#define KDI_SERVER_TABLET_NAME_H
+#ifndef KDI_SERVER_NAME_UTIL_H
+#define KDI_SERVER_NAME_UTIL_H
 
 #include <kdi/server/errors.h>
 #include <kdi/strref.h>
@@ -31,18 +31,19 @@
 
 namespace kdi {
 namespace server {
-namespace tablet_name {
 
+    /// Return true iff the character is valid for a table name.
     inline bool isTableChar(char c)
     {
-        return ( ('a' <= c && c <= 'a') ||
+        return ( ('a' <= c && c <= 'z') ||
                  ('A' <= c && c <= 'Z') ||
-                     ('0' <= c && c <= '9') ||
+                 ('0' <= c && c <= '9') ||
                  c == '/' ||
                  c == '-' ||
                  c == '_' );
     }
 
+    /// Functor to wrap isTableChar
     struct IsTableChar
     {
         inline bool operator()(char c) const
@@ -51,40 +52,59 @@ namespace tablet_name {
         }
     };
 
-    inline warp::StringRange getTable(strref_t tablet)
+    /// Parse a tablet name and extract the table name
+    inline warp::StringRange extractTableName(strref_t tabletName)
     {
         char const * p = std::find_if(
-            tablet.begin(), tablet.end(),
+            tabletName.begin(), tabletName.end(),
             warp::logical_not<IsTableChar>());
 
-        if(p == tablet.begin() ||
-           p == tablet.end() ||
-           !(*p == ' ' || *p == '!'))
+        if(p == tabletName.begin() ||
+           p == tabletName.end())
         {
             throw BadTabletNameError();
         }
 
-        return warp::StringRange(tablet.begin(), p);
+        switch(*p)
+        {
+            case ' ':
+                break;
+
+            case '!':
+                if(p+1 != tabletName.end())
+                    throw BadTabletNameError();
+                break;
+
+            default:
+                throw BadTabletNameError();
+        }
+
+        return warp::StringRange(tabletName.begin(), p);
     }
 
-    inline void decode(strref_t tablet, std::string & tableName,
-                       warp::IntervalPoint<std::string> & lastRow)
+    /// Decode a tablet name into a table name and a row upper bound
+    inline void decodeTabletName(
+        strref_t tabletName,
+        std::string & tableName,
+        warp::IntervalPoint<std::string> & lastRow)
     {
-        strref_t t = getTable(tablet);
-        t.toString(tableName);
+        strref_t t = extractTableName(tabletName);
+        t.assignTo(tableName);
         if(*t.end() == '!')
             lastRow = warp::IntervalPoint<std::string>(
                 std::string(),
                 warp::PT_INFINITE_UPPER_BOUND);
         else
             lastRow = warp::IntervalPoint<std::string>(
-                std::string(t.end()+1, tablet.end()),
+                std::string(t.end()+1, tabletName.end()),
                 warp::PT_INCLUSIVE_UPPER_BOUND);
     }
 
-    inline void encode(strref_t tableName,
-                       warp::IntervalPoint<std::string> const & lastRow,
-                       std::string & tabletName)
+    /// Encode a table name and row upper bound into a tablet name
+    inline void encodeTabletName(
+        strref_t tableName,
+        warp::IntervalPoint<std::string> const & lastRow,
+        std::string & tabletName)
     {
         if(!tableName ||
            std::find_if(
@@ -95,7 +115,7 @@ namespace tablet_name {
             throw BadTabletNameError();
         }
 
-        tableName.toString(tabletName);
+        tableName.assignTo(tabletName);
         switch(lastRow.getType())
         {
             case warp::PT_INFINITE_UPPER_BOUND:
@@ -112,8 +132,7 @@ namespace tablet_name {
         }
     }
 
-} // namespace tablet_name
 } // namespace server
 } // namespace kdi
 
-#endif // KDI_SERVER_TABLET_NAME_H
+#endif // KDI_SERVER_NAME_UTIL_H

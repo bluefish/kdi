@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-03-13
+// Created 2009-03-17
 //
 // This file is part of KDI.
 //
@@ -18,41 +18,30 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_TABLESCHEMA_H
-#define KDI_SERVER_TABLESCHEMA_H
+#ifndef KDI_SERVER_FRAGMENTLOADER_H
+#define KDI_SERVER_FRAGMENTLOADER_H
 
-#include <string>
-#include <vector>
+#include <kdi/strref.h>
+#include <kdi/server/Fragment.h>
 
 namespace kdi {
 namespace server {
 
-    struct TableSchema
-    {
-        struct Group
-        {
-            std::string name;
-            std::string compressor;
-            std::vector<std::string> columns; // empty() means "include all"
-            int64_t maxAge;                   // <= 0 means "keep all"
-            int64_t maxHistory;               // <= 0 means "keep all"
-            size_t diskBlockSize;
-            bool inMemory;
-
-            Group() :
-                maxAge(0),
-                maxHistory(0),
-                diskBlockSize(64<<10),
-                inMemory(false)
-            {
-            }
-        };
-
-        std::string tableName;
-        std::vector<Group> groups;
-    };
+    class FragmentLoader;
 
 } // namespace server
 } // namespace kdi
 
-#endif // KDI_SERVER_TABLESCHEMA_H
+//----------------------------------------------------------------------------
+// FragmentLoader
+//----------------------------------------------------------------------------
+class kdi::server::FragmentLoader
+{
+public:
+    virtual FragmentCPtr load(strref_t fragFn) const;
+
+protected:
+    ~FragmentLoader() {}
+};
+
+#endif // KDI_SERVER_FRAGMENTLOADER_H
