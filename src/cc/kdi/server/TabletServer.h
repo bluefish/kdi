@@ -67,8 +67,8 @@ class kdi::server::TabletServer
 public:
     enum { MAX_TXN = 9223372036854775807 };
 
-public:
-    boost::mutex serverMutex;
+private:
+    mutable boost::mutex serverMutex;
 
 public:
     class ApplyCb
@@ -157,9 +157,9 @@ public:
     void sync_async(SyncCb * cb, int64_t waitForTxn);
 
 public:
-    /// Get the tabled Table.  Returns null if the table is not
+    /// Find the tabled Table.  Returns null if the table is not
     /// loaded.
-    Table * tryGetTable(strref_t tableName) const;
+    Table * findTable(strref_t tableName) const;
 
 private:
     Table * getTable(strref_t tableName) const;

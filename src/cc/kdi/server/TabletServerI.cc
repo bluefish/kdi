@@ -220,11 +220,7 @@ void TabletServerI::scan_async(
     }
 
     // Get the table
-    Table * t = 0;
-    {
-        boost::mutex::scoped_lock lock(server->serverMutex);
-        t = server->tryGetTable(table);
-    }
+    Table * t = server->findTable(table);
     if(!t)
     {
         cb->ice_exception(::kdi::rpc::TabletNotLoadedError());

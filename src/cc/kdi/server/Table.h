@@ -82,7 +82,10 @@ public:
     void triggerNewFragmentEvent(Fragment const * frag);
 
     /// Get the last transaction committed to this Table.
-    int64_t getLastCommitTxn() const;
+    int64_t getLastCommitTxn() const
+    {
+        return rowCommits.getMaxCommit();
+    }
 
     /// Return true if the named tablet is loaded in this table.
     bool isTabletLoaded(strref_t tabletName) const;
