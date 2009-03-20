@@ -202,7 +202,7 @@ BOOST_AUTO_TEST_CASE(pred_test)
         typedef std::auto_ptr<FragmentBlock> FragmentBlockPtr;
         typedef std::auto_ptr<FragmentBlockReader> FragmentBlockReaderPtr;
 
-        ScanPredicate pred("row = 'row1' or row = 'col3'");
+        ScanPredicate pred("row = 'row1' or row = 'row3'");
         DiskFragment t("memfs:pred");
         CellBuilder cellBuilder;
         for(size_t blockAddr = 0; blockAddr != size_t(-1); 
@@ -218,7 +218,7 @@ BOOST_AUTO_TEST_CASE(pred_test)
         }
 
         size_t nCells = cellBuilder.getCellCount();
-        BOOST_CHECK_EQUAL(4, nCells);
+        BOOST_CHECK_EQUAL(5, nCells);
 
         CellKey lastKey;
         std::vector<char> out;
