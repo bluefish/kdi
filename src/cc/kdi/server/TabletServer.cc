@@ -461,6 +461,16 @@ Table * TabletServer::getTable(strref_t tableName) const
     return i->second;
 }
 
+Table * TabletServer::findTable(strref_t tableName) const
+{
+    lock_t serverLock(serverMutex);
+    table_map::const_iterator i = tableMap.find(
+        tableName.toString());
+    if(i != tableMap.end())
+        return i->second;
+    return 0;
+}
+
 void TabletServer::logLoop()
 {
     typedef std::vector<Commit> commit_vec;

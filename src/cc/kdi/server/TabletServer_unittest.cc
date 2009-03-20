@@ -21,8 +21,11 @@
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/ConfigReader.h>
 #include <kdi/server/ConfigWriter.h>
+#include <kdi/server/BlockCache.h>
+#include <kdi/server/Scanner.h>
 #include <kdi/server/name_util.h>
 #include <kdi/rpc/PackedCellWriter.h>
+#include <kdi/rpc/PackedCellReader.h>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition.hpp>
 #include <string>
@@ -117,6 +120,15 @@ namespace {
         }
     };
 
+    struct TestScanCb
+        : public TestCb<Scanner::ScanCb>
+    {
+        void done()
+        {
+            success();
+        }
+    };
+
 
     struct NullLogWriter
         : public LogWriter
@@ -172,12 +184,41 @@ namespace {
         }
     };
 
+    class TestBlockCache
+        : public BlockCache
+    {
+    public:
+        FragmentBlock const * getBlock(
+            Fragment const * fragment, size_t blockAddr)
+        {
+            return fragment->loadBlock(blockAddr).release();
+        }
+
+        void releaseBlock(FragmentBlock const * block)
+        {
+            delete block;
+        }
+    };
+
     std::string getTestCells()
     {
         kdi::rpc::PackedCellWriter writer;
         writer.append("dingos", "ate", 42, "babies");
         writer.finish();
         return writer.getPacked().toString();
+    }
+
+    void checkTestCells(strref_t cells)
+    {
+        kdi::rpc::PackedCellReader reader(cells);
+        
+        BOOST_CHECK_EQUAL(reader.next(), true);
+        BOOST_CHECK_EQUAL(reader.getRow(), "dingos");
+        BOOST_CHECK_EQUAL(reader.getColumn(), "ate");
+        BOOST_CHECK_EQUAL(reader.getTimestamp(), 42);
+        BOOST_CHECK_EQUAL(reader.getValue(), "babies");
+
+        BOOST_CHECK_EQUAL(reader.next(), false);
     }
 }
 
@@ -202,39 +243,85 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     TestConfigReader cfgReader;
     NullConfigWriter cfgWriter;
 
+    // Set up the TabletServer bits
     TabletServer::Bits bits;
     bits.createNewLog = &NullLogWriter::make;
     bits.workerPool = &pool;
     bits.configReader = &cfgReader;
     bits.configWriter = &cfgWriter;
     
+    // Make a server
     TabletServer server(bits);
 
-    TestLoadCb loadCb;
-    std::vector<std::string> tablets;
-    tablets.push_back("table!");
-    server.load_async(&loadCb, tablets);
+    BOOST_CHECK(server.findTable("table") == 0);
 
-    loadCb.wait();
+    // Load a single tablet in table "table"
+    {
+        TestLoadCb loadCb;
+        std::vector<std::string> tablets;
+        tablets.push_back("table!");
+        server.load_async(&loadCb, tablets);
 
-    BOOST_CHECK_EQUAL(loadCb.succeeded, true);
-    BOOST_CHECK_EQUAL(loadCb.errorMsg, "");
+        loadCb.wait();
 
-    TestApplyCb applyCb;
-    server.apply_async(&applyCb, "table", getTestCells(),
-                       TabletServer::MAX_TXN, false);
+        BOOST_CHECK_EQUAL(loadCb.succeeded, true);
+        BOOST_CHECK_EQUAL(loadCb.errorMsg, "");
+        BOOST_CHECK(server.findTable("table") != 0);
+    }
 
-    applyCb.wait();
+    // Write a block of test cells
+    int64_t commitTxn = -1;
+    {
+        TestApplyCb applyCb;
+        server.apply_async(&applyCb, "table", getTestCells(),
+                           TabletServer::MAX_TXN, false);
+
+        applyCb.wait();
     
-    BOOST_CHECK_EQUAL(applyCb.succeeded, true);
-    BOOST_CHECK_EQUAL(applyCb.errorMsg, "");
+        BOOST_CHECK_EQUAL(applyCb.succeeded, true);
+        BOOST_CHECK_EQUAL(applyCb.errorMsg, "");
 
-    TestSyncCb syncCb;
-    server.sync_async(&syncCb, TabletServer::MAX_TXN);
+        commitTxn = applyCb.commitTxn;
+    }
 
-    syncCb.wait();
+    // Wait until the cells have been logged
+    {
+        TestSyncCb syncCb;
+        server.sync_async(&syncCb, TabletServer::MAX_TXN);
+
+        syncCb.wait();
     
-    BOOST_CHECK_EQUAL(syncCb.succeeded, true);
-    BOOST_CHECK_EQUAL(syncCb.syncTxn, applyCb.commitTxn);
-    BOOST_CHECK_EQUAL(syncCb.errorMsg, "");
+        BOOST_CHECK_EQUAL(syncCb.succeeded, true);
+        BOOST_CHECK_EQUAL(syncCb.syncTxn, commitTxn);
+        BOOST_CHECK_EQUAL(syncCb.errorMsg, "");
+    }
+
+    // Create a scnner to read the cells back
+    TestBlockCache testCache;
+    Scanner scanner(
+        server.findTable("table"),
+        &testCache,
+        ScanPredicate(),
+        Scanner::SCAN_ANY_TXN);
+
+    BOOST_CHECK(scanner.getLastKey() == 0);
+    BOOST_CHECK_EQUAL(scanner.scanContinues(), true);
+
+    // Scan the first block
+    {
+        TestScanCb scanCb;
+        scanner.scan_async(&scanCb, size_t(-1), size_t(-1));
+
+        scanCb.wait();
+
+        BOOST_CHECK_EQUAL(scanCb.succeeded, true);
+        BOOST_CHECK_EQUAL(scanCb.errorMsg, "");
+
+        BOOST_CHECK(scanner.getLastKey() != 0);
+        BOOST_CHECK_EQUAL(scanner.getScanTransaction(), commitTxn);
+        BOOST_CHECK_EQUAL(scanner.scanContinues(), false);
+        BOOST_CHECK(!scanner.getPackedCells().empty());
+        
+        checkTestCells(scanner.getPackedCells());
+    }
 }

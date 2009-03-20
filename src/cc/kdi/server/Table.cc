@@ -136,3 +136,30 @@ Table::~Table()
 {
     std::for_each(tablets.begin(), tablets.end(), warp::delete_ptr());
 }
+
+void Table::getFirstFragmentChain(ScanPredicate const & pred,
+                                  std::vector<Fragment const *> & chain,
+                                  warp::Interval<std::string> & rows) const
+{
+    EX_UNIMPLEMENTED_FUNCTION;
+
+    //warp::IntervalPoint<std::string> first(
+    //    std::string(), warp::PT_INCLUSIVE_LOWER_BOUND);
+    //if(ScanPredicate::StringSetCPtr x = pred.getRowPredicate())
+    //{
+    //    if(x->isEmpty())
+    //        raise<ValueError>("empty row predicate");
+    //    first = *x->begin();
+    //}
+    //
+    //tablet_vec::const_iterator i = std::lower_bound(
+    //    tablets.begin(), tablets.end(), first, TabletLt());
+    //if(i == tablets.end())
+    //    return 0;
+    //
+    //warp::IntervalPointOrder<warp::less> lt;
+    //if(!lt((*i)->getMinRow(), row))
+    //    return 0;
+    //
+    //return *i;
+}
