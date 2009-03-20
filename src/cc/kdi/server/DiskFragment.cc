@@ -190,7 +190,8 @@ bool DiskBlockReader::advance(CellKey & nextKey)
 void DiskBlockReader::copyUntil(CellKey const * stopKey, 
         bool filterErasures, CellBuilder & out)
 {
-    while(cellIt != cellEnd || getMoreCells()) 
+    while((cellIt != cellEnd || getMoreCells()) &&
+          (!stopKey || *cellIt < *stopKey)) 
     {
         //  (!stopKey || *cellIt < *stopKey)) 
 
