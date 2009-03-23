@@ -22,11 +22,11 @@
 #define KDI_MUX_MULTITABLE_H
 
 #include <kdi/table.h>
+#include <warp/assocvec.h>
 #include <warp/interval.h>
 #include <warp/string_range.h>
 #include <boost/noncopyable.hpp>
 #include <vector>
-#include <map>
 #include <string>
 
 namespace kdi {
@@ -76,7 +76,7 @@ private:
     };
     
     typedef std::vector<Group> group_vec;
-    typedef std::map<warp::StringRange, Group *> column_map;
+    typedef warp::AssocVector<std::string, Group *, warp::less, warp::AVDirectStorage<std::string, Group *> > column_map;
 
 private:
     inline Group * findColumnGroup(strref_t col) const;

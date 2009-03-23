@@ -154,6 +154,9 @@ CellStreamPtr MultiTable::scan(ScanPredicate const & pred) const
     return merge;
 }
 
+//#include <boost/format.hpp>
+//#include <iostream>
+
 void MultiTable::loadConfig(warp::Config const & cfg)
 {
     // group.x.columns = foo bar
@@ -178,12 +181,31 @@ void MultiTable::loadConfig(warp::Config const & cfg)
 
         g.uri = c.get("uri");
         tok_t tok(c.get("columns"), sep);
-        for(tok_t::iterator i = tok.begin(); i != tok.end(); ++i)
+        for(tok_t::iterator w = tok.begin(); w != tok.end(); ++w)
         {
-            g.columns.add(warp::makePrefixInterval(*i + ":"));
-            index[*i] = &g;
+            g.columns.add(warp::makePrefixInterval(*w + ":"));
+            index[*w] = &g;
         }
     }
+
+    // using namespace std;
+    // for(group_vec::const_iterator i = groups.begin();
+    //     i != groups.end(); ++i)
+    // {
+    //     cout << boost::format("Group %d: %s\n  %s")
+    //         % (i - groups.begin())
+    //         % i->uri
+    //         % i->columns
+    //          << endl;
+    // }
+    // for(column_map::const_iterator i = index.begin();
+    //     i != index.end(); ++i)
+    // {
+    //     cout << boost::format("Family %s --> Group %d")
+    //         % i->first
+    //         % (i->second - &*groups.begin())
+    //          << endl;
+    // }
 }
 
 
