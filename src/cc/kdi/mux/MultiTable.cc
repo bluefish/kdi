@@ -55,7 +55,7 @@ CellStreamPtr MultiTable::Group::maybeScan(ScanPredicate const & pred) const
         return openScan(ScanPredicate(pred).setColumnPredicate(columns));
 
     warp::IntervalSet<std::string> x(columns);
-    //x.intersect(*pcols);
+    x.intersect(*pcols);
     if(!x.isEmpty())
         return openScan(ScanPredicate(pred).setColumnPredicate(x));
     else
