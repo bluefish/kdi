@@ -23,6 +23,7 @@
 #include <kdi/cell_filter.h>
 #include <kdi/marshal/cell_block.h>
 #include <kdi/marshal/cell_block_builder.h>
+#include <warp/StatTracker.h>
 #include <warp/builder.h>
 #include <warp/log.h>
 #include <warp/fs.h>
@@ -70,10 +71,12 @@ namespace
 //----------------------------------------------------------------------------
 ScannerI::ScannerI(kdi::TablePtr const & table,
                    kdi::ScanPredicate const & pred,
-                   kdi::net::ScannerLocator * locator) :
+                   kdi::net::ScannerLocator * locator,
+                   warp::StatTracker * tracker) :
     limit(new LimitedScanner(SCAN_THRESHOLD)),
     cellBuilder(&builder),
-    locator(locator)
+    locator(locator),
+    tracker(tracker)
 {
     //log("ScannerI %p: created", this);
 
@@ -113,11 +116,16 @@ ScannerI::ScannerI(kdi::TablePtr const & table,
 
     limit->pipeFrom(table->scan(basePred));
     scan = applyPredicateFilter(filterPred, limit);
+
+    tracker->add("Scanner.nActive", 1);
+    tracker->add("Scanner.nOpened", 1);
 }
 
 ScannerI::~ScannerI()
 {
     //log("ScannerI %p: destroyed", this);
+
+    tracker->add("Scanner.nActive", -1);
 }
 
 void ScannerI::getBulk(Ice::ByteSeq & cells, bool & lastBlock,
@@ -146,6 +154,9 @@ void ScannerI::getBulk(Ice::ByteSeq & cells, bool & lastBlock,
     builder.finalize();
     cells.resize(builder.getFinalSize());
     builder.exportTo(&cells[0]);
+
+    tracker->add("Scanner.nGets", 1);
+    tracker->add("Scanner.getSz", cells.size());
 }
 
 void ScannerI::close(Ice::Current const & cur)
@@ -156,6 +167,8 @@ void ScannerI::close(Ice::Current const & cur)
 
     log("Scan: close scanner %d", id);
     locator->remove(id);
+
+    tracker->add("Scanner.nClosed", 1);
 }
 
 
@@ -164,14 +177,18 @@ void ScannerI::close(Ice::Current const & cur)
 //----------------------------------------------------------------------------
 TableI::TableI(kdi::TablePtr const & table,
                std::string const & tablePath,
-               kdi::net::ScannerLocator * locator) :
+               kdi::net::ScannerLocator * locator,
+               warp::StatTracker * tracker) :
     table(table),
     tablePath(tablePath),
-    locator(locator)
+    locator(locator),
+    tracker(tracker)
 {
     //log("TableI %p: created", this);
     assert(table);
     assert(locator);
+
+    tracker->add("Table.nActive", 1);
 }
 
 TableI::~TableI()
@@ -187,6 +204,8 @@ TableI::~TableI()
     // }
 
     //log("TableI %p: destroyed", this);
+
+    tracker->add("Table.nActive", -1);
 }
 
 void TableI::applyMutations(Ice::ByteSeq const & cells,
@@ -199,24 +218,35 @@ void TableI::applyMutations(Ice::ByteSeq const & cells,
 
     CellBlock const * b = reinterpret_cast<CellBlock const *>(&cells[0]);
 
+    size_t nSet = 0;
+    size_t nErase = 0;
+    
     for(CellData const * ci = b->cells.begin(); ci != b->cells.end(); ++ci)
     {
         if(ci->value)
         {
+            ++nSet;
             table->set(*ci->key.row, *ci->key.column,
                        ci->key.timestamp, *ci->value);
         }
         else
         {
+            ++nErase;
             table->erase(*ci->key.row, *ci->key.column,
                          ci->key.timestamp);
         }
     }
+
+    tracker->add("Table.nApply", 1);
+    tracker->add("Table.applySz", cells.size());
+    tracker->add("Table.nSet", nSet);
+    tracker->add("Table.nErase", nErase);
 }
 
 void TableI::sync(Ice::Current const & cur)
 {
     table->sync();
+    tracker->add("Table.nSync", 1);
 }
 
 ScannerPrx TableI::scan(std::string const & predicate,
@@ -234,7 +264,7 @@ ScannerPrx TableI::scan(std::string const & predicate,
     id.name = locator->getNameFromId(scannerId);
 
     // Make ICE object for scanner
-    ScannerIPtr obj = new ScannerI(table, pred, locator);
+    ScannerIPtr obj = new ScannerI(table, pred, locator, tracker);
     size_t nActive = locator->add(scannerId, obj);
 
     // Report
@@ -248,7 +278,8 @@ ScannerPrx TableI::scan(std::string const & predicate,
 //----------------------------------------------------------------------------
 // TableManagerI
 //----------------------------------------------------------------------------
-TableManagerI::TableManagerI()
+TableManagerI::TableManagerI(warp::StatTracker * tracker) :
+    tracker(tracker)
 {
     //log("TableManagerI %p: created", this);
 }
@@ -279,6 +310,8 @@ TablePrx TableManagerI::openTable(std::string const & path,
     trim_right_if(id.name, is_any_of("/"));
 
     //log("TableManagerI::openTable(%s)", id.name);
+
+    tracker->add("TableManager.open", 1);
 
     // Return proxy
     return TablePrx::uncheckedCast(cur.adapter->createProxy(id));

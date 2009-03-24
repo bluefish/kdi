@@ -54,6 +54,8 @@ namespace details {
 } // namespace net
 } // namespace kdi
 
+namespace warp { class StatTracker; }
+
 
 //----------------------------------------------------------------------------
 // ScannerI
@@ -67,14 +69,16 @@ class kdi::net::details::ScannerI
     warp::Builder builder;
     kdi::marshal::CellBlockBuilder cellBuilder;
 
-    ScannerLocator * locator;
+    ScannerLocator * const locator;
+    warp::StatTracker * const tracker;
 
     boost::mutex mutex;
 
 public:
     ScannerI(kdi::TablePtr const & table,
              kdi::ScanPredicate const & pred,
-             ScannerLocator * locator);
+             ScannerLocator * locator,
+             warp::StatTracker * tracker);
     ~ScannerI();
 
     virtual void getBulk(Ice::ByteSeq & cells, bool & lastBlock,
@@ -94,12 +98,14 @@ class kdi::net::details::TableI
     kdi::TablePtr table;
     std::string tablePath;
 
-    ScannerLocator * locator;
+    ScannerLocator * const locator;
+    warp::StatTracker * const tracker;
 
 public:
     TableI(kdi::TablePtr const & table,
            std::string const & tablePath,
-           ScannerLocator * locator);
+           ScannerLocator * locator,
+           warp::StatTracker * tracker);
     ~TableI();
 
     virtual void applyMutations(Ice::ByteSeq const & cells,
@@ -119,8 +125,10 @@ class kdi::net::details::TableManagerI
     : virtual public kdi::net::details::TableManager,
       private boost::noncopyable
 {
+    warp::StatTracker * const tracker;
+
 public:
-    TableManagerI();
+    explicit TableManagerI(warp::StatTracker * tracker);
     ~TableManagerI();
 
     virtual TablePrx openTable(std::string const & path,
