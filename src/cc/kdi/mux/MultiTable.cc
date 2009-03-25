@@ -154,15 +154,28 @@ CellStreamPtr MultiTable::scan(ScanPredicate const & pred) const
     return merge;
 }
 
+RowIntervalStreamPtr MultiTable::scanIntervals() const
+{
+    if(!intervalGroup)
+        return Table::scanIntervals();
+
+    if(!intervalGroup->table)
+        intervalGroup->table = Table::open(intervalGroup->uri);
+    
+    return intervalGroup->table->scanIntervals();
+}
+
 //#include <boost/format.hpp>
 //#include <iostream>
 
 void MultiTable::loadConfig(warp::Config const & cfg)
 {
     // group.x.columns = foo bar
+    // group.x.interval = true
     // group.x.uri = kdi+hash://hcrawl00$x/foobar?hash_x=0,1,2,3,4
     // group.y.columns = baz
     // group.y.uri = kdi+hash://hcrawl00$x/baz?hash_x=0,1,2,3,4
+    // interval.uri = kdi+hash://hcrawl00$x/foobar?hash_x=0,1,2,3,4
     
     sep_t sep(" \r\n\t");
 
@@ -172,6 +185,7 @@ void MultiTable::loadConfig(warp::Config const & cfg)
     groups.clear();
     index.clear();
     defaultGroup = 0;
+    intervalGroup = 0;
 
     groups.resize(nGroups);
     for(size_t i = 0; i < nGroups; ++i)
@@ -186,26 +200,36 @@ void MultiTable::loadConfig(warp::Config const & cfg)
             g.columns.add(warp::makePrefixInterval(*w + ":"));
             index[*w] = &g;
         }
+
+        std::string ival = c.get("interval", "false");
+        if(ival == "true" || ival == "1")
+            intervalGroup = &g;
     }
 
-    // using namespace std;
-    // for(group_vec::const_iterator i = groups.begin();
-    //     i != groups.end(); ++i)
-    // {
-    //     cout << boost::format("Group %d: %s\n  %s")
-    //         % (i - groups.begin())
-    //         % i->uri
-    //         % i->columns
-    //          << endl;
-    // }
-    // for(column_map::const_iterator i = index.begin();
-    //     i != index.end(); ++i)
-    // {
-    //     cout << boost::format("Family %s --> Group %d")
-    //         % i->first
-    //         % (i->second - &*groups.begin())
-    //          << endl;
-    // }
+    if(!intervalGroup && !groups.empty())
+        intervalGroup = &groups.front();
+
+    //using namespace std;
+    //for(group_vec::const_iterator i = groups.begin();
+    //    i != groups.end(); ++i)
+    //{
+    //    cout << boost::format("Group %d: %s\n  %s")
+    //        % (i - groups.begin())
+    //        % i->uri
+    //        % i->columns
+    //         << endl;
+    //}
+    //for(column_map::const_iterator i = index.begin();
+    //    i != index.end(); ++i)
+    //{
+    //    cout << boost::format("Family %s --> Group %d")
+    //        % i->first
+    //        % (i->second - &*groups.begin())
+    //         << endl;
+    //}
+    //if(intervalGroup)
+    //    cout << "Interval: Group " << (intervalGroup - &*groups.begin())
+    //         << endl;
 }
 
 

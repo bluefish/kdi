@@ -56,6 +56,8 @@ public:
     CellStreamPtr scan() const;
     CellStreamPtr scan(ScanPredicate const & pred) const;
 
+    RowIntervalStreamPtr scanIntervals() const;
+
 private:
     struct Group
     {
@@ -88,6 +90,7 @@ private:
     group_vec groups;
     column_map index;
     Group * defaultGroup;
+    Group * intervalGroup;
 };
 
 #endif // KDI_MUX_MULTITABLE_H
