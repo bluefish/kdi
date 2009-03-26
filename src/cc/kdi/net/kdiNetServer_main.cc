@@ -106,6 +106,28 @@ namespace {
         }
     };
 
+    inline bool isAlnum(char c)
+    {
+        return ( (c >= 'a' && c <= 'z') ||
+                 (c >= 'A' && c <= 'Z') ||
+                 (c >= '0' && c <= '9') );
+    }
+
+    void validateTableName(strref_t name)
+    {
+        for(char const * p = name.begin(); p != name.end(); ++p)
+        {
+            if(isAlnum(*p) || *p == '/' || *p == '.' ||
+               *p == '-' || *p == '_')
+            {
+                // Valid char
+                continue;
+            }
+            else
+                raise<ValueError>("invalid table name");
+        }
+    }
+
 }
 
 #include <kdi/tablet/CachedFragmentLoader.h>
@@ -294,6 +316,8 @@ namespace {
             }
             else
             {
+                validateTableName(name);
+
                 try {
                     log("Load table: %s", name);
                     TablePtr p(
@@ -418,14 +442,15 @@ namespace {
                 boost::bind(
                     &SuperTabletServer::makeTable,
                     server, _1),
-                scannerLocator);
+                scannerLocator, myTracker);
 
             // Install locators
             adapter->addServantLocator(scannerLocator, "scan");
             adapter->addServantLocator(tableLocator, "table");
 
             // Create TableManager object
-            Ice::ObjectPtr object = new ::kdi::net::details::TableManagerI;
+            Ice::ObjectPtr object = new ::kdi::net::details::TableManagerI(
+                myTracker);
             adapter->add(object, ic->stringToIdentity("TableManager"));
 
             // Create StatReporter object

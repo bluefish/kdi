@@ -660,19 +660,46 @@ private:
     typedef A alloc_t;
     typedef IntervalPointOrder<value_cmp_t> point_cmp_t;
     typedef typename alloc_t::template rebind<point_t>::other point_alloc_t;
-    typedef std::set<point_t, point_cmp_t, point_alloc_t> set_t;
+    typedef std::vector<point_t, point_alloc_t> vec_t;
 
-    typedef typename set_t::iterator iter_t;
-    typedef typename set_t::const_iterator citer_t;
+    typedef typename vec_t::iterator iter_t;
+    typedef typename vec_t::const_iterator citer_t;
 
 public:
     typedef citer_t const_iterator;
 
 private:
-    set_t points;
+    vec_t points;
     value_cmp_t valueLt;
     point_cmp_t pointLt;
 
+    citer_t upper_bound(point_t const & x) const
+    {
+        return std::upper_bound(
+            points.begin(), points.end(),
+            x, pointLt);
+    }
+
+    citer_t lower_bound(point_t const & x) const
+    {
+        return std::lower_bound(
+            points.begin(), points.end(),
+            x, pointLt);
+    }
+
+    iter_t upper_bound(point_t const & x) 
+    {
+        return std::upper_bound(
+            points.begin(), points.end(),
+            x, pointLt);
+    }
+
+    iter_t lower_bound(point_t const & x)
+    {
+        return std::lower_bound(
+            points.begin(), points.end(),
+            x, pointLt);
+    }
 public:
     IntervalSet() {}
     explicit IntervalSet(Lt const & lt, A const & alloc=A()) :
@@ -710,7 +737,7 @@ public:
     bool contains(value_t const & x) const
     {
         // Find the insertion point for 'x'.
-        citer_t it = points.lower_bound(point_t(x));
+        citer_t it = lower_bound(point_t(x));
 
         // We're in the set iff the insertion point is in a valid
         // range.
@@ -727,8 +754,8 @@ public:
         // The interval is contained without interruption iff the
         // insertion point for the lower bound and the upper bound are
         // the same, and that point is in a valid range.
-        citer_t lo = points.upper_bound(x.getLowerBound());
-        citer_t hi = points.lower_bound(x.getUpperBound());
+        citer_t lo = upper_bound(x.getLowerBound());
+        citer_t hi = lower_bound(x.getUpperBound());
 
         return (lo == hi && isInRange(lo));
     }
@@ -744,8 +771,8 @@ public:
         // contained completely within a valid range or there is some
         // endpoint between the insertion points for the lower and
         // upper bounds.
-        citer_t lo = points.upper_bound(x.getLowerBound());
-        citer_t hi = points.lower_bound(x.getUpperBound());
+        citer_t lo = upper_bound(x.getLowerBound());
+        citer_t hi = lower_bound(x.getUpperBound());
 
         return (lo != hi || isInRange(lo));
     }
@@ -754,32 +781,37 @@ public:
     /// and the given interval.
     my_t & add(interval_t const & x)
     {
-        typedef std::pair<iter_t, bool> ipair_t;
+        // Reserve additional space now so that iterators won't
+        // be invalidated by reallocation.
+        points.reserve(points.size()+2);
 
         // Ignore empty update intervals
         if(!pointLt(x.getLowerBound(), x.getUpperBound()))
             return *this;
 
-        // Insert lower bound -- note that the set will guarantee that
-        // we do not insert a duplicate point.
-        ipair_t lpair = points.insert(x.getLowerBound());
-        iter_t lower = lpair.first;
+        // Insert lower bound -- 
+        iter_t lower = lower_bound(x.getLowerBound());
 
-        // If we actually inserted something, pick the least
-        // constrained lower bound
-        if(lpair.second)
+        // Only need to insert anything if not duplicate
+        if(lower == points.end() || pointLt(x.getLowerBound(), *lower)) {
+            lower = points.insert(lower, x.getLowerBound());
+
+            // Move to the least constrained lower bound
             lower = pickLowerBound(lower);
+        }
 
-        // Insert upper bound -- note that the set will guarantee that
-        // we do not insert a duplicate point.
-        ipair_t upair = points.insert(x.getUpperBound());
-        iter_t upper = upair.first;
+        // Insert upper bound -- 
+        iter_t upper = upper_bound(x.getUpperBound());
 
-        // If we actually inserted something, pick the least
-        // constrained upper bound
-        if(upair.second)
+        // Don't insert duplicates
+        if(upper == points.end() || pointLt(*(upper-1), x.getUpperBound()))
+        {
+            upper = points.insert(upper, x.getUpperBound());
+
+            // Move to the least constrained upper bound
             upper = pickUpperBound(upper);
-
+        }
+        
         // Delete extraneous elements between the two endpoints
         if(++lower != upper)
             points.erase(lower, upper);
@@ -801,7 +833,7 @@ public:
         // Find the lower bound of our clip region.  If is in the
         // middle of a valid range, we'll have to clip that range by
         // inserting a new lower bound.
-        iter_t lower = points.lower_bound(x.getLowerBound());
+        iter_t lower = lower_bound(x.getLowerBound());
         if(isInRange(lower))
             lower = points.insert(lower, x.getLowerBound());
 
@@ -811,7 +843,7 @@ public:
         // Find the upper bound of our clip region.  It is in the
         // middle of a valid range, we'll have to clip that range by
         // inserting a new upper bound.
-        iter_t upper = points.upper_bound(x.getUpperBound());
+        iter_t upper = upper_bound(x.getUpperBound());
         if(isInRange(upper))
         {
             upper = points.insert(upper, x.getUpperBound());
@@ -823,6 +855,43 @@ public:
         // Erase everything after the end of our clip region.
         points.erase(upper, points.end());
 
+        return *this;
+    }
+
+    /// Update to the intersection of this and another interval set.
+    my_t & intersect(my_t const & o)
+    {
+        vec_t merged;
+        
+        citer_t i    = points.begin();
+        citer_t iEnd = points.end();
+        citer_t j    = o.points.begin();
+        citer_t jEnd = o.points.end();
+
+        bool inI = false;
+        bool inJ = false;
+
+        while(i != iEnd && j != jEnd)
+        {
+            if(pointLt(*j, *i))
+            {
+                if(inI)
+                    merged.push_back(*j);
+                
+                inJ = !inJ;
+                ++j;
+            }
+            else
+            {
+                if(inJ)
+                    merged.push_back(*i);
+
+                inI = !inI;
+                ++i;
+            }
+        }
+
+        points.swap(merged);
         return *this;
     }
 

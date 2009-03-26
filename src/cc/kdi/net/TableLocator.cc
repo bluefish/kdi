@@ -20,6 +20,7 @@
 
 #include <kdi/net/TableLocator.h>
 #include <kdi/net/TableManagerI.h>
+#include <warp/StatTracker.h>
 #include <warp/log.h>
 #include <cassert>
 
@@ -30,9 +31,11 @@ using warp::log;
 // TableLocator
 //----------------------------------------------------------------------------
 TableLocator::TableLocator(table_maker_t const & makeTable,
-                           ScannerLocator * scannerLocator) :
+                           ScannerLocator * scannerLocator,
+                           warp::StatTracker * tracker) :
     makeTable(makeTable),
-    scannerLocator(scannerLocator)
+    scannerLocator(scannerLocator),
+    tracker(tracker)
 {
 }
 
@@ -84,7 +87,7 @@ Ice::ObjectPtr TableLocator::locate(Ice::Current const & cur,
 
             // Create the Ice object wrapper for the table
             using kdi::net::details::TableI;
-            obj = new TableI(tbl, name, scannerLocator);
+            obj = new TableI(tbl, name, scannerLocator, tracker);
             log("TableLocator: created table %s", name);
         }
         catch(std::exception const & ex) {

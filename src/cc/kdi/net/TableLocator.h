@@ -41,6 +41,7 @@ namespace net {
 } // namespace net
 } // namespace kdi
 
+namespace warp { class StatTracker; }
 
 //----------------------------------------------------------------------------
 // TableLocator
@@ -71,9 +72,12 @@ class kdi::net::TableLocator
     mutex_t mutex;
     boost::condition objectCreated;
 
+    warp::StatTracker * const tracker;
+
 public:
     TableLocator(table_maker_t const & makeTable,
-                 ScannerLocator * scannerLocator);
+                 ScannerLocator * scannerLocator,
+                 warp::StatTracker * tracker);
     ~TableLocator();
 
     virtual Ice::ObjectPtr locate(Ice::Current const & cur,

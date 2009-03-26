@@ -305,6 +305,10 @@ src2obj = $(patsubst $(src)/%.$(2),$(build)/%.o,$(filter %.$(2),$(1)))
 srcs2obj = $(call src2obj,$(1),cc) $(call src2obj,$(1),cpp) \
            $(call src2obj,$(1),c) $(call src2obj,$(1),ice)
 
+ice2gen = $(patsubst $(src)/%.$(2),$(build)/%.h,$(filter %.$(2),$(1))) \
+          $(patsubst $(src)/%.$(2),$(build)/%.cc,$(filter %.$(2),$(1)))
+srcs2gen = $(call ice2gen,$(1),ice)
+
 
 #----------------------------------------------------------------------------
 # Define module import function
@@ -327,6 +331,7 @@ MAGIC_REQUIRE_VARS :=
 
 SRC := $(wildcard $(1)/*.cc) $(wildcard $(1)/*.cpp) \
        $(wildcard $(1)/*.c) $(wildcard $(1)/*.ice)
+GEN := $$(call srcs2gen,$$(SRC))
 OBJ := $$(call srcs2obj,$$(SRC))
 
 TARGETS :=
@@ -350,7 +355,7 @@ endif
 $$(MODULE): $$(TARGETS)
 
 #mod_$(subst /,_,$(1))_clean := $$(filter-out $$(BUILD_DIR)/%,$$(OBJ) $$(TARGETS) $$(CLEAN_EXTRA))
-mod_$(subst /,_,$(1))_clean := $$(OBJ) $$(TARGETS) $$(CLEAN_EXTRA)
+mod_$(subst /,_,$(1))_clean := $$(OBJ) $$(GEN) $$(TARGETS) $$(CLEAN_EXTRA)
 
 $$(MODULE)_clean:
 	@echo "Cleaning $(1)"
@@ -440,6 +445,7 @@ BUILD_DIR = $(error Invalid reference to BUILD_DIR variable)
 DEP_DIR = $(error Invalid reference to DEP_DIR variable)
 SRC = $(error Invalid reference to SRC variable)
 OBJ = $(error Invalid reference to OBJ variable)
+GEN = $(error Invalid reference to GEN variable)
 TARGETS = $(error Invalid reference to TARGETS variable)
 UNITTESTS = $(error Invalid reference to UNITTESTS variable)
 BIN_INSTALL = $(error Invalid reference to BIN_INSTALL variable)
