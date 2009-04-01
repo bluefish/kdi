@@ -28,6 +28,7 @@
 #include <warp/objectpool.h>
 #include <warp/tuple.h>
 #include <boost/noncopyable.hpp>
+#include <boost/scoped_array.hpp>
 #include <algorithm>
 #include <string.h>
 
@@ -51,7 +52,7 @@ public:
     size_t nNodes;
 
 public:
-    StringTrie() : root(0) {}
+    StringTrie() {}
 
     void insert(strref_t key, T const & val)
     {
@@ -61,14 +62,108 @@ public:
     }
 
 private:
+
+    struct Node;
+
+
+    struct NodeLt
+    {
+        size_t * nNodeCmp;
+
+        NodeLt(size_t * nNodeCmp) : nNodeCmp(nNodeCmp) {}
+
+        bool operator()(Node const * a, Node const * b) const
+        {
+            ++(*nNodeCmp);
+
+            if(a->length)
+            {
+                if(b->length)
+                    return a->data[0] < b->data[0];
+                else
+                    return false;
+            }
+            else if(b->length)
+                return true;
+            else
+                return false;
+        }
+
+        bool operator()(char a, Node const * b) const
+        {
+            ++(*nNodeCmp);
+
+            if(b->length)
+                return a < b->data[0];
+            else
+                return false;
+        }
+
+        bool operator()(Node const * a, char b) const
+        {
+            ++(*nNodeCmp);
+
+            if(a->length)
+                return a->data[0] < b;
+            else
+                return true;
+        }
+    };
+
     struct Node
     {
         char const * data;
-        size_t length;
-        Node * child;
-        Node * sibling;
+        boost::scoped_array<Node *> children;
+        uint32_t length;
+        uint16_t nChildren;
+        uint8_t hasNullChild;
 
-        Node() : data(0), length(0), child(0), sibling(0) {}
+        Node() : data(0), length(0), nChildren(0), hasNullChild(0) {}
+
+        void swapChildren(Node & o)
+        {
+            children.swap(o.children);
+            std::swap(nChildren, o.nChildren);
+            std::swap(hasNullChild, o.hasNullChild);
+        }
+
+        Node * findChild(char const * a, char const * b, size_t * nNodeCmp)
+        {
+            if(a == b)
+            {
+                if(hasNullChild)
+                    return children[0];
+                else
+                    return 0;
+            }
+            
+            Node ** begin = children.get();
+            Node ** end = begin + nChildren;
+            Node ** i = std::lower_bound(begin, end, *a, NodeLt(nNodeCmp));
+            if(i != end && (*i)->data[0] == *a)
+                return *i;
+            else
+                return 0;
+        }
+
+        void addChild(Node * c, size_t * nNodeCmp)
+        {
+            Node ** begin = children.get();
+            Node ** end = begin + nChildren;
+            Node ** i = std::lower_bound(begin, end, c, NodeLt(nNodeCmp));
+
+            boost::scoped_array<Node *> newChildren(new Node *[nChildren+1]);
+            Node ** out = newChildren.get();
+            out = std::copy(begin, i, out);
+            *out = c;
+            std::copy(i, end, ++out);
+
+            children.swap(newChildren);
+
+            if(!c->length)
+                hasNullChild = 1;
+            ++nChildren;
+        }
     };
 
 
@@ -105,35 +200,25 @@ private:
 
         mid->data = branchPt;
         mid->length = node->length - (branchPt - node->data);
-        mid->child = node->child;
-        mid->sibling = sib;
+        mid->swapChildren(*node);
 
         sib->length = tailEnd - tailBegin;
         char * d = stringAlloc.alloc(sib->length);
         memcpy(d, tailBegin, sib->length);
         sib->data = d;
-        sib->child = 0;
-        sib->sibling = 0;
 
         node->length -= mid->length;
-        node->child = mid;
+        node->addChild(mid, &nNodeCmp);
+        node->addChild(sib, &nNodeCmp);
 
         return sib;
-    }
-
-    static bool isCorrectSibling(Node const * n, char const * begin, char const * end)
-    {
-        if(begin == end)
-            return n->length == 0;
-        else
-            return n->length > 1 && n->data[0] == begin[0];
     }
 
     Node * insert(char const * begin, char const * end)
     {
         // Find a node where the input string diverges from the
         // contained string
-        Node ** p = &root;
+        Node * p = &root;
 
         // Find the amount of overlap for the insertion string and the
         // containing node.  If it's zero, add a sibling node.  If
@@ -145,125 +230,117 @@ private:
         // node will be shortened to the matching prefix length and
         // update it's child pointer to the first new child.
 
-        while(*p)
+        Node * n = p->findChild(begin, end, &nNodeCmp);
+        while(n)
         {
-            // If this node has the wrong prefix, move to the next
-            // sibling.
-            ++nNodeCmp;
-            if(!isCorrectSibling(*p, begin, end))
+            char const * ni;
+            char const * si;
+            if(n->length >= size_t(end - begin))
             {
-                p = &(*p)->sibling;
-                continue;
-            }
+                tie(si,ni) = std::mismatch(begin, end, n->data);
 
-            char const * a;
-            char const * b;
-            if((*p)->length >= size_t(end - begin))
-            {
-                tie(b,a) = std::mismatch(begin, end, (*p)->data);
+                nCharCmp += ni - n->data;
 
-                nCharCmp += a - (*p)->data;
-
-                if(a == (*p)->data + (*p)->length)
-                    return *p;
-
+                if(ni == n->data + n->length)
+                    return n;
                 else
-                    return branch(*p, a, b, end);
+                    return branch(n, ni, si, end);
             }
 
-            tie(a,b) = std::mismatch(
-                (*p)->data, (*p)->data + (*p)->length, begin);
+            tie(ni,si) = std::mismatch(
+                n->data, n->data + n->length, begin);
 
-            nCharCmp += a - (*p)->data;
+            nCharCmp += ni - n->data;
 
-            if(a != (*p)->data + (*p)->length)
-                return branch(*p, a, b, end);
+            if(ni != n->data + n->length)
+                return branch(n, ni, si, end);
 
-            begin = b;
-            p = &(*p)->child;
+            begin = si;
+            p = n;
+            n = p->findChild(begin, end, &nNodeCmp);
         }
 
-        *p = nodeAlloc.create();
-        (*p)->length = end - begin;
-        char * d = stringAlloc.alloc((*p)->length);
-        memcpy(d, begin, (*p)->length);
-        (*p)->data = d;
-        (*p)->child = 0;
-        (*p)->sibling = 0;
+        n = nodeAlloc.create();
+        n->length = end - begin;
+        char * d = stringAlloc.alloc(n->length);
+        memcpy(d, begin, n->length);
+        n->data = d;
+        
+        p->addChild(n, &nNodeCmp);
 
         ++nNodes;
         
-        return *p;
+        return n;
     }
 
-    bool contains(char const * begin, char const * end) const
-    {
-        // Null root means the trie contains nothing, not even the
-        // empty string.  To contain the empty string, it must be
-        // inserted explicitly.  It will be represented as a
-        // zero-length sibling of the root.
-
-        // First find the child of the node that exactly contains the
-        // tail of the query string.
-
-        Node * n = root;
-        while(begin != end)
-        {
-            // Out of nodes?  No match.
-            if(!n)
-                return false;
-
-            // If this node has the wrong prefix, move to the next
-            // sibling.
-            if(!n->length || n->data[0] != begin[0])
-            {
-                n = n->sibling;
-                continue;
-            }
-
-            // If this node is longer than the remaining query string,
-            // then we may have a prefix, but we cannot have an exact
-            // match.
-            if(n->length > size_t(end - begin))
-                return false;
-
-            // Match the string segment in this node.  Mismatch means
-            // we don't have the query string.
-            if(memcmp(begin, n->data, n->length))
-                return false;
-
-            // This node matched the (remaining) prefix of the query
-            // string.  Move the query start pointer up to the end of
-            // the matched prefix and descend to the child of this
-            // node.
-            begin += n->length;
-            n = n->child;
-        }
-
-        // The remaining query string is empty.  If the current node
-        // is null, we have an exact match (except in the special case
-        // of an empty query string and a null root).
-        if(root && !n)
-            return true;
-
-        // There are nodes at the level.  We have an exact match iff
-        // one of the siblings is zero-length.
-        while(n)
-        {
-            if(!n->length)
-                return true;
-            n = n->sibling;
-        }
-
-        // No exact match.
-        return false;
-    }
+    //bool contains(char const * begin, char const * end) const
+    //{
+    //    // Null root means the trie contains nothing, not even the
+    //    // empty string.  To contain the empty string, it must be
+    //    // inserted explicitly.  It will be represented as a
+    //    // zero-length sibling of the root.
+    //
+    //    // First find the child of the node that exactly contains the
+    //    // tail of the query string.
+    //
+    //    Node * n = root;
+    //    while(begin != end)
+    //    {
+    //        // Out of nodes?  No match.
+    //        if(!n)
+    //            return false;
+    //
+    //        // If this node has the wrong prefix, move to the next
+    //        // sibling.
+    //        if(!n->length || n->data[0] != begin[0])
+    //        {
+    //            n = n->sibling;
+    //            continue;
+    //        }
+    //
+    //        // If this node is longer than the remaining query string,
+    //        // then we may have a prefix, but we cannot have an exact
+    //        // match.
+    //        if(n->length > size_t(end - begin))
+    //            return false;
+    //
+    //        // Match the string segment in this node.  Mismatch means
+    //        // we don't have the query string.
+    //        if(memcmp(begin, n->data, n->length))
+    //            return false;
+    //
+    //        // This node matched the (remaining) prefix of the query
+    //        // string.  Move the query start pointer up to the end of
+    //        // the matched prefix and descend to the child of this
+    //        // node.
+    //        begin += n->length;
+    //        n = n->child;
+    //    }
+    //
+    //    // The remaining query string is empty.  If the current node
+    //    // is null, we have an exact match (except in the special case
+    //    // of an empty query string and a null root).
+    //    if(root && !n)
+    //        return true;
+    //
+    //    // There are nodes at the level.  We have an exact match iff
+    //    // one of the siblings is zero-length.
+    //    while(n)
+    //    {
+    //        if(!n->length)
+    //            return true;
+    //        n = n->sibling;
+    //    }
+    //
+    //    // No exact match.
+    //    return false;
+    //}
 
 private:
     ObjectPool<Node> nodeAlloc;
     StringAlloc stringAlloc;
     PointerValueStore<T> valueStore;
-    Node * root;
+    Node root;
 };
 
 
