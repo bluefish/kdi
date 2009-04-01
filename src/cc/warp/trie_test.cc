@@ -69,7 +69,8 @@ int main(int ac, char ** av)
 
             trie.insert(StringRange(begin, end), lineno);
 
-            if((lineno % 1000) == 0)
+            size_t const K = 50000;
+            if((lineno % K) == 0)
             {
                 cout << format("line %d, %sB inserted, %s nodes, %s nodeCmp, %s charCmp, %.3f ncmp/line, %.3f ccmp/byte")
                     % lineno
@@ -77,10 +78,10 @@ int main(int ac, char ** av)
                     % sizeString(trie.nNodes, 1000)
                     % sizeString(trie.nNodeCmp, 1000)
                     % sizeString(trie.nCharCmp, 1000)
-                    % (double(trie.nNodeCmp) / 1000)
+                    % (double(trie.nNodeCmp) / K)
                     % (double(trie.nCharCmp) / nChars)
                      << endl;
-
+            
                 trie.nNodes = 0;
                 trie.nCharCmp = 0;
                 trie.nNodeCmp = 0;
