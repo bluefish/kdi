@@ -51,7 +51,7 @@ public:
     virtual void onReplaceFragments(
         warp::Interval<std::string> const & r,
         std::vector<Fragment const *> const & f1,
-        Fragment const * f2);
+        Fragment const * f2) = 0;
 
 protected:
     ~FragmentEventListener() {}

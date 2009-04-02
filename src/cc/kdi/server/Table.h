@@ -27,6 +27,7 @@
 #include <kdi/server/name_util.h>
 #include <warp/interval.h>
 #include <boost/thread/mutex.hpp>
+#include <tr1/unordered_set>
 #include <string>
 #include <vector>
 #include <memory>
@@ -73,11 +74,25 @@ public:
     void updateRowCommits(std::vector<warp::StringRange> const & rows,
                           int64_t commitTxn);
 
-    void addFragmentListener(FragmentEventListener * listener);
-    void removeFragmentListener(FragmentEventListener * listener);
+    void addFragmentListener(FragmentEventListener * listener)
+    {
+        fragmentListeners.insert(listener);
+    }
 
-    void addTabletListener(TabletEventListener * listener);
-    void removeTabletListener(TabletEventListener * listener);
+    void removeFragmentListener(FragmentEventListener * listener)
+    {
+        fragmentListeners.erase(listener);
+    }
+
+    void addTabletListener(TabletEventListener * listener)
+    {
+        tabletListeners.insert(listener);
+    }
+
+    void removeTabletListener(TabletEventListener * listener)
+    {
+        tabletListeners.erase(listener);
+    }
 
     void triggerNewFragmentEvent(Fragment const * frag);
 
@@ -154,6 +169,12 @@ private:
     CommitRing rowCommits;
     FragmentBuffer memFrags;
     TableSchema schema;
+
+    typedef std::tr1::unordered_set<FragmentEventListener *> fel_set;
+    typedef std::tr1::unordered_set<TabletEventListener *> tel_set;
+
+    fel_set fragmentListeners;
+    tel_set tabletListeners;
 };
 
 #endif // KDI_SERVER_TABLE_H
