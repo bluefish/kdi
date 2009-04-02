@@ -61,7 +61,7 @@ public:
 
     void insert(strref_t key, T const & val)
     {
-        insert(key.begin(), key.end());
+        insert(key.begin(), key.size());
         //Node * n = insert(key.begin(), key.end());
         //valueStore.write(val, n->child);
     }
@@ -97,15 +97,13 @@ private:
             std::swap(sizeIdx, o.sizeIdx);
         }
 
-        Node * findChild(char const * a, char const * b)
+        Node * findChild(uint16_t h)
         {
             using namespace StringTrie_details;
 
             if(!nChildren)
                 return 0;
 
-            uint16_t h = (a != b ? 1 + uint16_t(*a) : 0);
-            
             Node ** begin = &children[0];
             Node ** end = begin + BUCKET_SIZES[sizeIdx];
             Node ** i = begin + (h % BUCKET_SIZES[sizeIdx]);
@@ -197,28 +195,29 @@ private:
     // node.
 
 private:
-    Node * graft(Node * p, char const * begin, char const * end)
+    Node * graft(Node * p, char const * s, size_t sz)
     {
         for(;;)
         {
-            size_t sz = std::min<size_t>(end - begin, Node::MAX_LENGTH);
+            size_t len = (sz <= Node::MAX_LENGTH ? sz : Node::MAX_LENGTH);
 
-            char * d = stringAlloc.alloc(sz);
-            memcpy(d, begin, sz);
+            char * d = stringAlloc.alloc(len);
+            memcpy(d, s, len);
 
-            Node * n = nodeAlloc.create(d, sz);
+            Node * n = nodeAlloc.create(d, len);
             p->addChild(n);
 
-            begin += sz;
-            if(begin == end)
+            sz -= len;
+            if(!sz)
                 return n;
 
+            s += len;
             p = n;
         }
     }
 
     Node * branch(Node * node, char const * branchPt,
-                  char const * tailBegin, char const * tailEnd)
+                  char const * s, size_t sz)
     {
         Node * mid = nodeAlloc.create(
             branchPt,
@@ -229,10 +228,10 @@ private:
             node->hash = 0;
         node->addChild(mid);
 
-        return graft(node, tailBegin, tailEnd);
+        return graft(node, s, sz);
     }
 
-    Node * insert(char const * begin, char const * end)
+    Node * insert(char const * s, size_t sz)
     {
         // Find a node where the input string diverges from the
         // contained string
@@ -248,43 +247,48 @@ private:
         // node will be shortened to the matching prefix length and
         // update it's child pointer to the first new child.
 
-        Node * n = p->findChild(begin, end);
+        Node * n = p->findChild(sz ? 1 + uint16_t(*s) : 0);
         while(n)
         {
-            if(uint32_t(end - begin) <= n->length)
+            char const * ns = n->begin();
+            uint_fast16_t nlen = n->length;
+            if(sz > nlen)
             {
-                char const * ni = n->begin();
-                char const * si = begin;
-                for(; si != end; ++ni, ++si)
+                for(uint_fast16_t i = 1; i != nlen; ++i)
                 {
-                    if(*ni != *si)
-                        break;
+                    if(ns[i] != s[i])
+                        return branch(n, ns+i, s+i, sz-i);
                 }
 
-                if(ni == n->end())
-                    return n;
-                else
-                    return branch(n, ni, si, end);
+                s += nlen;
+                sz -= nlen;
+                p = n;
+                n = p->findChild(1 + uint16_t(*s));
             }
-
-            char const * ni = n->begin() + 1;
-            char const * si = begin + 1;
-            char const * nEnd = n->end();
-            for(; ni != nEnd; ++ni, ++si)
+            else if(sz)         // sz <= nlen
             {
-                if(*ni != *si)
-                    break;
+                for(uint_fast16_t i = 1; i != sz; ++i)
+                {
+                    if(ns[i] != s[i])
+                        return branch(n, ns+i, s+i, sz-i);
+                }
+
+                if(sz != nlen)
+                    return branch(n, ns+sz, 0, 0);
+                else
+                    return n;
             }
-
-            if(ni != nEnd)
-                return branch(n, ni, si, end);
-
-            begin = si;
-            p = n;
-            n = p->findChild(begin, end);
+            else if(nlen)       // sz == 0, sz <= nlen
+            {
+                return branch(n, ns, s, sz);
+            }
+            else                // sz == nlen == 0
+            {
+                return n;
+            }
         }
 
-        return graft(p, begin, end);
+        return graft(p, s, sz);
     }
 
 
