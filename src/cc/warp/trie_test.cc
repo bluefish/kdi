@@ -24,8 +24,16 @@
 #include <warp/buffer.h>
 #include <warp/options.h>
 #include <warp/strutil.h>
+#include <warp/sysinfo.h>
+#include <warp/timer.h>
 #include <iostream>
 #include <boost/format.hpp>
+
+#include <tr1/unordered_map>
+#include <map>
+#include <string>
+#include <warp/hashmap.h>
+#include <warp/strhash.h>
 
 using namespace warp;
 using namespace std;
@@ -39,11 +47,28 @@ int main(int ac, char ** av)
     op.parseOrBail(ac, av, opt, args);
 
     StringTrie<size_t> trie;
+    std::tr1::unordered_map<std::string, size_t> hmap;
+    std::map<std::string, size_t> tmap;
+    warp::HashMap<std::string, size_t, HsiehHash> wmap;
 
     trie.nNodes = 0;
     trie.nCharCmp = 0;
     trie.nNodeCmp = 0;
     size_t nChars = 0;
+
+    
+    {
+        PageCounts c;
+        if(readPageCounts(&c))
+            cout << format("Proc data size: %sB")
+                % sizeString(c.data * getPageSize())
+                 << endl;
+    }
+
+
+    CpuTimer cpuTimer;
+    WallTimer wallTimer;
+    size_t nLoaded = 0;
 
     for(size_t i = 0; i < args.size(); ++i)
     {
@@ -67,8 +92,21 @@ int main(int ac, char ** av)
 
             nChars += end - begin;
 
+#if 1
             trie.insert(StringRange(begin, end), lineno);
 
+#elif 0
+            hmap[std::string(begin, end)] = lineno;
+
+#elif 0
+            tmap[std::string(begin, end)] = lineno;
+
+#elif 0
+            wmap.set(std::string(begin, end), lineno);
+
+#endif
+
+#if 0
             size_t const K = 50000;
             if((lineno % K) == 0)
             {
@@ -81,14 +119,35 @@ int main(int ac, char ** av)
                     % (double(trie.nNodeCmp) / K)
                     % (double(trie.nCharCmp) / nChars)
                      << endl;
-            
+
                 trie.nNodes = 0;
                 trie.nCharCmp = 0;
                 trie.nNodeCmp = 0;
                 nChars = 0;
             }
+#endif
         }
+
+        nLoaded += lineno;
     }
+
+    double wdt = wallTimer.getElapsed();
+    double cdt = cpuTimer.getElapsed();
+    cout << format("Load time: %.3f seconds, %.3f CPU seconds")
+        % wdt % cdt << endl;
+
+    cout << format("Loaded %d items: %.1f ns/load")
+        % nLoaded % (cdt * 1e9 / nLoaded) << endl;
+
+    {
+        PageCounts c;
+        if(readPageCounts(&c))
+            cout << format("Proc data size: %sB")
+                % sizeString(c.data * getPageSize())
+                 << endl;
+    }
+
+    trie.dump(cout);
 
     return 0;
 }
