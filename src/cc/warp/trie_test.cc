@@ -51,11 +51,7 @@ int main(int ac, char ** av)
     std::map<std::string, size_t> tmap;
     warp::HashMap<std::string, size_t, HsiehHash> wmap;
 
-    trie.nNodes = 0;
-    trie.nCharCmp = 0;
-    trie.nNodeCmp = 0;
     size_t nChars = 0;
-
     
     {
         PageCounts c;
@@ -112,20 +108,17 @@ int main(int ac, char ** av)
             size_t const K = 50000;
             if((lineno % K) == 0)
             {
-                cout << format("line %d, %sB inserted, %s nodes, %s nodeCmp, %s charCmp, %.3f ncmp/line, %.3f ccmp/line, %.3f chars/line")
+                cout << format("line %d, %sB inserted, %%s nodes, %%s nodeCmp, %%s charCmp, %%.3f ncmp/line, %%.3f ccmp/line, %.3f chars/line")
                     % lineno
                     % sizeString(nChars, 1000)
-                    % sizeString(trie.nNodes, 1000)
-                    % sizeString(trie.nNodeCmp, 1000)
-                    % sizeString(trie.nCharCmp, 1000)
-                    % (double(trie.nNodeCmp) / K)
-                    % (double(trie.nCharCmp) / K)
+                    //% sizeString(trie.nNodes, 1000)
+                    //% sizeString(trie.nNodeCmp, 1000)
+                    //% sizeString(trie.nCharCmp, 1000)
+                    //% (double(trie.nNodeCmp) / K)
+                    //% (double(trie.nCharCmp) / K)
                     % (double(nChars) / K)
                      << endl;
 
-                trie.nNodes = 0;
-                trie.nCharCmp = 0;
-                trie.nNodeCmp = 0;
                 nChars = 0;
             }
 #endif

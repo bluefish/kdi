@@ -57,12 +57,7 @@ class warp::StringTrie
     : private boost::noncopyable
 {
 public:
-    size_t nNodeCmp;
-    size_t nCharCmp;
-    size_t nNodes;
-
-public:
-    StringTrie() {}
+    StringTrie() : root(0,0) {}
 
     void insert(strref_t key, T const & val)
     {
@@ -74,13 +69,23 @@ public:
 private:
     struct Node
     {
+        enum { MAX_LENGTH = 65535 };
+
         char const * data;
         boost::scoped_array<Node *> children;
-        uint32_t length;
+        uint16_t length;
+        uint16_t hash;
         uint16_t nChildren;
         uint16_t sizeIdx;
 
-        Node() : data(0), length(0), nChildren(0), sizeIdx(0) {}
+        Node(char const * data, uint16_t length) :
+            data(data),
+            length(length),
+            hash(length ? 1 + uint16_t(data[0]) : 0),
+            nChildren(0),
+            sizeIdx(0)
+        {
+        }        
 
         char const * begin() const { return data; }
         char const * end() const { return data + length; }
@@ -92,19 +97,14 @@ private:
             std::swap(sizeIdx, o.sizeIdx);
         }
 
-        int hash() const
-        {
-            return length ? 1 + uint8_t(data[0]) : 0;
-        }
-
-        Node * findChild(char const * a, char const * b, size_t * nNodeCmp)
+        Node * findChild(char const * a, char const * b)
         {
             using namespace StringTrie_details;
 
             if(!nChildren)
                 return 0;
 
-            int h = (a != b ? 1 + uint8_t(*a) : 0);
+            uint16_t h = (a != b ? 1 + uint16_t(*a) : 0);
             
             Node ** begin = &children[0];
             Node ** end = begin + BUCKET_SIZES[sizeIdx];
@@ -115,7 +115,7 @@ private:
                 if(!*i)
                     return 0;
                 
-                if((*i)->hash() == h)
+                if((*i)->hash == h)
                     return *i;
 
                 if(++i == end)
@@ -126,18 +126,16 @@ private:
             }
         }
 
-        void insert(Node * c, size_t * nNodeCmp)
+        void insert(Node * c)
         {
             using namespace StringTrie_details;
 
-            int h = c->hash();
+            uint16_t h = c->hash;
             Node ** i = &children[h % BUCKET_SIZES[sizeIdx]];
             Node ** end = children.get() + BUCKET_SIZES[sizeIdx];
             for(;;)
             {
-                ++(*nNodeCmp);
-
-                if(!*i || (*i)->hash() == h)
+                if(!*i || (*i)->hash == h)
                 {
                     *i = c;
                     return;
@@ -148,7 +146,7 @@ private:
             }
         }
 
-        void addChild(Node * c, size_t * nNodeCmp)
+        void addChild(Node * c)
         {
             using namespace StringTrie_details;
 
@@ -166,12 +164,12 @@ private:
                 for(Node ** i = old.get(); i != end; ++i)
                 {
                     if(*i)
-                        insert(*i, nNodeCmp);
+                        insert(*i);
                 }
             }
 
             ++nChildren;
-            insert(c, nNodeCmp);
+            insert(c);
         }
     };
 
@@ -199,28 +197,39 @@ private:
     // node.
 
 private:
+    Node * graft(Node * p, char const * begin, char const * end)
+    {
+        for(;;)
+        {
+            size_t sz = std::min<size_t>(end - begin, Node::MAX_LENGTH);
+
+            char * d = stringAlloc.alloc(sz);
+            memcpy(d, begin, sz);
+
+            Node * n = nodeAlloc.create(d, sz);
+            p->addChild(n);
+
+            begin += sz;
+            if(begin == end)
+                return n;
+
+            p = n;
+        }
+    }
+
     Node * branch(Node * node, char const * branchPt,
                   char const * tailBegin, char const * tailEnd)
     {
-        Node * mid = nodeAlloc.create();
-        Node * sib = nodeAlloc.create();
-
-        nNodes += 2;
-
-        mid->data = branchPt;
-        mid->length = node->length - (branchPt - node->data);
+        Node * mid = nodeAlloc.create(
+            branchPt,
+            node->length - (branchPt - node->data));
         mid->swapChildren(*node);
 
-        sib->length = tailEnd - tailBegin;
-        char * d = stringAlloc.alloc(sib->length);
-        memcpy(d, tailBegin, sib->length);
-        sib->data = d;
+        if(!(node->length -= mid->length))
+            node->hash = 0;
+        node->addChild(mid);
 
-        node->length -= mid->length;
-        node->addChild(mid, &nNodeCmp);
-        node->addChild(sib, &nNodeCmp);
-
-        return sib;
+        return graft(node, tailBegin, tailEnd);
     }
 
     Node * insert(char const * begin, char const * end)
@@ -239,7 +248,7 @@ private:
         // node will be shortened to the matching prefix length and
         // update it's child pointer to the first new child.
 
-        Node * n = p->findChild(begin, end, &nNodeCmp);
+        Node * n = p->findChild(begin, end);
         while(n)
         {
             if(uint32_t(end - begin) <= n->length)
@@ -251,8 +260,6 @@ private:
                     if(*ni != *si)
                         break;
                 }
-
-                nCharCmp += ni - n->data;
 
                 if(ni == n->end())
                     return n;
@@ -269,28 +276,17 @@ private:
                     break;
             }
 
-            nCharCmp += ni - n->begin() - 1;
-
             if(ni != nEnd)
                 return branch(n, ni, si, end);
 
             begin = si;
             p = n;
-            n = p->findChild(begin, end, &nNodeCmp);
+            n = p->findChild(begin, end);
         }
 
-        n = nodeAlloc.create();
-        n->length = end - begin;
-        char * d = stringAlloc.alloc(n->length);
-        memcpy(d, begin, n->length);
-        n->data = d;
-        
-        p->addChild(n, &nNodeCmp);
-
-        ++nNodes;
-        
-        return n;
+        return graft(p, begin, end);
     }
+
 
     struct DumpState
     {
