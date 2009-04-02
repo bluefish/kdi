@@ -69,6 +69,7 @@ int main(int ac, char ** av)
     CpuTimer cpuTimer;
     WallTimer wallTimer;
     size_t nLoaded = 0;
+    size_t loadSz = 0;
 
     for(size_t i = 0; i < args.size(); ++i)
     {
@@ -90,6 +91,7 @@ int main(int ac, char ** av)
                 --end;
             end = skipTrailingSpace(begin, end);
 
+            loadSz += end - begin;
             nChars += end - begin;
 
 #if 1
@@ -106,18 +108,19 @@ int main(int ac, char ** av)
 
 #endif
 
-#if 0
+#if 1
             size_t const K = 50000;
             if((lineno % K) == 0)
             {
-                cout << format("line %d, %sB inserted, %s nodes, %s nodeCmp, %s charCmp, %.3f ncmp/line, %.3f ccmp/byte")
+                cout << format("line %d, %sB inserted, %s nodes, %s nodeCmp, %s charCmp, %.3f ncmp/line, %.3f ccmp/line, %.3f chars/line")
                     % lineno
                     % sizeString(nChars, 1000)
                     % sizeString(trie.nNodes, 1000)
                     % sizeString(trie.nNodeCmp, 1000)
                     % sizeString(trie.nCharCmp, 1000)
                     % (double(trie.nNodeCmp) / K)
-                    % (double(trie.nCharCmp) / nChars)
+                    % (double(trie.nCharCmp) / K)
+                    % (double(nChars) / K)
                      << endl;
 
                 trie.nNodes = 0;
@@ -136,8 +139,11 @@ int main(int ac, char ** av)
     cout << format("Load time: %.3f seconds, %.3f CPU seconds")
         % wdt % cdt << endl;
 
-    cout << format("Loaded %d items: %.1f ns/load")
+    cout << format("Loaded %d items: %.1f ns/item")
         % nLoaded % (cdt * 1e9 / nLoaded) << endl;
+
+    cout << format("Loaded %s bytes: %.1f ns/bytes")
+        % sizeString(loadSz) % (cdt * 1e9 / loadSz) << endl;
 
     {
         PageCounts c;
@@ -147,7 +153,7 @@ int main(int ac, char ** av)
                  << endl;
     }
 
-    trie.dump(cout);
+    //trie.dump(cout);
 
     return 0;
 }
