@@ -23,12 +23,8 @@
 #define WARP_STRINGTRIE_H
 
 #include <warp/StringAlloc.h>
-#include <warp/PointerValueStore.h>
 #include <warp/string_range.h>
-#include <warp/objectpool.h>
-#include <warp/tuple.h>
 #include <boost/noncopyable.hpp>
-#include <boost/scoped_array.hpp>
 #include <algorithm>
 #include <string.h>
 
@@ -42,8 +38,8 @@ namespace warp {
 
     namespace StringTrie_details {
 
-        extern uint32_t const BUCKET_SIZES[];
-        extern uint32_t const GROW_SIZES[];
+        extern uint16_t const BUCKET_SIZES[];
+        extern uint16_t const GROW_SIZES[];
 
     }
 
@@ -61,9 +57,8 @@ public:
 
     void insert(strref_t key, T const & val)
     {
-        insert(key.begin(), key.size());
-        //Node * n = insert(key.begin(), key.end());
-        //valueStore.write(val, n->child);
+        Node * n = makeLeaf(key.begin(), key.size());
+        n->setValue(val);
     }
 
 private:
@@ -72,11 +67,14 @@ private:
         enum { MAX_LENGTH = 65535 };
 
         char const * data;
-        boost::scoped_array<Node *> children;
         uint16_t length;
         uint16_t hash;
         uint16_t nChildren;
         uint16_t sizeIdx;
+        union {
+            Node ** children;
+            T value;
+        };
 
         Node(char const * data, uint16_t length) :
             data(data),
@@ -85,14 +83,56 @@ private:
             nChildren(0),
             sizeIdx(0)
         {
-        }        
+            value = 0;
+        }
 
+        ~Node()
+        {
+            deleteChildren();
+        }
+        
+        bool isLeaf() const { return !nChildren; }
         char const * begin() const { return data; }
         char const * end() const { return data + length; }
 
+        void deleteChildren()
+        {
+            using namespace StringTrie_details;
+
+            if(isLeaf())
+            {
+                //delete value;
+                //value = 0;
+                return;
+            }
+
+            Node ** end = children + BUCKET_SIZES[sizeIdx];
+            for(Node ** i = children; i != end; ++i)
+            {
+                if(*i)
+                {
+                    (*i)->deleteChildren();
+                    delete *i;
+                }
+            }
+            delete[] children;
+            nChildren = 0;
+            sizeIdx = 0;
+            value = 0;
+        }
+
+        void setValue(T const & val)
+        {
+            assert(isLeaf());
+
+            //delete value;
+            //value = new T(val);
+            value = val;
+        }
+
         void swapChildren(Node & o)
         {
-            children.swap(o.children);
+            std::swap(children, o.children);
             std::swap(nChildren, o.nChildren);
             std::swap(sizeIdx, o.sizeIdx);
         }
@@ -104,9 +144,8 @@ private:
             if(!nChildren)
                 return 0;
 
-            Node ** begin = &children[0];
-            Node ** end = begin + BUCKET_SIZES[sizeIdx];
-            Node ** i = begin + (h % BUCKET_SIZES[sizeIdx]);
+            Node ** end = children + BUCKET_SIZES[sizeIdx];
+            Node ** i = children + (h % BUCKET_SIZES[sizeIdx]);
             Node ** start = i;
             for(;;)
             {
@@ -117,7 +156,7 @@ private:
                     return *i;
 
                 if(++i == end)
-                    i = begin;
+                    i = children;
 
                 if(i == start)
                     return 0;
@@ -126,11 +165,13 @@ private:
 
         void insert(Node * c)
         {
+            assert(!isLeaf());
+
             using namespace StringTrie_details;
 
             uint16_t h = c->hash;
-            Node ** i = &children[h % BUCKET_SIZES[sizeIdx]];
-            Node ** end = children.get() + BUCKET_SIZES[sizeIdx];
+            Node ** i = children + (h % BUCKET_SIZES[sizeIdx]);
+            Node ** end = children + BUCKET_SIZES[sizeIdx];
             for(;;)
             {
                 if(!*i || (*i)->hash == h)
@@ -140,30 +181,32 @@ private:
                 }
 
                 if(++i == end)
-                    i = children.get();
+                    i = children;
             }
         }
 
         void addChild(Node * c)
         {
+            assert(nChildren || !value);
+
             using namespace StringTrie_details;
 
             if(nChildren == GROW_SIZES[sizeIdx])
             {
-                boost::scoped_array<Node *> old;
-                old.swap(children);
+                Node ** old = children;
+                Node ** end = old + BUCKET_SIZES[sizeIdx];
                 
-                Node ** end = old.get() + BUCKET_SIZES[sizeIdx];
-
                 ++sizeIdx;
-                children.reset(new Node *[BUCKET_SIZES[sizeIdx]]);
-                std::fill(children.get(), children.get() + BUCKET_SIZES[sizeIdx], (Node *)0);
+                children = new Node *[BUCKET_SIZES[sizeIdx]];
+                std::fill(children, children + BUCKET_SIZES[sizeIdx], (Node *)0);
                 
-                for(Node ** i = old.get(); i != end; ++i)
+                for(Node ** i = old; i != end; ++i)
                 {
                     if(*i)
                         insert(*i);
                 }
+
+                delete[] old;
             }
 
             ++nChildren;
@@ -204,7 +247,7 @@ private:
             char * d = stringAlloc.alloc(len);
             memcpy(d, s, len);
 
-            Node * n = nodeAlloc.create(d, len);
+            Node * n = new Node(d, len);
             p->addChild(n);
 
             sz -= len;
@@ -219,7 +262,7 @@ private:
     Node * branch(Node * node, char const * branchPt,
                   char const * s, size_t sz)
     {
-        Node * mid = nodeAlloc.create(
+        Node * mid = new Node(
             branchPt,
             node->length - (branchPt - node->data));
         mid->swapChildren(*node);
@@ -231,64 +274,59 @@ private:
         return graft(node, s, sz);
     }
 
-    Node * insert(char const * s, size_t sz)
+    Node * makeLeaf(char const * s, size_t sz)
     {
         // Find a node where the input string diverges from the
         // contained string
-        Node * p = &root;
 
-        // Find the amount of overlap for the insertion string and the
-        // containing node.  If it's zero, add a sibling node.  If
-        // it's more, create two new child nodes.  The first will
-        // point to the mismatched suffix of this node and become the
-        // parent of this node's child, if any.  The second will
-        // contain the newly copied mismatched suffix of the query
-        // string and become a sibling of the first child node.  This
-        // node will be shortened to the matching prefix length and
-        // update it's child pointer to the first new child.
-
-        Node * n = p->findChild(sz ? 1 + uint16_t(*s) : 0);
-        while(n)
+        if(!sz)
         {
+            if(root.isLeaf())
+                return &root;
+            
+            Node * n = root.findChild(0);
+            if(!n)
+                n = graft(&root, 0, 0);
+
+            return n;
+        }
+
+        Node * p = &root;
+        while(Node * n = p->findChild(1 + uint16_t(*s)))
+        {
+            // Invariant: sz > 0
             char const * ns = n->begin();
-            uint_fast16_t nlen = n->length;
-            if(sz > nlen)
+            if(sz > n->length)
             {
-                for(uint_fast16_t i = 1; i != nlen; ++i)
+                for(uint16_t i = 1; i != n->length; ++i)
                 {
                     if(ns[i] != s[i])
                         return branch(n, ns+i, s+i, sz-i);
                 }
 
-                s += nlen;
-                sz -= nlen;
+                s += n->length;
+                sz -= n->length;
                 p = n;
-                n = p->findChild(1 + uint16_t(*s));
             }
-            else if(sz)         // sz <= nlen
+            else                // 0 < sz <= n->length
             {
-                for(uint_fast16_t i = 1; i != sz; ++i)
+                for(uint16_t i = 1; i != uint16_t(sz); ++i)
                 {
                     if(ns[i] != s[i])
                         return branch(n, ns+i, s+i, sz-i);
                 }
 
-                if(sz != nlen)
+                if(sz != n->length || !n->isLeaf())
                     return branch(n, ns+sz, 0, 0);
                 else
                     return n;
             }
-            else if(nlen)       // sz == 0, sz <= nlen
-            {
-                return branch(n, ns, s, sz);
-            }
-            else                // sz == nlen == 0
-            {
-                return n;
-            }
         }
-
-        return graft(p, s, sz);
+        
+        if(p->isLeaf())
+            return branch(p, p->end(), s, sz);
+        else
+            return graft(p, s, sz);
     }
 
 
@@ -410,10 +448,9 @@ private:
     //    return false;
     //}
 
+
 private:
-    ObjectPool<Node> nodeAlloc;
     StringAlloc stringAlloc;
-    PointerValueStore<T> valueStore;
     Node root;
 };
 

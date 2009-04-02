@@ -51,8 +51,6 @@ int main(int ac, char ** av)
     std::map<std::string, size_t> tmap;
     warp::HashMap<std::string, size_t, HsiehHash> wmap;
 
-    size_t nChars = 0;
-    
     {
         PageCounts c;
         if(readPageCounts(&c))
@@ -61,12 +59,12 @@ int main(int ac, char ** av)
                  << endl;
     }
 
-
-    CpuTimer cpuTimer;
-    WallTimer wallTimer;
+    cout << "Loading lines" << endl;
+    typedef std::vector<std::pair<string, size_t> > vec_t;
+    vec_t lines;
+    
     size_t nLoaded = 0;
     size_t loadSz = 0;
-
     for(size_t i = 0; i < args.size(); ++i)
     {
         FilePtr f = File::input(args[i]);
@@ -87,48 +85,51 @@ int main(int ac, char ** av)
                 --end;
             end = skipTrailingSpace(begin, end);
 
+            lines.push_back(std::make_pair(std::string(begin,end), lineno));
+
             loadSz += end - begin;
-            nChars += end - begin;
-
-#if 1
-            trie.insert(StringRange(begin, end), lineno);
-
-#elif 0
-            hmap[std::string(begin, end)] = lineno;
-
-#elif 0
-            tmap[std::string(begin, end)] = lineno;
-
-#elif 0
-            wmap.set(std::string(begin, end), lineno);
-
-#endif
-
-#if 1
-            size_t const K = 50000;
-            if((lineno % K) == 0)
-            {
-                cout << format("line %d, %sB inserted, %%s nodes, %%s nodeCmp, %%s charCmp, %%.3f ncmp/line, %%.3f ccmp/line, %.3f chars/line")
-                    % lineno
-                    % sizeString(nChars, 1000)
-                    //% sizeString(trie.nNodes, 1000)
-                    //% sizeString(trie.nNodeCmp, 1000)
-                    //% sizeString(trie.nCharCmp, 1000)
-                    //% (double(trie.nNodeCmp) / K)
-                    //% (double(trie.nCharCmp) / K)
-                    % (double(nChars) / K)
-                     << endl;
-
-                nChars = 0;
-            }
-#endif
         }
 
         nLoaded += lineno;
     }
 
-    double wdt = wallTimer.getElapsed();
+    cout << "Loaded lines" << endl;
+
+    size_t baseSz = 0;
+    PageCounts c;
+    {
+        if(readPageCounts(&c))
+        {
+            baseSz = c.data * getPageSize();
+            cout << format("Proc data size: %sB")
+                % sizeString(baseSz)
+                 << endl;
+        }
+    }
+
+    cout << "Loading map" << endl;
+
+    WallTimer wallTimer;
+    CpuTimer cpuTimer;
+
+    for(vec_t::const_iterator i = lines.begin(); i != lines.end(); ++i)
+    {
+        StringRange key(i->first);
+        size_t val = i->second;
+
+#if 1
+        trie.insert(key, val);
+#elif 0
+        hmap[key.toString()] = val;
+#elif 0
+        tmap[key.toString()] = val;
+#elif 0
+        wmap.set(key.toString(), val);
+#endif
+    }
+
     double cdt = cpuTimer.getElapsed();
+    double wdt = wallTimer.getElapsed();
     cout << format("Load time: %.3f seconds, %.3f CPU seconds")
         % wdt % cdt << endl;
 
@@ -138,13 +139,25 @@ int main(int ac, char ** av)
     cout << format("Loaded %s bytes: %.1f ns/bytes")
         % sizeString(loadSz) % (cdt * 1e9 / loadSz) << endl;
 
+    size_t mapSz = 0;
     {
         PageCounts c;
         if(readPageCounts(&c))
+        {
+            size_t curSz = c.data * getPageSize();
             cout << format("Proc data size: %sB")
-                % sizeString(c.data * getPageSize())
+                % sizeString(curSz)
                  << endl;
+            mapSz = curSz - baseSz;
+        }
     }
+
+    cout << format("Map size: %sB, %.2f bytes/item, avg item = %.2f bytes, %.2f bytes/item overhead")
+        % sizeString(mapSz)
+        % (double(mapSz) / nLoaded)
+        % (double(loadSz) / nLoaded)
+        % (double(mapSz - loadSz) / nLoaded)
+         << endl;
 
     //trie.dump(cout);
 

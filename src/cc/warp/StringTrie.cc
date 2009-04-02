@@ -21,5 +21,5 @@
 
 #include <warp/StringTrie.h>
 
-uint32_t const warp::StringTrie_details::BUCKET_SIZES[] = { 0, 1, 3, 7, 17, 37, 67, 127, 257 };
-uint32_t const warp::StringTrie_details::GROW_SIZES[]   = { 0, 1, 3, 5, 12, 27, 50,  95, 258 };
+uint16_t const warp::StringTrie_details::BUCKET_SIZES[] = { 0, 1, 3, 7, 17, 37, 67, 127, 257 };
+uint16_t const warp::StringTrie_details::GROW_SIZES[]   = { 0, 1, 3, 5, 12, 27, 50,  95, 258 };
