@@ -40,6 +40,13 @@ namespace warp {
     template <class T>
     class StringTrie;
 
+    namespace StringTrie_details {
+
+        extern uint32_t const BUCKET_SIZES[];
+        extern uint32_t const GROW_SIZES[];
+
+    }
+
 } // namespace warp
 
 //----------------------------------------------------------------------------
@@ -65,167 +72,106 @@ public:
     }
 
 private:
-
-    struct Node;
-
-
-    struct NodeLt
-    {
-        size_t * nNodeCmp;
-
-        NodeLt(size_t * nNodeCmp) : nNodeCmp(nNodeCmp) {}
-
-        bool operator()(Node const * a, Node const * b) const
-        {
-            ++(*nNodeCmp);
-
-            if(a->length)
-            {
-                if(b->length)
-                    return a->data[0] < b->data[0];
-                else
-                    return false;
-            }
-            else if(b->length)
-                return true;
-            else
-                return false;
-        }
-
-        bool operator()(char a, Node const * b) const
-        {
-            ++(*nNodeCmp);
-
-            if(b->length)
-                return a < b->data[0];
-            else
-                return false;
-        }
-
-        bool operator()(Node const * a, char b) const
-        {
-            ++(*nNodeCmp);
-
-            if(a->length)
-                return a->data[0] < b;
-            else
-                return true;
-        }
-    };
-
     struct Node
     {
-        enum {
-            DIRECT_LIM = 16,
-            MIN_CAP = 1,
-        };
-
         char const * data;
         boost::scoped_array<Node *> children;
         uint32_t length;
         uint16_t nChildren;
-        uint16_t nCap;
+        uint16_t sizeIdx;
 
-        Node() : data(0), length(0), nChildren(0), nCap(0) {}
+        Node() : data(0), length(0), nChildren(0), sizeIdx(0) {}
+
+        char const * begin() const { return data; }
+        char const * end() const { return data + length; }
 
         void swapChildren(Node & o)
         {
             children.swap(o.children);
             std::swap(nChildren, o.nChildren);
-            std::swap(nCap, o.nCap);
+            std::swap(sizeIdx, o.sizeIdx);
+        }
+
+        int hash() const
+        {
+            return length ? 1 + uint8_t(data[0]) : 0;
         }
 
         Node * findChild(char const * a, char const * b, size_t * nNodeCmp)
         {
-            if(nChildren >= DIRECT_LIM)
-            {
-                ++(*nNodeCmp);
-                if(a != b)
-                    return children[1 + uint8_t(*a)];
-                else
-                    return children[0];
-            }
+            using namespace StringTrie_details;
 
-            if(a == b)
+            if(!nChildren)
+                return 0;
+
+            int h = (a != b ? 1 + uint8_t(*a) : 0);
+            
+            Node ** begin = &children[0];
+            Node ** end = begin + BUCKET_SIZES[sizeIdx];
+            Node ** i = begin + (h % BUCKET_SIZES[sizeIdx]);
+            Node ** start = i;
+            for(;;)
             {
-                ++(*nNodeCmp);
-                if(!children[0]->length)
-                    return children[0];
-                else
+                if(!*i)
+                    return 0;
+                
+                if((*i)->hash() == h)
+                    return *i;
+
+                if(++i == end)
+                    i = begin;
+
+                if(i == start)
                     return 0;
             }
-            
-            Node ** begin = children.get();
-            Node ** end = begin + nChildren;
-            Node ** i = std::lower_bound(begin, end, *a, NodeLt(nNodeCmp));
-            if(i != end && (*i)->data[0] == *a)
-                return *i;
-            else
-                return 0;
+        }
+
+        void insert(Node * c, size_t * nNodeCmp)
+        {
+            using namespace StringTrie_details;
+
+            int h = c->hash();
+            Node ** i = &children[h % BUCKET_SIZES[sizeIdx]];
+            Node ** end = children.get() + BUCKET_SIZES[sizeIdx];
+            for(;;)
+            {
+                ++(*nNodeCmp);
+
+                if(!*i || (*i)->hash() == h)
+                {
+                    *i = c;
+                    return;
+                }
+
+                if(++i == end)
+                    i = children.get();
+            }
         }
 
         void addChild(Node * c, size_t * nNodeCmp)
         {
-            if(nChildren >= DIRECT_LIM)
-            {
-                ++(*nNodeCmp);
-                ++nChildren;
-                if(c->length)
-                    children[1 + uint8_t(c->data[0])] = c;
-                else
-                    children[0] = c;
-                return;
-            }
+            using namespace StringTrie_details;
 
-            if(nChildren+1 == DIRECT_LIM)
+            if(nChildren == GROW_SIZES[sizeIdx])
             {
-                nCap = 257;
-                boost::scoped_array<Node *> newChildren(new Node *[nCap]);
-                std::fill(newChildren.get(), newChildren.get() + nCap, (Node *)0);
-
-                *nNodeCmp += 257;
+                boost::scoped_array<Node *> old;
+                old.swap(children);
                 
-                size_t i = 0;
-                if(!children[0]->length)
+                Node ** end = old.get() + BUCKET_SIZES[sizeIdx];
+
+                ++sizeIdx;
+                children.reset(new Node *[BUCKET_SIZES[sizeIdx]]);
+                std::fill(children.get(), children.get() + BUCKET_SIZES[sizeIdx], (Node *)0);
+                
+                for(Node ** i = old.get(); i != end; ++i)
                 {
-                    newChildren[0] = children[0];
-                    ++i;
+                    if(*i)
+                        insert(*i, nNodeCmp);
                 }
-                for(; i != nChildren; ++i)
-                    newChildren[1 + uint8_t(children[i]->data[0])] = children[i];
-                children.swap(newChildren);
-
-                ++nChildren;
-                if(c->length)
-                    children[1 + uint8_t(c->data[0])] = c;
-                else
-                    children[0] = c;
-                return;
             }
-
-            Node ** begin = children.get();
-            Node ** end = begin + nChildren;
-            Node ** i = std::lower_bound(begin, end, c, NodeLt(nNodeCmp));
-
-            if(nChildren < nCap)
-            {
-                ++nChildren;
-                memmove(i+1, i, (end - i) * sizeof(Node *));
-                *i = c;
-                return;
-            }
-
-            nCap = std::max<size_t>(nCap * 2, MIN_CAP);
-
-            boost::scoped_array<Node *> newChildren(new Node *[nCap]);
-            Node ** out = newChildren.get();
-            out = std::copy(begin, i, out);
-            *out = c;
-            std::copy(i, end, ++out);
-
-            children.swap(newChildren);
 
             ++nChildren;
+            insert(c, nNodeCmp);
         }
     };
 
@@ -296,26 +242,36 @@ private:
         Node * n = p->findChild(begin, end, &nNodeCmp);
         while(n)
         {
-            char const * ni;
-            char const * si;
-            if(n->length >= size_t(end - begin))
+            if(uint32_t(end - begin) <= n->length)
             {
-                tie(si,ni) = std::mismatch(begin, end, n->data);
+                char const * ni = n->begin();
+                char const * si = begin;
+                for(; si != end; ++ni, ++si)
+                {
+                    if(*ni != *si)
+                        break;
+                }
 
                 nCharCmp += ni - n->data;
 
-                if(ni == n->data + n->length)
+                if(ni == n->end())
                     return n;
                 else
                     return branch(n, ni, si, end);
             }
 
-            tie(ni,si) = std::mismatch(
-                n->data, n->data + n->length, begin);
+            char const * ni = n->begin() + 1;
+            char const * si = begin + 1;
+            char const * nEnd = n->end();
+            for(; ni != nEnd; ++ni, ++si)
+            {
+                if(*ni != *si)
+                    break;
+            }
 
-            nCharCmp += ni - n->data;
+            nCharCmp += ni - n->begin() - 1;
 
-            if(ni != n->data + n->length)
+            if(ni != nEnd)
                 return branch(n, ni, si, end);
 
             begin = si;
@@ -346,13 +302,11 @@ private:
         
         Node const * next()
         {
-            size_t end;
-            if(n->nCap < 257)
-                end = n->nChildren;
-            else
-                end = 257;
+            using namespace StringTrie_details;
 
-            while(c != n->children.get() + end)
+            Node ** end = n->children.get() + BUCKET_SIZES[n->sizeIdx];
+
+            while(c != end)
             {
                 Node const * r = *c;
                 ++c;
