@@ -60,6 +60,7 @@ class warp::ObjectPool : private boost::noncopyable
         ~PooledItem() { if(initialized) cast()->~T(); }
         object_t * cast() { return reinterpret_cast<object_t *>(data); };
     };
+    enum { ITEM_SIZE = sizeof(PooledItem) };
 
     typedef std::vector<PooledItem *> blockvec_t;
     typedef typename blockvec_t::const_iterator blockiter_t;
@@ -70,7 +71,7 @@ class warp::ObjectPool : private boost::noncopyable
     bool destroyOnRelease;
 
 public:
-    enum { DEFAULT_BLOCK_SIZE = 16 };
+    enum { DEFAULT_BLOCK_SIZE = ((16<<10) - 1 + ITEM_SIZE) / ITEM_SIZE };
 
 public:
     explicit ObjectPool(size_t blockSize = DEFAULT_BLOCK_SIZE,
