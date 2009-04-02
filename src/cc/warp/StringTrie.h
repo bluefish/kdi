@@ -32,6 +32,9 @@
 #include <algorithm>
 #include <string.h>
 
+#include <vector>
+#include <iostream>
+
 namespace warp {
 
     template <class T>
@@ -112,26 +115,41 @@ private:
 
     struct Node
     {
+        enum {
+            DIRECT_LIM = 16,
+            MIN_CAP = 1,
+        };
+
         char const * data;
         boost::scoped_array<Node *> children;
         uint32_t length;
         uint16_t nChildren;
-        uint8_t hasNullChild;
+        uint16_t nCap;
 
-        Node() : data(0), length(0), nChildren(0), hasNullChild(0) {}
+        Node() : data(0), length(0), nChildren(0), nCap(0) {}
 
         void swapChildren(Node & o)
         {
             children.swap(o.children);
             std::swap(nChildren, o.nChildren);
-            std::swap(hasNullChild, o.hasNullChild);
+            std::swap(nCap, o.nCap);
         }
 
         Node * findChild(char const * a, char const * b, size_t * nNodeCmp)
         {
+            if(nChildren >= DIRECT_LIM)
+            {
+                ++(*nNodeCmp);
+                if(a != b)
+                    return children[1 + uint8_t(*a)];
+                else
+                    return children[0];
+            }
+
             if(a == b)
             {
-                if(hasNullChild)
+                ++(*nNodeCmp);
+                if(!children[0]->length)
                     return children[0];
                 else
                     return 0;
@@ -148,11 +166,58 @@ private:
 
         void addChild(Node * c, size_t * nNodeCmp)
         {
+            if(nChildren >= DIRECT_LIM)
+            {
+                ++(*nNodeCmp);
+                ++nChildren;
+                if(c->length)
+                    children[1 + uint8_t(c->data[0])] = c;
+                else
+                    children[0] = c;
+                return;
+            }
+
+            if(nChildren+1 == DIRECT_LIM)
+            {
+                nCap = 257;
+                boost::scoped_array<Node *> newChildren(new Node *[nCap]);
+                std::fill(newChildren.get(), newChildren.get() + nCap, (Node *)0);
+
+                *nNodeCmp += 257;
+                
+                size_t i = 0;
+                if(!children[0]->length)
+                {
+                    newChildren[0] = children[0];
+                    ++i;
+                }
+                for(; i != nChildren; ++i)
+                    newChildren[1 + uint8_t(children[i]->data[0])] = children[i];
+                children.swap(newChildren);
+
+                ++nChildren;
+                if(c->length)
+                    children[1 + uint8_t(c->data[0])] = c;
+                else
+                    children[0] = c;
+                return;
+            }
+
             Node ** begin = children.get();
             Node ** end = begin + nChildren;
             Node ** i = std::lower_bound(begin, end, c, NodeLt(nNodeCmp));
 
-            boost::scoped_array<Node *> newChildren(new Node *[nChildren+1]);
+            if(nChildren < nCap)
+            {
+                ++nChildren;
+                memmove(i+1, i, (end - i) * sizeof(Node *));
+                *i = c;
+                return;
+            }
+
+            nCap = std::max<size_t>(nCap * 2, MIN_CAP);
+
+            boost::scoped_array<Node *> newChildren(new Node *[nCap]);
             Node ** out = newChildren.get();
             out = std::copy(begin, i, out);
             *out = c;
@@ -160,8 +225,6 @@ private:
 
             children.swap(newChildren);
 
-            if(!c->length)
-                hasNullChild = 1;
             ++nChildren;
         }
     };
@@ -272,6 +335,63 @@ private:
         
         return n;
     }
+
+    struct DumpState
+    {
+        Node const * n;
+        Node ** c;
+
+        DumpState() : n(0), c(0) {}
+        DumpState(Node const * n) : n(n), c(n->children.get()) {}
+        
+        Node const * next()
+        {
+            size_t end;
+            if(n->nCap < 257)
+                end = n->nChildren;
+            else
+                end = 257;
+
+            while(c != n->children.get() + end)
+            {
+                Node const * r = *c;
+                ++c;
+                if(r)
+                    return r;
+            }
+            return 0;
+        }
+    };
+
+public:
+    void dump(std::ostream & o) const
+    {
+        std::vector<DumpState> stack;
+        stack.push_back(&root);
+        while(!stack.empty())
+        {
+            Node const * c = stack.back().next();
+            if(c)
+            {
+                stack.push_back(c);
+                continue;
+            }
+
+            for(size_t i = 0; i < stack.size()-1; ++i)
+            {
+                for(size_t j = 0; j < stack[i].n->length; ++j)
+                    o << ' ';
+            }
+            o.write(stack.back().n->data, stack.back().n->length);
+            o << ' ' << stack.size()
+              << ' ' << stack.back().n->nChildren
+              << std::endl;
+
+            stack.pop_back();
+        }
+    }
+
+private:
 
     //bool contains(char const * begin, char const * end) const
     //{
