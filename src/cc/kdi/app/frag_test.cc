@@ -20,6 +20,7 @@
 
 #include <kdi/local/disk_table.h>
 #include <kdi/local/table_types.h>
+#include <warp/log.h>
 #include <warp/options.h>
 #include <warp/util.h>
 #include <tr1/unordered_set>
@@ -45,8 +46,20 @@ int main(int ac, char ** av)
         CellStreamPtr scan = dp->scan("");
 
         Cell x;
+        Cell y;
+    
+        if(scan->get(x))
+        {
+            y = x;
+        }
+
         while(scan->get(x)) {
-            cout << x.getRow() << endl;
+            if(x < y)
+            {
+                log("Error: cells out of order - %s", *i);
+                return 0;
+            }
+            y = x;
         }
     }
 
