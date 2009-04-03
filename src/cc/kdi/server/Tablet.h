@@ -59,6 +59,11 @@ public:
     explicit Tablet(warp::Interval<std::string> const & rows);
     ~Tablet();
 
+    warp::Interval<std::string> const & getRows() const
+    {
+        return rows;
+    }
+
     warp::IntervalPoint<std::string> const & getMinRow() const
     {
         return rows.getLowerBound();
@@ -72,6 +77,15 @@ public:
     bool isLoading() const
     {
         return loading.get();
+    }
+
+    void getFragments(std::vector<Fragment const *> & out) const
+    {
+        for(std::vector<FragmentCPtr>::const_iterator i = fragments.begin();
+            i != fragments.end(); ++i)
+        {
+            out.push_back(i->get());
+        }
     }
 
     void deferUntilLoaded(LoadedCb * cb);

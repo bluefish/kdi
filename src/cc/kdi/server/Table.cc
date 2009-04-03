@@ -21,9 +21,12 @@
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
 #include <kdi/server/errors.h>
+#include <kdi/scan_predicate.h>
+#include <ex/exception.h>
 
 using namespace kdi;
 using namespace kdi::server;
+using namespace ex;
 
 //----------------------------------------------------------------------------
 // Table::TabletLt
@@ -141,25 +144,25 @@ void Table::getFirstFragmentChain(ScanPredicate const & pred,
                                   std::vector<Fragment const *> & chain,
                                   warp::Interval<std::string> & rows) const
 {
-    EX_UNIMPLEMENTED_FUNCTION;
+    warp::IntervalPoint<std::string> first(
+        std::string(), warp::PT_INCLUSIVE_LOWER_BOUND);
+    if(ScanPredicate::StringSetCPtr x = pred.getRowPredicate())
+    {
+        if(x->isEmpty())
+            raise<ValueError>("empty row predicate");
+        first = *x->begin();
+    }
+    
+    tablet_vec::const_iterator i = std::lower_bound(
+        tablets.begin(), tablets.end(), first, TabletLt());
+    if(i == tablets.end())
+        throw TabletNotLoadedError();
+    
+    warp::IntervalPointOrder<warp::less> lt;
+    if(lt(first, (*i)->getMinRow()))
+        throw TabletNotLoadedError();
 
-    //warp::IntervalPoint<std::string> first(
-    //    std::string(), warp::PT_INCLUSIVE_LOWER_BOUND);
-    //if(ScanPredicate::StringSetCPtr x = pred.getRowPredicate())
-    //{
-    //    if(x->isEmpty())
-    //        raise<ValueError>("empty row predicate");
-    //    first = *x->begin();
-    //}
-    //
-    //tablet_vec::const_iterator i = std::lower_bound(
-    //    tablets.begin(), tablets.end(), first, TabletLt());
-    //if(i == tablets.end())
-    //    return 0;
-    //
-    //warp::IntervalPointOrder<warp::less> lt;
-    //if(!lt((*i)->getMinRow(), row))
-    //    return 0;
-    //
-    //return *i;
+    (*i)->getFragments(chain);
+    memFrags.getFragments(chain);
+    rows = (*i)->getRows();
 }

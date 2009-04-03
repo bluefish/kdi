@@ -21,7 +21,7 @@
 #include <kdi/server/FragmentMerge.h>
 #include <kdi/server/Fragment.h>
 #include <kdi/server/BlockCache.h>
-#include <kdi/server/CellBuilder.h>
+#include <kdi/server/CellOutput.h>
 #include <kdi/CellKey.h>
 #include <warp/util.h>
 #include <boost/scoped_ptr.hpp>
@@ -102,18 +102,17 @@ public:
         }
     }
 
-    /// Copy from the current block into cells until the end of
-    /// the block is reached or stopKey is found.  If stopKey is
-    /// null, copy to the end of the block.  If the key is the
-    /// stopping condition, it will not be included in the output.
-    /// Return true if there is more data, false if the copy has
-    /// exhausted the fragment.
+    /// Copy from the current block into out until the end of the
+    /// block is reached or stopKey is found.  If stopKey is null,
+    /// copy to the end of the block.  If the key is the stopping
+    /// condition, it will not be included in the output.  Return true
+    /// if there is more data, false if the copy has exhausted the
+    /// fragment.
     bool copyUntil(CellKey const * stopKey, ScanPredicate const & pred,
-                   bool filterErasures, BlockCache * cache,
-                   CellBuilder & cells)
+                   BlockCache * cache, CellOutput & out)
     {
         assert(reader);
-        reader->copyUntil(stopKey, filterErasures, cells);
+        reader->copyUntil(stopKey, out);
         return advance(cache, pred);
     }
         
@@ -179,7 +178,7 @@ FragmentMerge::~FragmentMerge()
 }
 
 bool FragmentMerge::copyMerged(size_t maxCells, size_t maxSize,
-                               bool filterErasures, CellBuilder & cells)
+                               CellOutput & out)
 {
     size_t const MAX_BLOCKS = 64;
     size_t nBlocks = 0;
@@ -199,13 +198,13 @@ bool FragmentMerge::copyMerged(size_t maxCells, size_t maxSize,
 
         bool hasMore = top->copyUntil(
             heap.empty() ? 0 : &heap.top()->getNextKey(),
-            pred, filterErasures, cache, cells);
+            pred, cache, out);
             
         if(hasMore)
             heap.push(top);
 
-        if(cells.getCellCount() >= maxCells ||
-           cells.getDataSize() >= maxSize)
+        if(out.getCellCount() >= maxCells ||
+           out.getDataSize() >= maxSize)
             break;
 
         if(++nBlocks >= MAX_BLOCKS)

@@ -23,7 +23,6 @@
 
 #include <kdi/server/FragmentEventListener.h>
 #include <kdi/server/TabletEventListener.h>
-#include <kdi/server/CellBuilder.h>
 #include <kdi/CellKey.h>
 #include <kdi/scan_predicate.h>
 #include <warp/string_range.h>
@@ -98,10 +97,7 @@ public:
     void scan_async(ScanCb * cb, size_t maxCells, size_t maxSize);
 
     /// Get the encoded cell block from the last scan.
-    warp::StringRange getPackedCells() const
-    {
-        return warp::binary_data(&packed[0], packed.size());
-    }
+    warp::StringRange getPackedCells() const;
 
     /// Get the last cell key seen by this scan.  This can be helpful
     /// in reporting progress or starting a new scan where this one
@@ -145,6 +141,7 @@ public: // TabletEventListener
 
 private:
     typedef boost::mutex::scoped_lock lock_t;
+    class PackedOutput;
 
     bool startMerge(lock_t & scannerLock);
 
@@ -155,13 +152,11 @@ private: // mess in progress
     BlockCache * cache;
     ScanPredicate pred;
 
-    CellBuilder cells;
-    std::vector<char> packed;
-
     boost::scoped_ptr<FragmentMerge> merge;
     int64_t scanTxn;
     warp::Interval<std::string> rows;
 
+    boost::scoped_ptr<PackedOutput> output;
     CellKey lastKey;
     bool haveLastKey;
     

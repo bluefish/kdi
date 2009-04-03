@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-02-26
+// Created 2009-04-03
 //
 // This file is part of KDI.
 //
@@ -18,56 +18,41 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_FRAGMENTMERGE_H
-#define KDI_SERVER_FRAGMENTMERGE_H
+#ifndef KDI_SERVER_CELLOUTPUT_H
+#define KDI_SERVER_CELLOUTPUT_H
 
-#include <kdi/scan_predicate.h>
-#include <warp/heap.h>
-#include <boost/scoped_array.hpp>
+#include <kdi/strref.h>
 
 namespace kdi {
 namespace server {
 
-    class FragmentMerge;
-
-    // Forward declarations
-    class BlockCache;
-    class Fragment;
     class CellOutput;
 
 } // namespace server
-
-    class CellKey;
-
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// FragmentMerge
+// CellOutput
 //----------------------------------------------------------------------------
-class kdi::server::FragmentMerge
+class kdi::server::CellOutput
 {
-    class Input;
-    
-    struct InputLt
-    {
-        inline bool operator()(Input * a, Input * b) const;
-    };
-
-    BlockCache * cache;
-    ScanPredicate pred;
-    
-    size_t nInputs;
-    boost::scoped_array<Input> inputs;
-    warp::MinHeap<Input *, InputLt> heap;
-
 public:
-    FragmentMerge(std::vector<Fragment const *> const & fragments,
-                  BlockCache * cache,
-                  ScanPredicate const & pred,
-                  CellKey const * startAfter);
-    ~FragmentMerge();
+    /// Emit a cell to the output stream
+    virtual void emitCell(strref_t row, strref_t column, int64_t timestamp,
+                          strref_t value) = 0;
 
-    bool copyMerged(size_t maxCells, size_t maxSize, CellOutput & out);
+    /// Emit an erasure cell to the output stream
+    virtual void emitErasure(strref_t row, strref_t column,
+                             int64_t timestamp) = 0;
+
+    /// Get the number of cells (and erasures) in the output
+    virtual size_t getCellCount() const = 0;
+
+    /// Get the approximate data size of the output in bytes
+    virtual size_t getDataSize() const = 0;
+
+protected:
+    ~CellOutput() {}
 };
 
-#endif // KDI_SERVER_FRAGMENTMERGE_H
+#endif // KDI_SERVER_CELLOUTPUT_H

@@ -19,6 +19,7 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/server/CellBuffer.h>
+#include <kdi/server/CellOutput.h>
 #include <kdi/server/errors.h>
 #include <kdi/rpc/PackedCellReader.h>
 #include <kdi/scan_predicate.h>
@@ -83,8 +84,7 @@ public:
         return true;
     }
     
-    void copyUntil(CellKey const * stopKey, bool filterErasures,
-                   CellBuilder & out)
+    void copyUntil(CellKey const * stopKey, CellOutput & out)
     {
         for(;;)
         {
@@ -94,12 +94,24 @@ public:
                 break;
             }
             
-            if(filterErasures && reader.isErasure())
+            if(reader.isErasure())
             {
-                if(!moveToNext())
-                    break;
-                continue;
+                out.emitErasure(
+                    reader.getRow(),
+                    reader.getColumn(),
+                    reader.getTimestamp());
             }
+            else
+            {
+                out.emitCell(
+                    reader.getRow(),
+                    reader.getColumn(),
+                    reader.getTimestamp(),
+                    reader.getValue());
+            }
+
+            if(!moveToNext())
+                break;
         }
     }
 };

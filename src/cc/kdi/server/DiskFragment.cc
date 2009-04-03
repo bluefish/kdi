@@ -20,11 +20,12 @@
 
 #include <kdi/server/Fragment.h>
 #include <kdi/server/DiskFragment.h>
-#include <kdi/server/CellBuilder.h>
+#include <kdi/server/CellOutput.h>
 #include <kdi/scan_predicate.h>
 #include <kdi/marshal/cell_block.h>
 #include <kdi/local/index_cache.h>
 #include <kdi/local/table_types.h>
+#include <kdi/CellKey.h>
 #include <oort/fileio.h>
 #include <warp/file.h>
 #include <warp/functional.h>
@@ -110,8 +111,8 @@ bool DiskBlockReader::advance(CellKey & nextKey)
     return true;
 }
 
-void kdi::server::DiskBlockReader::copyUntil(CellKey const * stopKey, 
-        bool filterErasures, CellBuilder & out)
+void kdi::server::DiskBlockReader::copyUntil(
+    CellKey const * stopKey, CellOutput & out)
 {
     ScanPredicate::StringSetCPtr const & cols = pred.getColumnPredicate();
     ScanPredicate::TimestampSetCPtr const & times = pred.getTimePredicate();
@@ -123,8 +124,8 @@ void kdi::server::DiskBlockReader::copyUntil(CellKey const * stopKey,
         //if(cols && !cols->contains(*cellIt->key.column)) continue;
         //if(rows && !cols->contains(*cellIt->key.row)) continue;
 
-        out.appendCell(*cellIt->key.row, *cellIt->key.column, cellIt->key.timestamp, 
-                       *cellIt->value);
+        out.emitCell(*cellIt->key.row, *cellIt->key.column,
+                     cellIt->key.timestamp, *cellIt->value);
     }
 }
 

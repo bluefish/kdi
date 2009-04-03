@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE(basic_test)
 
             CellKey nextCell;
             BOOST_CHECK(reader->advance(nextCell));
-            reader->copyUntil(0, false, cellBuilder);
+            reader->copyUntil(0, cellBuilder);
             BOOST_CHECK(!reader->advance(nextCell));
         }
 
@@ -213,7 +213,7 @@ BOOST_AUTO_TEST_CASE(pred_test)
 
             CellKey nextCell;
             BOOST_CHECK(reader->advance(nextCell));
-            reader->copyUntil(0, false, cellBuilder);
+            reader->copyUntil(0, cellBuilder);
             BOOST_CHECK(!reader->advance(nextCell));
         }
 

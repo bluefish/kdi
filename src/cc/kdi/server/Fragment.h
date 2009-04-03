@@ -36,7 +36,7 @@ namespace server {
     typedef boost::shared_ptr<Fragment const> FragmentCPtr;
 
     // Forward declarations
-    class CellBuilder;
+    class CellOutput;
 
 } // namespace server
 
@@ -96,19 +96,16 @@ public:
     /// The key for next cell, if any, is stored in nextKey.
     virtual bool advance(CellKey & nextKey) = 0;
     
-    /// Copy from the reader into the output builder until the end of
-    /// the block is reached or stopKey is found.  If stopKey is null,
+    /// Copy from the reader into the output until the end of the
+    /// block is reached or stopKey is found.  If stopKey is null,
     /// copy to the end of the block.  If the key is the stopping
     /// condition, it will not be included in the output.  Instead, it
-    /// will be the next key for advance().  If filterErasures is
-    /// true, do not include erasure cells in the output.  Otherwise
-    /// they should be included if they exist.  Each call to
-    /// copyUntil() should be preceeded by a call to advance() to get
-    /// the reader's starting position set up properly.  Calling
-    /// copyUntil() multiple times without interleaved calls to
-    /// advance() is undefined.
-    virtual void copyUntil(CellKey const * stopKey, bool filterErasures,
-                           CellBuilder & out) = 0;
+    /// will be the next key for advance().  Each call to copyUntil()
+    /// should be preceeded by a call to advance() to get the reader's
+    /// starting position set up properly.  Calling copyUntil()
+    /// multiple times without interleaved calls to advance() is
+    /// undefined.
+    virtual void copyUntil(CellKey const * stopKey, CellOutput & out) = 0;
 };
 
 

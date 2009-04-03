@@ -21,6 +21,7 @@
 #ifndef KDI_SERVER_CELLBUILDER_H
 #define KDI_SERVER_CELLBUILDER_H
 
+#include <kdi/server/CellOutput.h>
 #include <kdi/CellKey.h>
 #include <kdi/marshal/cell_block_builder.h>
 #include <warp/builder.h>
@@ -38,6 +39,7 @@ namespace server {
 // CellBuilder
 //----------------------------------------------------------------------------
 class kdi::server::CellBuilder
+    : public CellOutput
 {
     warp::Builder builder;
     kdi::marshal::CellBlockBuilder cells;
@@ -90,9 +92,14 @@ public:
         return cells.getDataSize();
     }
 
-    void appendCell(strref_t row, strref_t column, int64_t timestamp, strref_t value)
+    void emitCell(strref_t row, strref_t column, int64_t timestamp, strref_t value)
     {
         cells.appendCell(row, column, timestamp, value);
+    }
+
+    void emitErasure(strref_t row, strref_t column, int64_t timestamp)
+    {
+        cells.appendErasure(row, column, timestamp);
     }
 };
 

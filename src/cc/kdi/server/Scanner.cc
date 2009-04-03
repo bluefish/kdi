@@ -21,7 +21,9 @@
 #include <kdi/server/Scanner.h>
 #include <kdi/server/Table.h>
 #include <kdi/server/FragmentMerge.h>
+#include <kdi/server/CellOutput.h>
 #include <kdi/server/errors.h>
+#include <kdi/rpc/PackedCellWriter.h>
 
 using namespace kdi;
 using namespace kdi::server;
@@ -54,6 +56,40 @@ namespace {
 }
 
 //----------------------------------------------------------------------------
+// Scanner::PackedOutput
+//----------------------------------------------------------------------------
+class Scanner::PackedOutput
+    : public CellOutput
+{
+public:
+    void emitCell(strref_t row, strref_t column, int64_t timestamp,
+                  strref_t value)
+    {
+        writer.append(row, column, timestamp, value);
+    }
+
+    void emitErasure(strref_t row, strref_t column, int64_t timestamp) {}
+    size_t getCellCount() const { return writer.getCellCount(); }
+    size_t getDataSize() const  { return writer.getDataSize(); }
+
+    void reset() { writer.reset(); }
+    void finish() { writer.finish(); }
+
+    void getLastKey(CellKey & key) const
+    {
+        key.setRow(writer.getLastRow());
+        key.setColumn(writer.getLastColumn());
+        key.setTimestamp(writer.getLastTimestamp());
+    }
+
+    warp::StringRange getPacked() const { return writer.getPacked(); }
+
+private:
+    kdi::rpc::PackedCellWriter writer;
+};
+
+
+//----------------------------------------------------------------------------
 // Scanner
 //----------------------------------------------------------------------------
 Scanner::Scanner(Table * table, BlockCache * cache,
@@ -62,6 +98,7 @@ Scanner::Scanner(Table * table, BlockCache * cache,
     cache(cache),
     pred(pred),
     scanTxn(-1),
+    output(new PackedOutput),
     haveLastKey(false),
     endOfScan(false)
 {
@@ -84,20 +121,19 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
 {
     try {
         // Clear the output buffer
-        cells.reset();
-        packed.clear();
+        output->reset();
 
         // Clamp maxCells and maxSize to sane minimums
         if(!maxCells)
             maxCells = 1;
-        if(maxSize <= cells.getDataSize())
-            maxSize = cells.getDataSize() + 1;
+        if(maxSize <= output->getDataSize())
+            maxSize = output->getDataSize() + 1;
 
         lock_t scannerLock(scannerMutex);
 
         if(merge || startMerge(scannerLock))
         {
-            bool hasMore = merge->copyMerged(maxCells, maxSize, true, cells);
+            bool hasMore = merge->copyMerged(maxCells, maxSize, *output);
             if(!hasMore)
             {
                 clipToFutureRows(pred, rows);
@@ -107,10 +143,13 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
 
         endOfScan = pred.getRowPredicate()->isEmpty();
 
-        // Build cells into packed and get last key, if any
-        size_t nOut = cells.finish(packed, lastKey);
-        if(nOut > 0)
+        // Finalize packed output and get last key, if any
+        output->finish();
+        if(output->getCellCount() > 0)
+        {
+            output->getLastKey(lastKey);
             haveLastKey = true;
+        }
 
         // Return to callback
         cb->done();
@@ -122,6 +161,11 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
     catch(...) {
         cb->error(std::runtime_error("scan: unknown exception"));
     }
+}
+
+warp::StringRange Scanner::getPackedCells() const
+{
+    return output->getPacked();
 }
 
 bool Scanner::startMerge(lock_t & scannerLock)
