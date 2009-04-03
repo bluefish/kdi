@@ -85,7 +85,7 @@ warp::Runnable * TransactionCounter::setLastDurable(int64_t txn)
 void TransactionCounter::deferUntilDurable(DurableCb * cb, int64_t waitTxn)
 {
     EX_CHECK_NULL(cb);
-    if(!waitTxn <= lastDurable)
+    if(waitTxn <= lastDurable)
         raise<ValueError>("wait for past txn: wait=%d, durable=%d",
                           waitTxn, lastDurable);
 
