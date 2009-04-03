@@ -660,16 +660,16 @@ private:
     typedef A alloc_t;
     typedef IntervalPointOrder<value_cmp_t> point_cmp_t;
     typedef typename alloc_t::template rebind<point_t>::other point_alloc_t;
-    typedef std::vector<point_t, point_alloc_t> set_t;
+    typedef std::vector<point_t, point_alloc_t> vec_t;
 
-    typedef typename set_t::iterator iter_t;
-    typedef typename set_t::const_iterator citer_t;
+    typedef typename vec_t::iterator iter_t;
+    typedef typename vec_t::const_iterator citer_t;
 
 public:
     typedef citer_t const_iterator;
 
 private:
-    set_t points;
+    vec_t points;
     value_cmp_t valueLt;
     point_cmp_t pointLt;
 
@@ -865,6 +865,43 @@ public:
         // Erase everything after the end of our clip region.
         points.erase(upper, points.end());
 
+        return *this;
+    }
+
+    /// Update to the intersection of this and another interval set.
+    my_t & intersect(my_t const & o)
+    {
+        vec_t merged;
+        
+        citer_t i    = points.begin();
+        citer_t iEnd = points.end();
+        citer_t j    = o.points.begin();
+        citer_t jEnd = o.points.end();
+
+        bool inI = false;
+        bool inJ = false;
+
+        while(i != iEnd && j != jEnd)
+        {
+            if(pointLt(*j, *i))
+            {
+                if(inI)
+                    merged.push_back(*j);
+                
+                inJ = !inJ;
+                ++j;
+            }
+            else
+            {
+                if(inJ)
+                    merged.push_back(*i);
+
+                inI = !inI;
+                ++i;
+            }
+        }
+
+        points.swap(merged);
         return *this;
     }
 

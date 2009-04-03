@@ -442,14 +442,15 @@ namespace {
                 boost::bind(
                     &SuperTabletServer::makeTable,
                     server, _1),
-                scannerLocator);
+                scannerLocator, myTracker);
 
             // Install locators
             adapter->addServantLocator(scannerLocator, "scan");
             adapter->addServantLocator(tableLocator, "table");
 
             // Create TableManager object
-            Ice::ObjectPtr object = new ::kdi::net::details::TableManagerI;
+            Ice::ObjectPtr object = new ::kdi::net::details::TableManagerI(
+                myTracker);
             adapter->add(object, ic->stringToIdentity("TableManager"));
 
             // Create StatReporter object

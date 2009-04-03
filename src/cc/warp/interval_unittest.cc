@@ -572,3 +572,81 @@ BOOST_AUTO_UNIT_TEST(intervalset_clip)
         BOOST_CHECK_EQUAL(toString(clipSet), "(7 10) (13 21]");
     }
 }
+
+BOOST_AUTO_UNIT_TEST(intervalset_intersect_1)
+{
+    // Set A:  [1 7) (7 10) (13 21] [22 >>
+    IntervalSet<int> setA;
+    setA
+        .add(makeInterval<int>(1, 7, true, false))
+        .add(makeInterval<int>(7, 10, false, false))
+        .add(makeInterval<int>(13, 21, false, true))
+        .add(makeLowerBound<int>(22, true))
+        ;
+
+    // Set B:  [5 11] [21 25]
+    IntervalSet<int> setB;
+    setB
+        .add(makeInterval<int>(5, 11, true, true))
+        .add(makeInterval<int>(21, 25, true, true))
+        ;
+
+    // Intersection: [5 7) (7 10) [21 21] [22 25]
+    setA.intersect(setB);
+    BOOST_CHECK_EQUAL(toString(setA), "[5 7) (7 10) [21 21] [22 25]");
+}
+
+BOOST_AUTO_UNIT_TEST(intervalset_intersect_2)
+{
+    // Set A:  << >>
+    IntervalSet<int> setA;
+    setA
+        .add(Interval<int>().setInfinite())
+        ;
+
+    // Set B:  (empty)
+    IntervalSet<int> setB;
+
+    // Intersection:  (empty)
+    setA.intersect(setB);
+    BOOST_CHECK_EQUAL(toString(setA), "");
+}
+
+BOOST_AUTO_UNIT_TEST(intervalset_intersect_3)
+{
+    // Set A:  [1 5] [7 9]
+    IntervalSet<int> setA;
+    setA
+        .add(makeInterval<int>(1, 5, true, true))
+        .add(makeInterval<int>(7, 9, true, true))
+        ;
+
+    // Set B:  (Set A)
+
+    // Intersection:  [1 5] [7 9]
+    setA.intersect(setA);
+    BOOST_CHECK_EQUAL(toString(setA), "[1 5] [7 9]");
+}
+
+BOOST_AUTO_UNIT_TEST(intervalset_intersect_4)
+{
+    // Set A:  [1 2] [5 7] (10 13)
+    IntervalSet<int> setA;
+    setA
+        .add(makeInterval<int>(1, 2, true, true))
+        .add(makeInterval<int>(5, 7, true, true))
+        .add(makeInterval<int>(10, 13, false, false))
+        ;
+
+    // Set B:  (0 2) [4 11] [12 13)
+    IntervalSet<int> setB;
+    setB
+        .add(makeInterval<int>(0, 2, false, false))
+        .add(makeInterval<int>(4, 11, true, true))
+        .add(makeInterval<int>(12, 13, true, false))
+        ;
+
+    // Intersection: [1 2) [5 7] (10 11] [12 13)
+    setA.intersect(setB);
+    BOOST_CHECK_EQUAL(toString(setA), "[1 2) [5 7] (10 11] [12 13)");
+}

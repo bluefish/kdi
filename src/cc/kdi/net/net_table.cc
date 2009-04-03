@@ -53,6 +53,24 @@ using namespace std;
 
 using boost::format;
 
+namespace {
+
+    bool shouldAutosync()
+    {
+        static int autoSync = -1;
+        if(autoSync < 0)
+        {
+            char * s = getenv("KDI_NOAUTOSYNC");
+            if(s && *s)
+                autoSync = 0;
+            else
+                autoSync = 1;
+        }
+        return autoSync != 0;
+    }
+
+}
+
 #undef DLOG
 #define DLOG(x) ((void) 0)
 
@@ -724,7 +742,8 @@ class NetTable::Impl
             {
                 try {
                     table->applyMutations(buffer);
-                    table->sync();
+                    if(shouldAutosync())
+                        table->sync();
                     break;
                 }
                 catch(Ice::SocketException const & ex) {

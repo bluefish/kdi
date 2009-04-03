@@ -108,7 +108,8 @@ int main(int ac, char ** av)
 
     size_t nPartitions = 0;
     opt.get("partition", nPartitions);
-    vector<RowInterval> intervals;
+    typedef vector< pair<RowInterval,size_t> > interval_vec;
+    interval_vec intervals;
     bool partition = nPartitions > 0;
 
     size_t cutLength(-1);
@@ -127,51 +128,70 @@ int main(int ac, char ** av)
         RowIntervalStreamPtr scan = Table::open(*ai)->scanIntervals();
         RowInterval x;
         size_t nIntervals = 0;
+        size_t nCutCombined = 0;
         while(scan->get(x))
         {
+            ++nCutCombined;
+            
+            //cout << "GOT: " << x << endl;
+
             if(useCut)
             {
                 x = RowInterval(
                     cutInterval(x, cutLength, useFields,
                                 fieldDelimiter, includeTrailing));
+
+                //cout << "CUT: " << x << endl;
+
                 if(x.isEmpty() ||
                    lastInterval.contains(static_cast<Interval<string>&>(x)))
+                {
+                    //cout << "SKIP" << endl;
                     continue;
+                }
             }
 
-            ++nIntervals;
-            lastInterval = x;
+            //cout << "KEEP" << endl;
 
-            if(partition) {
-                intervals.push_back(x);
-            } else {
+            if(partition)
+                intervals.push_back(make_pair(x,nCutCombined));
+            else
                 cout << x << endl;
-            }
+
+            nIntervals += nCutCombined;
+            nCutCombined = 0;
+            lastInterval = x;
         }
 
         if(verbose)
             cerr << nIntervals << " interval(s) in table" << endl;
 
-        if(partition) {
+        if(partition)
+        {
             if(verbose)
                 cerr << "Partitioning table " << nPartitions << " ways" << endl;
 
-            size_t step_size = intervals.size() / nPartitions;
-            if(step_size == 0)
-                step_size = 1;
+            int64_t i = 0;
+            interval_vec::const_iterator lb = intervals.begin();
+            for(interval_vec::const_iterator ub = intervals.begin();
+                ub != intervals.end(); ++ub)
+            {
+                //cout << "IVAL: " << ub->second << " " << ub->first << endl;
 
-            for(size_t i = 0; i < intervals.size(); i += step_size) {
-                size_t j = i + step_size - 1;
-                if(j >= intervals.size())
-                    j = intervals.size()-1;
+                i += nPartitions * ub->second;
+                if(i >= (int64_t)nIntervals)
+                {
+                    //cout << "LB: " << (lb - intervals.begin()) << "  UB: " << (ub - intervals.begin()) << endl;
 
-                RowInterval::point_t lower = intervals[i].getLowerBound();
-                RowInterval::point_t upper = intervals[j].getUpperBound();
-                RowInterval p(lower, upper);
-                cout << p << endl;
+                    cout << RowInterval(
+                        lb->first.getLowerBound(),
+                        ub->first.getUpperBound())
+                         << endl;
+
+                    i -= nIntervals;
+                    lb = ub+1;
+                }
             }
-
-            intervals.clear();
         }
     }
 
