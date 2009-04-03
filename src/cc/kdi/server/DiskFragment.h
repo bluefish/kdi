@@ -83,25 +83,4 @@ public:
     makeReader(ScanPredicate const & pred) const; 
 };
 
-//----------------------------------------------------------------------------
-// DiskBlockReader
-//----------------------------------------------------------------------------
-class kdi::server::DiskBlockReader
-    : public kdi::server::FragmentBlockReader
-{
-    oort::Record blockRec;
-    ScanPredicate pred;
-    kdi::marshal::CellBlock const * block;
-    kdi::marshal::CellData const * cellIt;
-    kdi::marshal::CellData const * cellEnd;
-
-public:
-    DiskBlockReader(oort::Record const & r, ScanPredicate const & pred);
-    
-    virtual bool advance(CellKey & nextKey);
-    virtual void copyUntil(const kdi::CellKey * stopKey, 
-                           kdi::server::CellOutput & out);
-};
-
-
 #endif // KDI_SERVER_DISK_FRAGMENT_H

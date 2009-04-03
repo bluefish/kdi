@@ -92,18 +92,93 @@ namespace
 //----------------------------------------------------------------------------
 // DiskBlockReader
 //----------------------------------------------------------------------------
+class kdi::server::DiskBlockReader
+    : public kdi::server::FragmentBlockReader
+{
+    Record blockRec;
+    ScanPredicate pred;
+
+    CellBlock const * block;
+    CellData const * cellIt;
+    CellData const * cellEnd;
+
+    ScanPredicate::StringSetCPtr rows;
+    ScanPredicate::StringSetCPtr cols;
+    ScanPredicate::TimestampSetCPtr times;
+
+    IntervalSet<string>::const_iterator nextRowIt;
+    
+    bool getMoreCells();
+
+public:
+    DiskBlockReader(Record const & r, ScanPredicate const & pred);
+    
+    virtual bool advance(CellKey & nextKey);
+    virtual void copyUntil(const CellKey * stopKey, CellOutput & out);
+};
+
 DiskBlockReader::DiskBlockReader(Record const & blockRec, ScanPredicate const & pred) :
     blockRec(blockRec),
     pred(pred),
     block(blockRec.cast<CellBlock>()),
-    cellIt(block->cells.begin()),
-    cellEnd(block->cells.end())
+    cellIt(0), cellEnd(0),
+    rows(pred.getRowPredicate()),
+    cols(pred.getColumnPredicate()),
+    times(pred.getTimePredicate())
 {
+    if(rows) nextRowIt = rows->begin();
+}
+
+bool DiskBlockReader::getMoreCells()
+{
+    if(!rows) 
+    {
+        if(!cellIt) 
+        {
+            cellIt = block->cells.begin();
+            cellEnd = block->cells.end();
+            return true;
+        }
+        return false;
+    }
+
+    while(cellIt == cellEnd) {
+        if(nextRowIt == rows->end()) return false;
+        if(cellIt == block->cells.end()) return false;
+
+        // Get the next row range and advance row iterator
+        IntervalSet<string>::const_iterator lowerBoundIt = nextRowIt;
+        IntervalPoint<string> upperBound;
+
+        ++nextRowIt;
+        assert(nextRowIt != rows->end());
+        upperBound = *nextRowIt;
+        ++nextRowIt;
+
+        CellData const * cell = std::lower_bound(
+            block->cells.begin(), block->cells.end(),
+            *lowerBoundIt, RowLt());
+
+        if(cell == block->cells.end()) return false;
+
+        // Move the cell iterator and upper bound forward
+        cellIt = cell;
+        if(upperBound.isInfinite()) {
+            cellEnd = block->cells.end();
+        } else {
+            cellEnd = std::upper_bound(
+                cellIt, block->cells.end(), 
+                upperBound, RowLt());
+        }
+    }
+
+    return true;
 }
 
 bool DiskBlockReader::advance(CellKey & nextKey)
 {
-    if(cellIt == cellEnd) return false;
+    if(cellIt == cellEnd && !getMoreCells())
+        return false;
 
     nextKey.setRow(*cellIt->key.row);
     nextKey.setColumn(*cellIt->key.column);
@@ -111,21 +186,20 @@ bool DiskBlockReader::advance(CellKey & nextKey)
     return true;
 }
 
-void kdi::server::DiskBlockReader::copyUntil(
-    CellKey const * stopKey, CellOutput & out)
+void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
 {
-    ScanPredicate::StringSetCPtr const & cols = pred.getColumnPredicate();
-    ScanPredicate::TimestampSetCPtr const & times = pred.getTimePredicate();
-
-    for(; cellIt != cellEnd && (!stopKey || *cellIt < *stopKey); ++cellIt)
+    while((cellIt != cellEnd || getMoreCells()) &&
+          (!stopKey || *cellIt < *stopKey)) 
     {
-        // Filter based on column and timestamp
+        //  (!stopKey || *cellIt < *stopKey)) 
+
+        // Filter cells not matching the predicate
         if(times && !times->contains(cellIt->key.timestamp)) continue;
-        //if(cols && !cols->contains(*cellIt->key.column)) continue;
-        //if(rows && !cols->contains(*cellIt->key.row)) continue;
+        if(cols && !cols->contains(*cellIt->key.column, warp::less())) continue;
 
         out.emitCell(*cellIt->key.row, *cellIt->key.column,
                      cellIt->key.timestamp, *cellIt->value);
+        ++cellIt;
     }
 }
 
