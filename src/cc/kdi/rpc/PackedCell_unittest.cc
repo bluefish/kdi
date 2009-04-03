@@ -30,10 +30,36 @@ using namespace kdi::rpc;
 BOOST_AUTO_UNIT_TEST(packed_test_basic)
 {
     PackedCellWriter writer;
+
+    BOOST_CHECK_EQUAL(writer.getCellCount(), 0u);
+
     writer.append("foo", "bar", 7, "llama");
+
+    BOOST_CHECK_EQUAL(writer.getCellCount(), 1u);
+    BOOST_CHECK_EQUAL(writer.getLastRow(), "foo");
+    BOOST_CHECK_EQUAL(writer.getLastColumn(), "bar");
+    BOOST_CHECK_EQUAL(writer.getLastTimestamp(), 7);
+
     writer.append("foo", "dingo", 3, "");
+
+    BOOST_CHECK_EQUAL(writer.getCellCount(), 2u);
+    BOOST_CHECK_EQUAL(writer.getLastRow(), "foo");
+    BOOST_CHECK_EQUAL(writer.getLastColumn(), "dingo");
+    BOOST_CHECK_EQUAL(writer.getLastTimestamp(), 3);
+
     writer.appendErasure("foo", "bar", 6);
+
+    BOOST_CHECK_EQUAL(writer.getCellCount(), 3u);
+    BOOST_CHECK_EQUAL(writer.getLastRow(), "foo");
+    BOOST_CHECK_EQUAL(writer.getLastColumn(), "bar");
+    BOOST_CHECK_EQUAL(writer.getLastTimestamp(), 6);
+
     writer.finish();
+
+    BOOST_CHECK_EQUAL(writer.getCellCount(), 3u);
+    BOOST_CHECK_EQUAL(writer.getLastRow(), "foo");
+    BOOST_CHECK_EQUAL(writer.getLastColumn(), "bar");
+    BOOST_CHECK_EQUAL(writer.getLastTimestamp(), 6);
 
     std::cerr << warp::ReprEscape(writer.getPacked()) << std::endl;
 

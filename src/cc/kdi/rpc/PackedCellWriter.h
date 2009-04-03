@@ -150,6 +150,24 @@ public:
         return nCells;
     }
 
+    /// Get the last row added.  Only valid when getCellCount() > 0.
+    warp::StringRange getLastRow() const
+    {
+        return getString(lastBase - lastOffsets.row);
+    }
+
+    /// Get the last column added.  Only valid when getCellCount() > 0.
+    warp::StringRange getLastColumn() const
+    {
+        return getString(lastBase - lastOffsets.column);
+    }
+
+    /// Get the last timestamp added.  Only valid when getCellCount() > 0.
+    int64_t getLastTimestamp() const
+    {
+        return lastTime;
+    }
+
 private:
     class Buf
     {
@@ -246,9 +264,18 @@ private:
     Offsets lastOffsets;
     int64_t lastTime;
     int64_t deltaTime;
+    size_t lastBase;
     size_t nCells;
 
 private:
+    warp::StringRange getString(uint32_t pos) const
+    {
+        char const * p = buf.addr(pos);
+        size_t len;
+        p = warp::vint::decode(p, len);
+        return warp::StringRange(p, p + len);
+    }
+    
     uint32_t findString(strref_t s) const
     {
         set_t::const_iterator i = strings.find(s);
@@ -303,10 +330,10 @@ private:
     void prepareNextCell(uint32_t rowPos, uint32_t columnPos, int64_t timestamp,
                          uint32_t valuePos)
     {
-        uint32_t base = buf.size();
-        lastOffsets.row = base - rowPos;
-        lastOffsets.column = base - columnPos;
-        lastOffsets.value = base - valuePos;
+        lastBase = buf.size();
+        lastOffsets.row = lastBase - rowPos;
+        lastOffsets.column = lastBase - columnPos;
+        lastOffsets.value = lastBase - valuePos;
         lastOffsets.skip = 0;
         deltaTime = timestamp - lastTime;
         lastTime = timestamp;
