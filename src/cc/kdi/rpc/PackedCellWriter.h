@@ -272,7 +272,7 @@ private:
     {
         char const * p = buf.addr(pos);
         size_t len;
-        p = warp::vint::decode(p, len);
+        p += warp::vint::decode(p, len);
         return warp::StringRange(p, p + len);
     }
     
