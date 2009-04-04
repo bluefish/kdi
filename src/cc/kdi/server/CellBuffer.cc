@@ -42,25 +42,12 @@ class CellBuffer::BlockReader
     {
         while(reader.next())
         {
-            if(pred.getRowPredicate() &&
-               !pred.getRowPredicate()->contains(reader.getRow().toString()))
+            if(pred.containsRow(reader.getRow()) &&
+               pred.containsColumn(reader.getColumn()) &&
+               pred.containsTimestamp(reader.getTimestamp()))
             {
-                continue;
+                return true;
             }
-
-            if(pred.getColumnPredicate() &&
-               !pred.getColumnPredicate()->contains(reader.getColumn().toString()))
-            {
-                continue;
-            }
-
-            if(pred.getTimePredicate() &&
-               !pred.getTimePredicate()->contains(reader.getTimestamp()))
-            {
-                continue;
-            }
-
-            return true;
         }
 
         return false;

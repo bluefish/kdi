@@ -221,6 +221,24 @@ public:
     /// @returns true iff a containing set of column families can be
     /// inferred from the column predicate
     bool getColumnFamilies(std::vector<warp::StringRange> & families) const;
+
+    /// Return true if the predicate contains the given row.
+    bool containsRow(warp::strref_t row) const
+    {
+        return !rows || rows->contains(row);
+    }
+
+    /// Return true if the predicate contains the given column.
+    bool containsColumn(warp::strref_t column) const
+    {
+        return !columns || columns->contains(column);
+    }
+
+    /// Return true if the predicate contains the given timestamp.
+    bool containsTimestamp(int64_t timestamp) const
+    {
+        return !timestamps || timestamps->contains(timestamp);
+    }
 };
 
 namespace kdi {
