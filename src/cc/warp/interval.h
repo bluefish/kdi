@@ -22,11 +22,11 @@
 #ifndef WARP_INTERVAL_H
 #define WARP_INTERVAL_H
 
-#include <set>
-#include <functional>
+#include <warp/functional.h>
+#include <ex/exception.h>
+#include <vector>
 #include <ostream>
 #include <stdint.h>
-#include <ex/exception.h>
 
 namespace warp {
 
@@ -66,7 +66,7 @@ namespace warp {
     class Interval;
 
     /// A set of intervals.
-    template <class T, class Lt=std::less<T>, class A=std::allocator<T> >
+    template <class T, class Lt=warp::less, class A=std::allocator<T> >
     class IntervalSet;
 
     /// Return true if the given point type is a lower bound type.
@@ -289,7 +289,7 @@ namespace warp {
     bool IntervalPoint<T>::operator<(IntervalPoint<T> const & o) const
     {
         // Use default ordering
-        return IntervalPointOrder< std::less<T> >()(*this, o);
+        return IntervalPointOrder<warp::less>()(*this, o);
     }
 
 }
@@ -521,7 +521,7 @@ public:
     /// the default less-than ordering on point values.
     bool isEmpty() const
     {
-        return isEmpty(std::less<T>());
+        return isEmpty(warp::less());
     }
 
     /// Return true if the interval contains the given value, as
@@ -529,7 +529,7 @@ public:
     template <class TT>
     bool contains(TT const & x) const
     {
-        return contains(x, std::less<T>());
+        return contains(x, warp::less());
     }
 
     /// Return true if the interval contains (or equals) the given
@@ -539,7 +539,7 @@ public:
     template <class TT>
     bool contains(Interval<TT> const & o) const
     {
-        return contains(o, std::less<T>());
+        return contains(o, warp::less());
     }
 
     /// Return true if the interval overlaps the given interval, as
@@ -548,7 +548,7 @@ public:
     template <class TT>
     bool overlaps(Interval<TT> const & o) const
     {
-        return overlaps(o, std::less<T>());
+        return overlaps(o, warp::less());
     }
 
     /// Clip this interval to the given interval using the default
@@ -556,7 +556,7 @@ public:
     /// overlap, the result will be empty.
     my_t & clip(my_t const & o)
     {
-        return clip(o, std::less<T>());
+        return clip(o, warp::less());
     }
 };
 
@@ -673,28 +673,32 @@ private:
     value_cmp_t valueLt;
     point_cmp_t pointLt;
 
-    citer_t upper_bound(point_t const & x) const
+    template <class TT>
+    citer_t upper_bound(TT const & x) const
     {
         return std::upper_bound(
             points.begin(), points.end(),
             x, pointLt);
     }
 
-    citer_t lower_bound(point_t const & x) const
+    template <class TT>
+    citer_t lower_bound(TT const & x) const
     {
         return std::lower_bound(
             points.begin(), points.end(),
             x, pointLt);
     }
 
-    iter_t upper_bound(point_t const & x) 
+    template <class TT>
+    iter_t upper_bound(TT const & x) 
     {
         return std::upper_bound(
             points.begin(), points.end(),
             x, pointLt);
     }
 
-    iter_t lower_bound(point_t const & x)
+    template <class TT>
+    iter_t lower_bound(TT const & x)
     {
         return std::lower_bound(
             points.begin(), points.end(),
@@ -734,24 +738,15 @@ public:
                 ++i != end() && i->isInfinite() );
     }
 
-    // True iff the set contains the value as defined by the given less-than
-    // ordering on point values.
-    template <class TT, class Lt2>  
-    bool contains(TT const & x, Lt2 const & lt) const
+    // True iff the set contains the value.
+    template <class TT>  
+    bool contains(TT const & x) const
     {
-        IntervalPointOrder<Lt2> plt(lt);
-
         // Find the insertion point for 'x'.
-        citer_t it = std::lower_bound(points.begin(), points.end(), x, plt);
+        citer_t it = lower_bound(x);
 
         // We're in the set iff the insertion point is in a valid range.
         return isInRange(it);
-    }
-
-    /// True iff the set contains the value.
-    bool contains(value_t const & x) const
-    {
-        return contains(point_t(x), valueLt);
     }
 
     /// True iff the set contains the entire interval.

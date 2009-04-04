@@ -195,7 +195,7 @@ void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
 
         // Filter cells not matching the predicate
         if(times && !times->contains(cellIt->key.timestamp)) continue;
-        if(cols && !cols->contains(*cellIt->key.column, warp::less())) continue;
+        if(cols && !cols->contains(*cellIt->key.column)) continue;
 
         out.emitCell(*cellIt->key.row, *cellIt->key.column,
                      cellIt->key.timestamp, *cellIt->value);

@@ -23,6 +23,7 @@
 #define WARP_FUNCTIONAL_H
 
 #include <functional>
+#include <stddef.h>
 
 namespace warp
 {
