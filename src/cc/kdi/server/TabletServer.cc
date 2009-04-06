@@ -261,7 +261,9 @@ void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
 
         string_vec neededTablets;
         string_vec neededTables;
+
         std::string tableName;
+        warp::IntervalPoint<std::string> lastRow;
 
         lock_t serverLock(serverMutex);
 
@@ -269,7 +271,7 @@ void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
         for(string_vec::const_iterator i = tablets.begin();
             i != tablets.end(); ++i)
         {
-            extractTableName(*i).assignTo(tableName);
+            decodeTabletName(*i, tableName, lastRow);
             table_map::const_iterator j = tableMap.find(tableName);
             if(j == tableMap.end())
             {
@@ -283,11 +285,20 @@ void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
 
             Table * table = j->second;
             lock_t tableLock(table->tableMutex);
-            bool loaded = table->isTabletLoaded(*i);
+            Tablet * tablet = table->findTablet(lastRow);
+            bool loading = tablet && tablet->isLoading();
             tableLock.unlock();
 
-            if(!loaded)
+            if(!tablet)
                 neededTablets.push_back(*i);
+            else if(loading)
+            {
+                // We could install a callback and defer, but this is
+                // a corner case we don't care much about.  Just
+                // trigger an error for now so nothing gets confused
+                // about what is loaded and when.
+                throw std::runtime_error("already loading: " + *i);
+            }
         }
 
         serverLock.unlock();
@@ -321,6 +332,55 @@ void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
     }
 }
 
+void TabletServer::unload_async(UnloadCb * cb, string_vec const & tablets)
+{
+    try {
+        // Unload phases:
+        //  1) isolate tablets -- no more writes
+        //  2) serialize any buffered mutations on unloading tablets
+        //  3) update configs with final disk fragments;
+        //     remove log dir and server columns
+        //  4) wait for config sync
+        //  5) disconnect readers
+        //  6) drop tablet
+        //  7) if table has no tablets, drop table too
+        cb->error(std::runtime_error("not implemented"));
+
+        std::string tableName;
+        warp::IntervalPoint<std::string> lastRow;
+
+        lock_t serverLock(serverMutex);
+
+        for(string_vec::const_iterator i = tablets.begin();
+            i != tablets.end(); ++i)
+        {
+            decodeTabletName(*i, tableName, lastRow);
+
+            table_map::const_iterator j = tableMap.find(tableName);
+            if(j == tableMap.end())
+                continue;
+
+            Table * table = j->second;
+            lock_t tableLock(table->tableMutex);
+
+            Tablet * tablet = table->findTablet(lastRow);
+            if(!tablet)
+                continue;
+
+            // And... unimplemented...
+        }
+
+        // And... unimplemented...
+        throw std::runtime_error("unload: not implemented");
+    }
+    catch(std::exception const & ex) {
+        cb->error(ex);
+    }
+    catch(...) {
+        cb->error(std::runtime_error("unload: unknown exception"));
+    }
+}
+
 void TabletServer::apply_async(
     ApplyCb * cb,
     strref_t tableName,
@@ -345,9 +405,40 @@ void TabletServer::apply_async(
         Table * table = getTable(tableName);
         lock_t tableLock(table->tableMutex);
 
-        // Note: if the tablets are assigned to this server but still
+        // XXX: if the tablets are assigned to this server but still
         // in the process of being loaded, may want to defer until
         // they are ready.
+        //
+        // Actually, we can apply the change immediately, but the
+        // sync/confirmation must be deferred until all affected
+        // tablets have been fully loaded and their configs have been
+        // updated to point to our log directory.
+        //
+        // This will keep us from blocking other writers if we get
+        // changes for loading tablets.
+        //
+        // Rather than adding extra complexity to the sync part, we
+        // can just defer the return of this call.  That also has the
+        // nice effect of throttling writers that aren't waiting for a
+        // sync.
+        //
+        // Also, we could consider the tablet "writable" after the log
+        // is loaded but before all the fragments are loaded.
+        //
+        // Problem: if we're replaying the loading tablet's old log,
+        // we need to make sure that this commit is applied after the
+        // log replay.  The old logs could be interleaved with the new
+        // apply.  Not quite sure how to handle log reloading anyway.
+        // Maybe logged data needs to have a commit number associated
+        // with it to allow out of order logging.
+        //
+        // Side question: when scanning, how do we scan only what is
+        // durable?  This could be an important feature for the
+        // fragment garbage collector.  Since we're just keeping a
+        // mem-fragment vector, it wouldn't be too hard to track the
+        // last durable fragment and only merge up to that point.  Or,
+        // if each fragment has its commit number embedded, we could
+        // scan with a max txn equal to the last durable txn.
         
         // Make sure tablets are loaded
         table->verifyTabletsLoaded(rows);
@@ -359,19 +450,19 @@ void TabletServer::apply_async(
         if(txnCounter.getLastCommit() > commitMaxTxn)
             table->verifyCommitApplies(rows, commitMaxTxn);
 
-        // How to throttle?
-
+        // XXX: How to throttle?
+        //
         // We don't want to queue up too many heavy-weight objects
         // while waiting to commit to the log.  It would be bad to
         // make a full copy of the input data and queue it.  If we got
         // flooded with mutations we'd either: 1) use way too much
         // memory if we had a unbounded queue, or 2) block server
         // threads and starve readers if we have a bounded queue.
-        
+        //
         // Ideally, we'd leave mutations "on the wire" until we were
         // ready for them, while allowing read requests to flow
         // independently.
-
+        //
         // If we use the Slice array mapping for the packed cell block
         // (and the backing buffer stays valid for the life of the AMD
         // invocation), then we can queue lightweight objects.  Ice
@@ -381,7 +472,15 @@ void TabletServer::apply_async(
         // stall while allowing other connections to proceed.  Of
         // course interleaved reads on the same connection will
         // suffer, but that's not as big of a concern.
-
+        //
+        // Another potential solution: use different adapters for read
+        // and write.  Or have a read/write adapter and a read-only
+        // adapter.  To throttle we just block the caller, which will
+        // eventually block all the threads on the write adapter's
+        // pool.  Clients on the read-only adapter can continue.  I
+        // like this solution as it becomes a detail of the RPC layer,
+        // not the main server logic.
+        //
         // Throttle later...
 
 

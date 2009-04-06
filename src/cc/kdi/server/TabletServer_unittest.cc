@@ -114,21 +114,20 @@ namespace {
     struct TestLoadCb
         : public TestCb<TabletServer::LoadCb>
     {
-        void done()
-        {
-            success();
-        }
+        void done() { success(); }
+    };
+
+    struct TestUnloadCb
+        : public TestCb<TabletServer::UnloadCb>
+    {
+        void done() { success(); }
     };
 
     struct TestScanCb
         : public TestCb<Scanner::ScanCb>
     {
-        void done()
-        {
-            success();
-        }
+        void done() { success(); }
     };
-
 
     struct NullLogWriter
         : public LogWriter
@@ -323,5 +322,18 @@ BOOST_AUTO_UNIT_TEST(simple_test)
         BOOST_CHECK(!scanner.getPackedCells().empty());
         
         checkTestCells(scanner.getPackedCells());
+    }
+
+    // Unload the table
+    {
+        TestUnloadCb unloadCb;
+        std::vector<std::string> tablets;
+        tablets.push_back("tablet!");
+        server.unload_async(&unloadCb, tablets);
+
+        unloadCb.wait();
+
+        BOOST_CHECK_EQUAL(unloadCb.succeeded, true);
+        BOOST_CHECK_EQUAL(unloadCb.errorMsg, "");
     }
 }

@@ -82,22 +82,13 @@ Tablet * Table::findTablet(warp::IntervalPoint<std::string> const & last) const
     return *i;
 }
 
-bool Table::isTabletLoaded(strref_t tabletName) const
-{
-    std::string table;
-    warp::IntervalPoint<std::string> last;
-    decodeTabletName(tabletName, table, last);
-
-    assert(table == schema.name);
-    return findTablet(last) != 0;
-}
-
 void Table::verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const
 {
     for(std::vector<warp::StringRange>::const_iterator i = rows.begin();
         i != rows.end(); ++i)
     {
-        if(!findContainingTablet(*i))
+        Tablet * tablet = findContainingTablet(*i);
+        if(!tablet)
             throw TabletNotLoadedError();
     }
 }
