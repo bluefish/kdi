@@ -240,3 +240,7 @@ BOOST_AUTO_TEST_CASE(pred_test)
     }
 }
 
+BOOST_AUTO_TEST_CASE(compact_test)
+{
+    
+}

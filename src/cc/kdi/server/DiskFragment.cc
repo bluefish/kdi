@@ -191,8 +191,6 @@ void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
     while((cellIt != cellEnd || getMoreCells()) &&
           (!stopKey || *cellIt < *stopKey)) 
     {
-        //  (!stopKey || *cellIt < *stopKey)) 
-
         // Filter cells not matching the predicate
         if(times && !times->contains(cellIt->key.timestamp)) continue;
         if(cols && !cols->contains(*cellIt->key.column)) continue;
