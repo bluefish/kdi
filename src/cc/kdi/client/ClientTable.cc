@@ -26,6 +26,9 @@
 #include <Ice/Ice.h>
 #include <sstream>
 
+#include <warp/log.h>
+using warp::log;
+
 using namespace kdi;
 using namespace kdi::client;
 
@@ -56,6 +59,8 @@ ClientTable::ClientTable(strref_t host, strref_t port,
     needSync(false),
     needSort(false)
 {
+    log("ClientTable: %s, %s, %s, %s", host, port, tableName, syncOnFlush);
+
     std::ostringstream oss;
     oss << "TabletServer:tcp -h " << host << " -p " << port;
     server = kdi::rpc::TabletServerPrx::uncheckedCast(
@@ -170,4 +175,79 @@ void ClientTable::flush(bool waitForSync)
     lastCommit = commitTxn;
     needSync = !waitForSync;
     out.reset();
+}
+
+//----------------------------------------------------------------------------
+// Registration
+//----------------------------------------------------------------------------
+#include <warp/init.h>
+#include <warp/uri.h>
+#include <kdi/table_factory.h>
+#include <kdi/server/name_util.h>
+#include <ex/exception.h>
+
+using namespace ex;
+
+namespace
+{
+    using kdi::server::isTableChar;
+
+    std::string getTableName(strref_t path)
+    {
+        std::string r;
+        bool omitSlash = true;
+        
+        for(char const * c = path.begin(); c != path.end(); ++c)
+        {
+            if(!isTableChar(*c))
+                raise<ValueError>("bad table name: %s", path);
+            
+            if(*c == '/')
+            {
+                if(!omitSlash)
+                {
+                    r += *c;
+                    omitSlash = true;
+                }
+            }
+            else
+            {
+                r += *c;
+                omitSlash = false;
+            }
+        }
+
+        if(r.empty())
+            raise<ValueError>("empty table name");
+
+        return r;
+    }
+    
+    TablePtr myOpen(std::string const & uri)
+    {
+        log("open: %s", uri);
+
+        warp::Uri u(uri);
+        warp::UriAuthority ua(u.authority);
+
+        warp::StringRange host = "localhost";
+        warp::StringRange port = "11000";
+
+        if(ua.host)
+            host = ua.host;
+        if(ua.port)
+            port = ua.port;
+
+        bool autoSync = (warp::uriGetParameter(uri, "autosync") != "0");
+
+        TablePtr p(
+            new ClientTable(
+                host, port, getTableName(u.path), autoSync));
+        return p;
+    }
+}
+
+WARP_DEFINE_INIT(kdi_client_ClientTable)
+{
+    TableFactory::get().registerTable("moon", &myOpen);
 }
