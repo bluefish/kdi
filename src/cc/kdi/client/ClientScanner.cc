@@ -20,11 +20,13 @@
 
 #include <kdi/client/ClientScanner.h>
 #include <kdi/scan_predicate.h>
+#include <warp/log.h>
 #include <sstream>
 #include <exception>
 
 using namespace kdi;
 using namespace kdi::client;
+using warp::log;
 
 //----------------------------------------------------------------------------
 // ClientScanner
@@ -42,10 +44,10 @@ ClientScanner::ClientScanner(
     params.maxSize = 128<<10;
     params.close = false;
 
+    log("Scanning: %s", tableName);
     server->scan(tableName, oss.str(),
                  kdi::rpc::kScanAnyTxn, params,
                  packed, result, scanner);
-
     resetReader();
 }
 
@@ -79,6 +81,7 @@ bool ClientScanner::get(Cell & x)
         params.maxSize = 128<<10;
         params.close = false;
 
+        log("Scanning more");
         scanner->scanMore(params, packed, result);
         resetReader();
     }
@@ -86,6 +89,10 @@ bool ClientScanner::get(Cell & x)
 
 void ClientScanner::resetReader()
 {
+    log("Got %d bytes, txn=%d, complete=%s, closed=%s",
+        packed.size(), result.scanTxn, result.scanComplete,
+        result.scanClosed);
+
     reader.reset(warp::binary_data(&packed[0], packed.size()));
     if(!reader.verifyMagic())
         throw std::runtime_error("bad packed cell magic");
