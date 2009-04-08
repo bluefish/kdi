@@ -55,6 +55,8 @@ exception ScanModeError {};
 
 exception InvalidPredicateError {};
 
+exception ScannerBusyError {};
+
 
 exception InvalidCellsError {};
 
@@ -113,14 +115,16 @@ interface Scanner
                   PackedCells cells,
                   out ScanResult result)
         throws TabletNotLoadedError,
-               ScanConflictError;
+               ScanConflictError,
+               ScannerBusyError;
 
     /// Close an in-progress scan.  This will free up any server
     /// resources associated with the scanner.  This call isn't
     /// necessary if a previous call to scanMore() reached the end of
     /// the scan, but it can be used to abort a scan before reaching
     /// the end.
-    void close();
+    void close()
+        throws ScannerBusyError;
 };
 
 
