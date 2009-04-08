@@ -159,6 +159,16 @@ public:
 //----------------------------------------------------------------------------
 // TabletServerI
 //----------------------------------------------------------------------------
+TabletServerI::TabletServerI(::kdi::server::TabletServer * server,
+                             ::kdi::server::ScannerLocator * locator,
+                             ::kdi::server::BlockCache * cache) :
+    server(server),
+    locator(locator),
+    cache(cache),
+    nextScannerId(0)
+{
+}
+
 void TabletServerI::apply_async(
     RpcApplyCbPtr const & cb,
     RpcString const & table,
@@ -228,7 +238,11 @@ void TabletServerI::scan_async(
     }
 
     // Get a scanner ID
-    size_t scanId = assignScannerId();
+    size_t scanId;
+    {
+        boost::mutex::scoped_lock lock(scannerIdMutex);
+        scanId = nextScannerId++;
+    }
 
     // Make a scanner
     ScannerPtr scanner(new Scanner(t, cache, pred, m));

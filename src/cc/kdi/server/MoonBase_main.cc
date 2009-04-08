@@ -20,6 +20,7 @@
 
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/TabletServerI.h>
+#include <kdi/server/ScannerLocator.h>
 #include <warp/options.h>
 #include <warp/filestream.h>
 #include <warp/log.h>
@@ -128,17 +129,24 @@ namespace {
                 pid.close();
             }
 
+            // Make scanner locator
+            ScannerLocator * scannerLocator = new ScannerLocator(1000);
+
             // Create adapter
             Ice::CommunicatorPtr ic = communicator();
             Ice::ObjectAdapterPtr readWriteAdapter
                 = ic->createObjectAdapter("ReadWriteAdapter");
 
+            // Install locators
+            readWriteAdapter->addServantLocator(scannerLocator, "scan");
+
             // Make our TabletServer
             MainServerAssembly serverAssembly;
-            TabletServer * server = serverAssembly.getServer();
 
             // Create TableManagerI object
-            Ice::ObjectPtr obj = new TabletServerI;
+            Ice::ObjectPtr obj = new TabletServerI(serverAssembly.getServer(),
+                                                   scannerLocator,
+                                                   serverAssembly.getBlockCache());
             readWriteAdapter->add(obj, ic->stringToIdentity("TabletServer"));
 
             // Run server
