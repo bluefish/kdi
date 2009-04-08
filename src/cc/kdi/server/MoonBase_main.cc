@@ -60,6 +60,43 @@ namespace {
         boost::scoped_ptr<TabletServer> server;
         boost::scoped_ptr<DirectBlockCache> cache;
 
+        struct LoadCb : public TabletServer::LoadCb
+        {
+            boost::mutex mutex;
+            boost::condition cond;
+            std::string errorMsg;
+            bool complete;
+            bool success;
+            
+            LoadCb() : complete(false), success(false) {}
+            
+            void done()
+            {
+                boost::mutex::scoped_lock lock(mutex);
+                complete = true;
+                success = true;
+                cond.notify_all();
+            }
+
+            void error(std::exception const & ex)
+            {
+                boost::mutex::scoped_lock lock(mutex);
+                complete = true;
+                success = false;
+                errorMsg = ex.what();
+                cond.notify_all();
+            }
+
+            void wait()
+            {
+                boost::mutex::scoped_lock lock(mutex);
+                while(!complete)
+                    cond.wait(lock);
+                if(!success)
+                    throw std::runtime_error(errorMsg);
+            }
+        };
+
     public:
         ~MainServerAssembly() { cleanup(); }
 
@@ -80,6 +117,14 @@ namespace {
             
             server.reset(new TabletServer(bits));
             cache.reset(new DirectBlockCache);
+
+            log("Loading: foo!");
+            LoadCb cb;
+            std::vector<std::string> tablets;
+            tablets.push_back("foo!");
+            server->load_async(&cb, tablets);
+            cb.wait();
+            log("Loaded.");
         }
 
         void cleanup()
@@ -142,6 +187,7 @@ namespace {
 
             // Make our TabletServer
             MainServerAssembly serverAssembly;
+            serverAssembly.init();
 
             // Create TableManagerI object
             Ice::ObjectPtr obj = new TabletServerI(serverAssembly.getServer(),
@@ -155,6 +201,8 @@ namespace {
 
             // Shutdown
             log("Shutting down");
+            scannerLocator->purgeAndMark();
+            scannerLocator->purgeAndMark();
             serverAssembly.cleanup();
 
             // Destructors after this point
