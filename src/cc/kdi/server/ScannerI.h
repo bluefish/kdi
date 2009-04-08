@@ -44,7 +44,8 @@ class kdi::server::ScannerI
 {
 public:
     ScannerI(::kdi::server::ScannerPtr const & scanner,
-             ::kdi::server::ScannerLocator * locator);
+             ::kdi::server::ScannerLocator * locator,
+             size_t scanId);
 
 public:
     // RPC upcall implementation
@@ -68,9 +69,13 @@ private:
     class ScanCb;
 
 private:
+    void doClose();
+
+private:
     ::kdi::server::ScannerPtr scanner;
     ::kdi::server::ScannerLocator * locator;
     boost::mutex mutex;
+    size_t scanId;
     bool inUse;
 };
 

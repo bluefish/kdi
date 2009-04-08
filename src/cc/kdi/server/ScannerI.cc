@@ -20,9 +20,11 @@
 
 #include <kdi/server/ScannerI.h>
 #include <kdi/server/ScannerLocator.h>
+#include <warp/log.h>
 
 using namespace kdi;
 using namespace kdi::server;
+using warp::log;
 
 //----------------------------------------------------------------------------
 // ScannerI::ScanCb
@@ -31,8 +33,13 @@ class ScannerI::ScanCb
     : public ::kdi::server::Scanner::ScanCb
 {
 public:
-    ScanCb(ScannerI * scannerI, RpcScanMoreCbPtr const & cb) :
-        scannerI(scannerI), cb(cb) {}
+    ScanCb(ScannerI * scannerI, RpcScanMoreCbPtr const & cb,
+           bool forceClose) :
+        scannerI(scannerI),
+        cb(cb),
+        forceClose(forceClose)
+    {
+    }
     
     void done()
     {
@@ -43,8 +50,11 @@ public:
         ::kdi::rpc::ScanResult result;
         result.scanTxn = scanner->getScanTransaction();
         result.scanComplete = !scanner->scanContinues();
-        result.scanClosed = true;
-        
+        result.scanClosed = (result.scanComplete || forceClose);
+
+        if(result.scanClosed)
+            scannerI->doClose();
+
         cb->ice_response(
             RpcPackedCells(
                 reinterpret_cast<Ice::Byte const *>(cells.begin()),
@@ -72,6 +82,7 @@ private:
 private:
     ScannerI * scannerI;
     RpcScanMoreCbPtr cb;
+    bool forceClose;
 };
 
 
@@ -79,9 +90,11 @@ private:
 // ScannerI
 //----------------------------------------------------------------------------
 ScannerI::ScannerI(::kdi::server::ScannerPtr const & scanner,
-                   ::kdi::server::ScannerLocator * locator) :
+                   ::kdi::server::ScannerLocator * locator,
+                   size_t scanId) :
     scanner(scanner),
     locator(locator),
+    scanId(scanId),
     inUse(false)
 {
 }
@@ -90,6 +103,8 @@ void ScannerI::scanMore_async(RpcScanMoreCbPtr const & cb,
                               RpcScanParams const & params,
                               Ice::Current const & cur)
 {
+    log("ScannerI %d: scanMore", scanId);
+
     boost::mutex::scoped_lock lock(mutex);
     if(inUse)
     {
@@ -100,7 +115,7 @@ void ScannerI::scanMore_async(RpcScanMoreCbPtr const & cb,
     lock.unlock();
 
     scanner->scan_async(
-        new ScanCb(this, cb),
+        new ScanCb(this, cb, params.close),
         params.maxCells,
         params.maxSize);
 }
@@ -108,6 +123,8 @@ void ScannerI::scanMore_async(RpcScanMoreCbPtr const & cb,
 void ScannerI::close_async(RpcCloseCbPtr const & cb,
                            Ice::Current const & cur)
 {
+    log("ScannerI %d: close", scanId);
+
     boost::mutex::scoped_lock lock(mutex);
     if(inUse)
     {
@@ -115,7 +132,12 @@ void ScannerI::close_async(RpcCloseCbPtr const & cb,
         return;
     }
 
-    size_t id = locator->getIdFromName(cur.id.name);
-    locator->remove(id);
+    doClose();
+
     cb->ice_response();
+}
+
+void ScannerI::doClose()
+{
+    locator->remove(scanId);
 }

@@ -23,11 +23,12 @@
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/Scanner.h>
 #include <kdi/server/ScannerLocator.h>
+#include <warp/log.h>
 #include <Ice/Ice.h>
 
 using namespace kdi;
 using namespace kdi::server;
-
+using warp::log;
 
 //----------------------------------------------------------------------------
 // TabletServerI:ApplyCb
@@ -125,7 +126,7 @@ public:
             id.name = locator->getNameFromId(scanId);
 
             // Make ICE object for scanner
-            Ice::ObjectPtr obj = new ScannerI(scanner, locator);
+            Ice::ObjectPtr obj = new ScannerI(scanner, locator, scanId);
 
             // Add it to the scanner locator
             locator->add(scanId, obj);
@@ -177,6 +178,9 @@ void TabletServerI::apply_async(
     bool waitForSync,
     Ice::Current const & cur)
 {
+    log("TabletServerI: apply %s, %d bytes, maxTxn=%d, wait=%s",
+        table, (cells.second - cells.first), commitMaxTxn, waitForSync);
+
     server->apply_async(
         new ApplyCb(cb),
         table,
@@ -190,6 +194,8 @@ void TabletServerI::sync_async(
     int64_t waitForTxn,
     Ice::Current const & cur)
 {
+    log("TabletServerI: sync waitTxn=%d", waitForTxn);
+
     server->sync_async(new SyncCb(cb), waitForTxn);
 }
 
@@ -201,6 +207,8 @@ void TabletServerI::scan_async(
     RpcScanParams const & params,
     Ice::Current const & cur)
 {
+    log("TabletServerI: scan %s, pred=(%s)", table, predicate);
+
     // Translate scan mode
     Scanner::ScanMode m;
     switch(mode)
