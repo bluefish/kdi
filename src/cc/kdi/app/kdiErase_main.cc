@@ -1,23 +1,24 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2007 Josh Taylor (Kosmix Corporation)
 // Created 2007-12-18
-// 
+//
 // This file is part of KDI.
-// 
+//
 // KDI is free software; you can redistribute it and/or modify it under the
 // terms of the GNU General Public License as published by the Free Software
 // Foundation; either version 2 of the License, or any later version.
-// 
+//
 // KDI is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
+#include <kdi/app/scan_visitor.h>
 #include <kdi/table.h>
 #include <kdi/scan_predicate.h>
 #include <warp/options.h>
@@ -28,9 +29,35 @@
 using boost::format;
 
 using namespace kdi;
+using namespace kdi::app;
 using namespace warp;
 using namespace ex;
 using namespace std;
+
+class EraseVisitor
+    : public NullVisitor
+{
+public:
+    void startTable(string const & uri)
+    {
+        table = Table::open(uri);
+    }
+
+    void endTable()
+    {
+        table->sync();
+        table.reset();
+    }
+
+    void visitCell(Cell const & x)
+    {
+        table->erase(x.getRow(), x.getColumn(), x.getTimestamp());
+    }
+
+private:
+    TablePtr table;
+};
+
 
 //----------------------------------------------------------------------------
 // main
@@ -67,46 +94,15 @@ int main(int ac, char ** av)
                 cerr << "using predicate: " << pred << endl;
         }
     }
-    
-    for(ArgumentList::const_iterator ai = args.begin(); ai != args.end(); ++ai)
-    {
-        if(verbose)
-            cerr << "scanning: " << *ai << endl;
 
-        TablePtr table = Table::open(*ai);
-        CellStreamPtr scan = table->scan(pred);
-        Cell x;
-        size_t nCells = 0;
-        size_t nBytes = 0;
-        while(scan->get(x))
-        {
-            // Update counters
-            nBytes += x.getRow().size();
-            nBytes += x.getColumn().size();
-            nBytes += x.getValue().size();
-            ++nCells;
-            
-            // Erase (or print)
-            if(dryrun)
-                cout << x << endl;
-            else
-                table->erase(x.getRow(), x.getColumn(), x.getTimestamp());
-
-            // Report
-            if(verbose && (nCells % 10000) == 0)
-                cerr << format("erased %d cells so far (%sB)")
-                    % nCells % sizeString(nBytes) << endl;
-        }
-
-        // Sync table
-        if(!dryrun)
-            table->sync();
-
-        // Report
-        if(verbose)
-            cerr << format("erased %d cells (%sB)")
-                % nCells % sizeString(nBytes) << endl;
-    }
+    if(dryrun && verbose)
+        doScan<CompositeVisitor<VerboseVisitor, CellWriter> >(args, pred);
+    else if(dryrun)
+        doScan<CellWriter>(args, pred);
+    else if(verbose)
+        doScan<CompositeVisitor<VerboseVisitor, EraseVisitor> >(args, pred);
+    else
+        doScan<EraseVisitor>(args, pred);
 
     return 0;
 }
