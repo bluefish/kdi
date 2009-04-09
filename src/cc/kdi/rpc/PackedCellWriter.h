@@ -75,8 +75,8 @@ public:
     }
 
     /// Append a positive (non-erasure) Cell to the output
-    void append(strref_t row, strref_t column,
-                int64_t timestamp, strref_t value)
+    void append(warp::strref_t row, warp::strref_t column,
+                int64_t timestamp, warp::strref_t value)
     {
         uint32_t totalOffset = 0;
         uint32_t r,c,v;
@@ -95,7 +95,8 @@ public:
     }
 
     /// Append an erasure Cell to the output
-    void appendErasure(strref_t row, strref_t column, int64_t timestamp)
+    void appendErasure(warp::strref_t row, warp::strref_t column,
+                       int64_t timestamp)
     {
         uint32_t totalOffset = 0;
         uint32_t r,c;
@@ -216,7 +217,7 @@ private:
             return warp::hsieh_hash(p, len);
         }
 
-        uint32_t operator()(strref_t s) const
+        uint32_t operator()(warp::strref_t s) const
         {
             return warp::hsieh_hash(s.begin(), s.size());
         }
@@ -235,12 +236,12 @@ private:
             return warp::StringRange(p, p+len);
         }
 
-        bool operator()(uint32_t a, strref_t b) const
+        bool operator()(uint32_t a, warp::strref_t b) const
         {
             return get(a) == b;
         }
 
-        bool operator()(strref_t a, uint32_t b) const
+        bool operator()(warp::strref_t a, uint32_t b) const
         {
             return a == get(b);
         }
@@ -276,7 +277,7 @@ private:
         return warp::StringRange(p, p + len);
     }
     
-    uint32_t findString(strref_t s) const
+    uint32_t findString(warp::strref_t s) const
     {
         set_t::const_iterator i = strings.find(s);
         if(i != strings.end())
@@ -285,14 +286,14 @@ private:
             return 0;
     }
 
-    void prepareString(strref_t s, uint32_t & pos, uint32_t & sz)
+    void prepareString(warp::strref_t s, uint32_t & pos, uint32_t & sz)
     {
         pos = findString(s);
         if(!pos)
             sz += warp::vint::getEncodedLength(s.size()) + s.size();
     }
 
-    uint32_t writeString(strref_t s)
+    uint32_t writeString(warp::strref_t s)
     {
         uint32_t pos = buf.size();
         buf.reserve(warp::vint::MAX_VINT_SIZE + s.size());

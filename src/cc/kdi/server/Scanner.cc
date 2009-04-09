@@ -141,7 +141,8 @@ void Scanner::scan_async(ScanCb * cb, size_t maxCells, size_t maxSize)
             }
         }
 
-        endOfScan = pred.getRowPredicate()->isEmpty();
+        endOfScan = (pred.getRowPredicate() &&
+                     pred.getRowPredicate()->isEmpty());
 
         // Finalize packed output and get last key, if any
         output->finish();

@@ -24,7 +24,6 @@
 #include <kdi/server/Fragment.h>
 #include <kdi/server/TableSchema.h>
 #include <kdi/server/CommitRing.h>
-#include <kdi/server/name_util.h>
 #include <warp/interval.h>
 #include <boost/thread/mutex.hpp>
 #include <tr1/unordered_set>
@@ -101,9 +100,6 @@ public:
     {
         return rowCommits.getMaxCommit();
     }
-
-    /// Return true if the named tablet is loaded in this table.
-    bool isTabletLoaded(strref_t tabletName) const;
 
     Tablet * findTablet(warp::IntervalPoint<std::string> const & lastRow) const;
 

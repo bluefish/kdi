@@ -24,6 +24,12 @@
 #include <kdi/server/BlockCache.h>
 #include <kdi/server/Scanner.h>
 #include <kdi/server/name_util.h>
+
+#include <kdi/server/TestConfigReader.h>
+#include <kdi/server/DirectBlockCache.h>
+#include <kdi/server/NullLogWriter.h>
+#include <kdi/server/NullConfigWriter.h>
+
 #include <kdi/rpc/PackedCellWriter.h>
 #include <kdi/rpc/PackedCellReader.h>
 #include <boost/thread/mutex.hpp>
@@ -114,90 +120,19 @@ namespace {
     struct TestLoadCb
         : public TestCb<TabletServer::LoadCb>
     {
-        void done()
-        {
-            success();
-        }
+        void done() { success(); }
+    };
+
+    struct TestUnloadCb
+        : public TestCb<TabletServer::UnloadCb>
+    {
+        void done() { success(); }
     };
 
     struct TestScanCb
         : public TestCb<Scanner::ScanCb>
     {
-        void done()
-        {
-            success();
-        }
-    };
-
-
-    struct NullLogWriter
-        : public LogWriter
-    {
-        void writeCells(strref_t tableName, CellBufferCPtr const & cells) {}
-        size_t getDiskSize() const { return 0; }
-        void sync() {}
-        void close() {}
-
-        static LogWriter * make()
-        {
-            return new NullLogWriter;
-        }
-    };
-
-    struct NullConfigWriter
-        : public ConfigWriter
-    {
-        void saveTablet(Tablet const * tablet) {}
-        void sync() {}
-    };
-
-
-    struct TestConfigReader
-        : public ConfigReader
-    {
-    public:
-        void readSchemas_async(
-            ReadSchemasCb * cb,
-            std::vector<std::string> const & tableNames)
-        {
-            std::vector<TableSchema> schemas(tableNames.size());
-            for(size_t i = 0; i < tableNames.size(); ++i)
-            {
-                schemas[i].tableName = tableNames[i];
-                schemas[i].groups.push_back(TableSchema::Group());
-            }
-            cb->done(schemas);
-        }
-        
-        void readConfigs_async(
-            ReadConfigsCb * cb,
-            std::vector<std::string> const & tabletNames)
-        {
-            std::vector<TabletConfig> configs(tabletNames.size());
-            for(size_t i = 0; i < tabletNames.size(); ++i)
-            {
-                warp::IntervalPoint<std::string> last;
-                decodeTabletName(tabletNames[i], configs[i].tableName, last);
-                configs[i].rows.unsetLowerBound().setUpperBound(last);
-            }
-            cb->done(configs);
-        }
-    };
-
-    class TestBlockCache
-        : public BlockCache
-    {
-    public:
-        FragmentBlock const * getBlock(
-            Fragment const * fragment, size_t blockAddr)
-        {
-            return fragment->loadBlock(blockAddr).release();
-        }
-
-        void releaseBlock(FragmentBlock const * block)
-        {
-            delete block;
-        }
+        void done() { success(); }
     };
 
     std::string getTestCells()
@@ -297,7 +232,7 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     }
 
     // Create a scnner to read the cells back
-    TestBlockCache testCache;
+    DirectBlockCache testCache;
     Scanner scanner(
         server.findTable("table"),
         &testCache,
@@ -323,5 +258,18 @@ BOOST_AUTO_UNIT_TEST(simple_test)
         BOOST_CHECK(!scanner.getPackedCells().empty());
         
         checkTestCells(scanner.getPackedCells());
+    }
+
+    // Unload the table
+    {
+        TestUnloadCb unloadCb;
+        std::vector<std::string> tablets;
+        tablets.push_back("tablet!");
+        server.unload_async(&unloadCb, tablets);
+
+        unloadCb.wait();
+
+        BOOST_CHECK_EQUAL(unloadCb.succeeded, true);
+        BOOST_CHECK_EQUAL(unloadCb.errorMsg, "");
     }
 }

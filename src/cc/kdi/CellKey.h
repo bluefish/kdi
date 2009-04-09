@@ -29,6 +29,7 @@
 namespace kdi {
 
     class CellKeyLt;
+    class CellKeyEq;
     class CellKey;
     class CellKeyRef;
 
@@ -49,6 +50,21 @@ public:
             return c < 0;
         else
             return getCellTimestamp(b) < getCellTimestamp(a);
+    }
+};
+
+//----------------------------------------------------------------------------
+// CellKeyEq
+//----------------------------------------------------------------------------
+class kdi::CellKeyEq
+{
+public:
+    template <class A, class B>
+    bool operator()(A const & a, B const & b) const
+    {
+        return (getCellTimestamp(a) == getCellTimestamp(b)) &&
+            warp::string_equals(getCellColumn(a), getCellColumn(b)) &&
+            warp::string_equals(getCellRow(a), getCellRow(b));
     }
 };
 
@@ -76,6 +92,12 @@ public:
     bool operator<(T const & o) const
     {
         return CellKeyLt()(*this,o);
+    }
+
+    template <class T>
+    bool operator==(T const & o) const
+    {
+        return CellKeyEq()(*this,0);
     }
 };
 
@@ -120,6 +142,12 @@ public:
     bool operator<(T const & o) const
     {
         return CellKeyLt()(*this,o);
+    }
+
+    template <class T>
+    bool operator==(T const & o) const
+    {
+        return CellKeyEq()(*this,o);
     }
 };
 

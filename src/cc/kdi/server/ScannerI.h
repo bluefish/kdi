@@ -23,7 +23,9 @@
 
 #include <kdi/rpc/TabletServer.h>
 #include <kdi/server/Scanner.h>
+#include <kdi/server/ScannerLocator.h>
 #include <boost/noncopyable.hpp>
+#include <boost/thread/mutex.hpp>
 
 namespace kdi {
 namespace server {
@@ -40,6 +42,11 @@ class kdi::server::ScannerI
     : public ::kdi::rpc::Scanner,
       private boost::noncopyable
 {
+public:
+    ScannerI(::kdi::server::ScannerPtr const & scanner,
+             ::kdi::server::ScannerLocator * locator,
+             size_t scanId);
+
 public:
     // RPC upcall implementation
 
@@ -58,18 +65,18 @@ public:
     void close_async(RpcCloseCbPtr const & cb,
                      Ice::Current const & cur);
 
+private:
+    class ScanCb;
 
-public:
-    ScannerI(::kdi::server::ScannerPtr const & scanner,
-             ::kdi::server::ScannerLocator * locator) :
-        scanner(scanner),
-        locator(locator)
-    {
-    }
+private:
+    void doClose();
 
 private:
     ::kdi::server::ScannerPtr scanner;
     ::kdi::server::ScannerLocator * locator;
+    boost::mutex mutex;
+    size_t scanId;
+    bool inUse;
 };
 
 

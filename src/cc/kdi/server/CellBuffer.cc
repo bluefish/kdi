@@ -181,7 +181,7 @@ size_t CellBuffer::nextBlock(ScanPredicate const & pred, size_t minBlock) const
 
 std::auto_ptr<FragmentBlock> CellBuffer::loadBlock(size_t blockAddr) const
 {
-    assert(minBlock == 0);
+    assert(blockAddr == 0);
     std::auto_ptr<FragmentBlock> p(new Block(*this));
     return p;
 }
