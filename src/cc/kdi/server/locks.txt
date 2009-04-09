@@ -1,0 +1,75 @@
+#----------------------------------------------------------------------------
+# Mutex survey
+#----------------------------------------------------------------------------
+
+Chained mutexes, acquire in descending order:
+
+  ./TabletServer.h:71:                boost::mutex serverMutex;
+  ./Table.h:58:                       boost::mutex tableMutex;
+  ./Scanner.h:149:                    boost::mutex scannerMutex;
+
+Private mutexes:
+
+  Prevent concurrent callers:
+  ./ScannerI.h:77:                    boost::mutex mutex;
+
+  Counter synchronization:
+  ./TabletServerI.h:92:               boost::mutex scannerIdMutex;
+
+  Callback completion condition:
+  ./MoonBase_main.cc:65:              boost::mutex mutex;
+  ./TabletServer_unittest.cc:53:      boost::mutex mutex;
+  ./TabletServer.cc:108:              boost::mutex mutex;
+
+#----------------------------------------------------------------------------
+# Lock usage
+#----------------------------------------------------------------------------
+
+Locks should be used prevent undefined concurrent access of specific
+locations of memory.  Undefined access is any kind of concurrent
+access while the memory is being modified by another thread.
+Concurrent reading can proceed unlocked, but be sure that nothing can
+sneak up and modify the data.  Use of the "const" keyword is
+recommended for unlocked concurrent access.
+
+Locks should NOT be used to serialize logical steps in program
+execution.  This kind of synchronization quickly leads to tangles.
+Inter-thread serialization is better accomplished with higher-level
+techniques like message-passing through synchronized queues or
+sequences of asynchronous callbacks and continuations.
+
+Locks should be held for as little time as possible to allow maximum
+concurrency.  If significant processing has to happen on a locked data
+structure, consider making a private copy under lock, releasing the
+lock, processing, relocking and trying to apply the results (possibly
+discarding some work that may no longer be applicable).
+
+#----------------------------------------------------------------------------
+# Virtual functions
+#----------------------------------------------------------------------------
+
+No locks should be held locks when calling virtual functions.  Virtual
+functions can be overridden and the caller has little insight into
+what's happening inside.  That's the great promise of object-oriented
+encapsulation, but it's dangerous with locks.  The derived
+implementation could wind up doing something expensive, or worse, try
+to acquire other locks.
+
+Usually if we're trying to call a virtual function under lock, we're
+attempting to use the lock for program serialization instead of simple
+memory protection.  As discussed above in the "Lock usage" section,
+this situation indicates we need a better design.
+
+#----------------------------------------------------------------------------
+# Callbacks
+#----------------------------------------------------------------------------
+
+As with virtual functions, no locks should be held when invoking a
+callback.  If the callback condition is triggered under lock, the
+callback invocation must be deferred until the lock is released.
+
+Sometimes this can be accomplished by delegating the callback
+invocation.  For example, if an internal function call triggers the
+callback condition and the function is called under lock, the function
+can return a runnable object that the caller is responsible for
+invoking or further delegation.
