@@ -23,6 +23,7 @@
 
 #include <kdi/server/CellBuffer.h>
 #include <kdi/server/DiskFragment.h>
+#include <kdi/server/FragmentEventListener.h>
 #include <kdi/strref.h>
 #include <boost/function.hpp>
 
@@ -30,21 +31,62 @@ namespace kdi {
 namespace server {
 
     class BlockCache;
-
-    class Compactor
-    {
-        BlockCache * cache;
-
-    public:
-        Compactor(BlockCache *cache) :
-            cache(cache) {}
-
-        virtual ~Compactor() {}
-
-        void compact(std::vector<Fragment const *> const & fragments);
-    };
+    class RangeFragmentMap;
+    class Compactor;
 
 } // namespace server
 } // namespace kdi
 
+class kdi::server::RangeFragmentMap 
+{
+    typedef warp::Interval<std::string> range_t;
+
+    // Range intervals cannot overlap so order by lower bound
+    struct RangeLt 
+    {
+        bool operator()(range_t const & a, range_t const & b)
+        {
+            return a.getLowerBound() < b.getLowerBound();
+        }
+    };
+
+    typedef std::vector<Fragment const *> frag_list_t;
+    typedef std::map<range_t, frag_list_t, RangeLt> map_t;
+    map_t rangeMap;
+};
+
+class kdi::server::Compactor 
+{
+    BlockCache * cache;
+    RangeFragmentMap rangeFragmentMap;
+
+    /// Compact some ranges.  
+    ///
+    /// Input: The compaction set specifies a set of ranges
+    /// from a single table and the fragments to compact for each of those 
+    /// ranges.  Compaction proceeds from lowest range to highest and creates
+    /// at least one new fragment containing the merged ranges.  If internal
+    /// threshholds are reached, compaction may stop before all ranges in the 
+    /// set have been compacted.
+    ///
+    /// Output: The output map contains only the ranges which were compacted.  If a
+    /// fragment is given for the output range, that fragment replaces all
+    /// the fragments given for that range in the compaction set.  If no
+    /// fragment is specified for the output range, the fragments for that range
+    /// had no output and can be removed from the ranges tablet set.
+    void compact(RangeFragmentMap const & compactionSet, 
+                 RangeFragmentMap & outputSet);
+    
+    /// Choose a more limited compaction set given a set of all the fragment
+    /// sequences from a single table.
+    void chooseCompactionSet(RangeFragmentMap const & fragMap,
+                             RangeFragmentMap & compactionSet);
+
+public:
+
+    Compactor(BlockCache *cache) :
+        cache(cache) {}
+
+    virtual ~Compactor() {}
+};
 #endif // KDI_SERVER_COMPACTOR_H

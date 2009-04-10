@@ -20,15 +20,25 @@
 
 #include <kdi/server/Compactor.h>
 #include <kdi/server/FragmentMerge.h>
+#include <kdi/server/TabletEventListener.h>
 #include <warp/log.h>
 
 using namespace kdi;
 using namespace kdi::server;
+using std::string;
+using std::vector;
+using std::map;
+using std::search;
+using warp::Interval;
 using warp::log;
 
-void Compactor::compact(std::vector<Fragment const *> const & frags) 
+void Compactor::compact(RangeFragmentMap const & compactionSet,
+                        RangeFragmentMap & outputSet) 
 {
-    // Create merge out of the fragments
-    
-    FragmentMerge merge(frags, cache, ScanPredicate(""), 0);
 }
+
+void Compactor::chooseCompactionSet(RangeFragmentMap const & fragMap,
+                                    RangeFragmentMap & compactionSet)
+{
+}
+
