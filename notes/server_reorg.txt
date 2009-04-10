@@ -280,6 +280,38 @@ Server.main():
 # Actions
 #----------------------------------------------------------------------------
 
+Load Tablets
+  Triggers: TabletServer API call
+
+Unload Tablets
+  Triggers: TabletServer API call
+
+Apply Mutations
+  Triggers: TabletServer API call
+
+Split Tablet
+  Triggers: A Tablet becomes too large.
+    1) Event posted by the Tablet or Table as it adds new fragments.
+    2) Check for splits after completing a Tablet load.
+    3) Check for splits after a Table schema change.
+  Requires: Tablet must be active.
+
+Join Tablets
+  Triggers: A Tablet becomes too small.
+    1) Event posted by the Table as fragments get replaced and removed.
+    2) Check for joins after completing a Tablet load.
+    3) Check for joins after a Table schema change.
+  Requires: The Table must have an adjacent Tablet to join with.  Both
+    Tablets involved in the join must be active.
+
+Compact Fragments
+  Triggers: Dedicated thread loop
+
+
+
+
+
+
 RPC: TabletServer.open(name)
 
   - map name to Table, create if necessary
@@ -865,6 +897,116 @@ these changes sync, we can make the tablet writable and update the
 "location:" column.  We can include the "location:" update in the
 commit, so long as clients are willing to retry us if they read the
 change and we haven't yet gotten the sync confirmation.
+
+
+Further ruminations...
+
+Table states:
+
+  0) Table is unknown.
+
+  1) Table allocated, schema is loading.
+
+  2) Table is active.
+
+
+Tablet states:
+
+  0) Tablet is unknown.
+
+     If we get a request for the Tablet, it's an error.
+
+  1) Tablet allocated, config is loading.
+
+     If we get a request for the Tablet, it is deferred for later.
+
+  2) Tablet config loaded, replaying old log.
+
+     At this point, we should have placeholder entries for all
+     fragments.  New fragments may come in as the log is replayed.
+
+     If we can support out-of-order commits, we can start logging
+     incoming mutations while we replay the old logs.  This will allow
+     us to clear buffer space to accept mutations on other Tablets.
+     We can't acknowledge the commit yet, though.
+
+     OOO commits might be feasible, but they're tricky.  It occurs to
+     me that we're somewhat unlikely to get writes on this tablet at
+     this stage.  It could happen if the server crashed and bounced,
+     serving at the same address and port as the old server instance.
+     It could also happen if some client just made a lucky guess.
+
+     On the other hand, writes for other active Tablets can come while
+     we're replaying the log.  We need to make sure that they can
+     proceed without problems.
+
+  3) Tablet log loaded, config is saving.
+
+     The new config will indicate that the Tablet is now hosted by the
+     loading server and depends on the server's log.  The old log
+     reference is overwritten.  The config will include all old disk
+     fragments plus any new fragments that have come in during log
+     replay.
+
+  4) Tablet config synced, fragments are loading.
+
+     We can safely enable writes and acknowledge syncs for this tablet
+     now.  Mutations will be applied to this server's log.  If this
+     server crashes, future servers will replay the logs.
+
+     Read requests are still deferred.
+
+  5) Tablet is active.
+
+     With all of the fragments loaded, we can allow normal read and
+     write traffic.
+
+  6) Tablet is read-only.  In-memory data is being compacted.
+
+     The Tablet is in the process of being unloaded.  We can't take
+     any more writes, but it is still okay to service read requests.
+     The in-memory data for the Tablet is being compacted to disk.
+
+  7) Tablet is disabled with all data on disk.  Config is saving.
+
+     We're writing the Tablet's final config.  The config indicates
+     that it is no longer hosted by this server or references this
+     server's log directory.  We've disconnected all readers for the
+     Tablet.  We can drop all in-memory state for the Tablet except
+     for the fact that the Tablet is in this state.  Once the config
+     syncs, we can move back to 0.
+
+
+(TabletState > 0 ) ==> (TableState > 0)
+
+OOO commits:
+
+   We could name log files to correspond with the first transaction in
+   them.
+
+   When loading a log directory, we can reserve transaction numbers
+   for the entire log set.  It seems like we should only need 1.
+
+   Say we choose transaction T for the log reload.  We can make sure
+   that the log rolls such that everything less than T is separate
+   from everything greater than T.  Then we can replay the old log
+   into its own file at T.
+
+   That fixes the log files, but it doesn't help the in-memory or
+   compaction problems.
+
+   It would be much nicer to simply read the blocks out of the old log
+   files and pass them to the normal apply commit path.
+
+   Instead of applying new commits interleaved with log replay, we
+   could queue the requests in a side channel that could spill to disk
+   if it got too full.  After the tablet finishes loading, we can
+   replay the queue as well.
+
+   Or we can just block.
+
+
+
 
 
 #----------------------------------------------------------------------------
