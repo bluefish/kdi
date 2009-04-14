@@ -18,9 +18,11 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
+#include <boost/bind.hpp>
 #include <kdi/server/Compactor.h>
 #include <kdi/server/FragmentMerge.h>
 #include <kdi/server/TabletEventListener.h>
+#include <warp/call_or_die.h>
 #include <warp/log.h>
 
 using namespace kdi;
@@ -31,6 +33,27 @@ using std::map;
 using std::search;
 using warp::Interval;
 using warp::log;
+
+Compactor::Compactor(BlockCache * cache) :
+    cache(cache),
+    writer(64 << 10)
+{
+    EX_CHECK_NULL(cache);
+
+    thread.reset(
+        new boost::thread(
+            warp::callOrDie(
+                boost::bind(
+                    &Compactor::compactLoop,
+                    this
+                ),
+                "Compact thread", true
+            )
+        )
+    );
+
+    log("Compactor %p: created", this);
+}
 
 void Compactor::compact(RangeFragmentMap const & compactionSet,
                         RangeFragmentMap & outputSet) 

@@ -23,9 +23,13 @@
 
 #include <kdi/server/CellBuffer.h>
 #include <kdi/server/DiskFragment.h>
+#include <kdi/server/DiskOutput.h>
 #include <kdi/server/FragmentEventListener.h>
 #include <kdi/strref.h>
 #include <boost/function.hpp>
+#include <boost/noncopyable.hpp>
+#include <boost/scoped_ptr.hpp>
+#include <boost/thread.hpp>
 
 namespace kdi {
 namespace server {
@@ -58,7 +62,8 @@ class kdi::server::RangeFragmentMap
 class kdi::server::Compactor 
 {
     BlockCache * cache;
-    RangeFragmentMap rangeFragmentMap;
+    DiskOutput writer;
+    boost::scoped_ptr<boost::thread> thread;
 
     /// Compact some ranges.  
     ///
@@ -82,11 +87,11 @@ class kdi::server::Compactor
     void chooseCompactionSet(RangeFragmentMap const & fragMap,
                              RangeFragmentMap & compactionSet);
 
+    void compactLoop();
+
 public:
 
-    Compactor(BlockCache *cache) :
-        cache(cache) {}
-
+    Compactor(BlockCache *cache);
     virtual ~Compactor() {}
 };
 #endif // KDI_SERVER_COMPACTOR_H

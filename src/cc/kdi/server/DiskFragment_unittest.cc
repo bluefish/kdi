@@ -26,6 +26,7 @@
 #include <string>
 #include <boost/format.hpp>
 
+#include <kdi/server/DiskOutput.h>
 #include <kdi/local/disk_table.h>
 #include <kdi/local/disk_table_writer.h>
 #include <kdi/table_unittest.h>
@@ -39,67 +40,11 @@ using namespace warp;
 using namespace std;
 using boost::format;
 
-namespace {
-
-    class CheaterDiskTable : public Table
+BOOST_AUTO_TEST_CASE(output_test)
+{
     {
-        MemoryTablePtr memTable;
-        DiskTablePtr diskTable;
-        size_t blockSz;
-
-    public:
-        explicit CheaterDiskTable(size_t blockSz=128) :
-            memTable(MemoryTable::create(false)),
-            blockSz(blockSz)
-        {
-            DiskTableWriterV1 out(blockSz);
-            out.open("memfs:cheater");
-            out.close();
-
-            diskTable.reset(new DiskTableV1("memfs:cheater"));
-        }
-
-        void set(strref_t row, strref_t column,
-                 int64_t timestamp, strref_t value)
-        {
-            memTable->set(row, column, timestamp, value);
-        }
-
-        void erase(strref_t row, strref_t column, int64_t timestamp)
-        {
-            memTable->erase(row, column, timestamp);
-        }
-
-        CellStreamPtr scan(ScanPredicate const & pred) const
-        {
-            return diskTable->scan(pred);
-        }
-
-        void sync()
-        {
-            if(memTable->getCellCount())
-            {
-                CellStreamPtr merge = CellMerge::make(true);
-                merge->pipeFrom(memTable->scan());
-                if(diskTable)
-                    merge->pipeFrom(diskTable->scan());
-
-                DiskTableWriterV1 out(blockSz);
-                out.open("memfs:cheater.tmp");
-                Cell x;
-                while(merge->get(x))
-                    out.put(x);
-                out.close();
-
-                diskTable.reset();
-                fs::rename("memfs:cheater.tmp", "memfs:cheater", true);
-                diskTable.reset(new DiskTableV1("memfs:cheater"));
-
-                memTable = MemoryTable::create(false);
-            }
-        }
-    };
-
+        DiskOutput out(128);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(empty_test)
