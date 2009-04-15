@@ -195,8 +195,13 @@ void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
         if(times && !times->contains(cellIt->key.timestamp)) continue;
         if(cols && !cols->contains(*cellIt->key.column)) continue;
 
-        out.emitCell(*cellIt->key.row, *cellIt->key.column,
-                     cellIt->key.timestamp, *cellIt->value);
+        if(cellIt->value) {
+            out.emitCell(*cellIt->key.row, *cellIt->key.column,
+                         cellIt->key.timestamp, *cellIt->value);
+        } else {
+            out.emitErasure(*cellIt->key.row, *cellIt->key.column,
+                            cellIt->key.timestamp);
+        }
         ++cellIt;
     }
 }

@@ -26,6 +26,8 @@
 #include <warp/fs.h>
 #include <string>
 #include <boost/format.hpp>
+#include <boost/test/test_tools.hpp>
+#include <boost/test/output_test_stream.hpp>
 
 #include <kdi/server/DiskOutput.h>
 
@@ -58,9 +60,8 @@ namespace {
 typedef std::auto_ptr<FragmentBlock> FragmentBlockPtr;
 typedef std::auto_ptr<FragmentBlockReader> FragmentBlockReaderPtr;
 
-size_t countCells(Fragment const & frag)
+void dumpCells(Fragment const & frag, CellOutput & out)
 {
-    CellBuilder cellBuilder;
     ScanPredicate pred("");
     size_t blockAddr = frag.nextBlock(pred, 0);
     while(blockAddr != size_t(-1))
@@ -70,14 +71,48 @@ size_t countCells(Fragment const & frag)
 
         CellKey nextCell;
         BOOST_CHECK(reader->advance(nextCell));
-        reader->copyUntil(0, cellBuilder);
+        reader->copyUntil(0, out);
         BOOST_CHECK(!reader->advance(nextCell));
 
         blockAddr = frag.nextBlock(pred, blockAddr+1);
     }
-    
+}
+
+size_t countCells(Fragment const & frag)
+{
+    CellBuilder cellBuilder;
+    dumpCells(frag, cellBuilder);   
     return cellBuilder.getCellCount();
 }
+
+typedef boost::test_tools::output_test_stream test_out_t;
+
+class TestCellOutput : 
+    public CellOutput,
+    public test_out_t
+{
+    size_t cellCount;
+
+public:
+    TestCellOutput() : cellCount(0) {}
+    ~TestCellOutput() {}
+        
+    void emitCell(strref_t row, strref_t column, int64_t timestamp,
+                  strref_t value) 
+    {
+        *this << '(' << row << ',' << column << ',' << timestamp << ',' 
+              << value << ')';
+    }
+
+    void emitErasure(strref_t row, strref_t column, int64_t timestamp)
+    {
+        *this << '(' << row << ',' << column << ',' << timestamp << ',' 
+              << "ERASED)";
+    }
+
+    size_t getCellCount() const { return cellCount; }
+    size_t getDataSize() const { return cellCount; }
+};
 
 } // namespace
 
@@ -114,24 +149,17 @@ BOOST_AUTO_TEST_CASE(simple_test)
     DiskFragment df("memfs:simple");
     BOOST_CHECK_EQUAL(7, countCells(df));
 
-/*
-    CellKey lastKey;
-    std::vector<char> out;
-    cellBuilder.finish(out, lastKey);
-
-        test_out_t s;
-        BOOST_CHECK((s << t).is_equal(
-                        "(row1,col1,42,val1)"
-                        "(row1,col2,42,val2)"
-                        "(row1,col2,23,val3)"
-                        "(row1,col3,23,ERASED)"
-                        "(row2,col1,42,val4)"
-                        "(row2,col3,42,val5)"
-                        "(row3,col2,23,val6)"
-                        )
-            );
-    }
-*/
+    TestCellOutput test;
+    dumpCells(df, test);
+    BOOST_CHECK(test.is_equal(
+        "(row1,col1,42,val1)"
+        "(row1,col2,42,val2)"
+        "(row1,col2,23,val3)"
+        "(row1,col3,23,ERASED)"
+        "(row2,col1,42,val4)"
+        "(row2,col3,42,val5)"
+        "(row3,col2,23,val6)"
+    ));
 }
 
 /*
