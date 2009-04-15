@@ -351,7 +351,8 @@ size_t DiskOutput::Impl::getCellCount() const
 // DiskTableWriter
 //----------------------------------------------------------------------------
 DiskOutput::DiskOutput(size_t blockSize) :
-    impl(new DiskOutput::Impl(blockSize))
+    impl(new DiskOutput::Impl(blockSize)),
+    closed(true)
 {
 }
 
