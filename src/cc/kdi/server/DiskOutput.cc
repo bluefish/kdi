@@ -205,7 +205,7 @@ void DiskOutput::Impl::addCell(strref_t row, strref_t column, int64_t timestamp,
     block.arr->appendOffset(b, r);         // key.row
     block.arr->appendOffset(b, c);         // key.column
     block.arr->append(t);                  // key.timestamp
-    if(isErasure)
+    if(!isErasure)
     {
         size_t v = block.pool.getStringOffset(value);
         block.arr->appendOffset(b, v);     // value

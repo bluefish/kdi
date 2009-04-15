@@ -145,7 +145,6 @@ BOOST_AUTO_TEST_CASE(simple_test)
         out.close();
     }
 
-    ScanPredicate pred("");
     DiskFragment df("memfs:simple");
     BOOST_CHECK_EQUAL(7, countCells(df));
 
@@ -162,66 +161,37 @@ BOOST_AUTO_TEST_CASE(simple_test)
     ));
 }
 
-/*
 BOOST_AUTO_TEST_CASE(pred_test)
 {
     // Write some cells
     {
-        DiskTableWriterV1 out(128);
+        DiskOutput out(128);
         out.open("memfs:pred");
-        out.put(makeCell("row1", "col1", 42, "val1"));
-        out.put(makeCell("row1", "col2", 42, "val2"));
-        out.put(makeCell("row1", "col2", 23, "val3"));
-        out.put(makeCellErasure("row1", "col3", 23));
-        out.put(makeCell("row2", "col1", 42, "val4"));
-        out.put(makeCell("row2", "col3", 42, "val5"));
-        out.put(makeCell("row3", "col2", 23, "val6"));
+        out.emitCell("row1", "col1", 42, "val1");
+        out.emitCell("row1", "col2", 42, "val2");
+        out.emitCell("row1", "col2", 23, "val3");
+        out.emitErasure("row1", "col3", 23);
+        out.emitCell("row2", "col1", 42, "val4");
+        out.emitCell("row2", "col3", 42, "val5");
+        out.emitCell("row3", "col2", 23, "val6");
         out.close();
     }
 
-    // Make sure those cells are in the table
-    {
-        typedef std::auto_ptr<FragmentBlock> FragmentBlockPtr;
-        typedef std::auto_ptr<FragmentBlockReader> FragmentBlockReaderPtr;
-
-        ScanPredicate pred("row = 'row1' or row = 'row3'");
-        DiskFragment t("memfs:pred");
-        CellBuilder cellBuilder;
-        for(size_t blockAddr = 0; blockAddr != size_t(-1); 
-            blockAddr = t.nextBlock(pred, blockAddr+1))
-        {
-            FragmentBlockPtr block = t.loadBlock(blockAddr);
-            FragmentBlockReaderPtr reader = block->makeReader(pred);
-
-            CellKey nextCell;
-            BOOST_CHECK(reader->advance(nextCell));
-            reader->copyUntil(0, cellBuilder);
-            BOOST_CHECK(!reader->advance(nextCell));
-        }
-
-        size_t nCells = cellBuilder.getCellCount();
-        BOOST_CHECK_EQUAL(5, nCells);
-
-        CellKey lastKey;
-        std::vector<char> out;
-        cellBuilder.finish(out, lastKey);
-
-        test_out_t s;
-        BOOST_CHECK((s << t).is_equal(
-                        "(row1,col1,42,val1)"
-                        "(row1,col2,42,val2)"
-                        "(row1,col2,23,val3)"
-                        "(row1,col3,23,ERASED)"
-                        "(row2,col1,42,val4)"
-                        "(row2,col3,42,val5)"
-                        "(row3,col2,23,val6)"
-                        )
-            );
-    }
+    DiskFragment df("memfs:pred");
+    TestCellOutput test;
+    dumpCells(df, test);
+    BOOST_CHECK(test.is_equal(
+        "(row1,col1,42,val1)"
+        "(row1,col2,42,val2)"
+        "(row1,col2,23,val3)"
+        "(row1,col3,23,ERASED)"
+        "(row2,col1,42,val4)"
+        "(row2,col3,42,val5)"
+        "(row3,col2,23,val6)"
+    ));
 }
 
 BOOST_AUTO_TEST_CASE(compact_test)
 {
     
 }
-*/
