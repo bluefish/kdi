@@ -57,6 +57,11 @@ class kdi::server::RangeFragmentMap
     typedef std::vector<Fragment const *> frag_list_t;
     typedef std::map<range_t, frag_list_t, RangeLt> map_t;
     map_t rangeMap;
+
+public:
+    void clear();
+    RangeFragmentMap & operator=(RangeFragmentMap const & x);
+    void addFragment(range_t range, Fragment const * frag);
 };
 
 class kdi::server::Compactor :

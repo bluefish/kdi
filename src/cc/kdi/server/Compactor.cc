@@ -48,9 +48,7 @@ Compactor::Compactor(BlockCache * cache) :
                     this
                 ),
                 "Compact thread", true
-            )
-        )
-    );
+            )));
 
     log("Compactor %p: created", this);
 }
@@ -68,4 +66,30 @@ void Compactor::chooseCompactionSet(RangeFragmentMap const & fragMap,
 void Compactor::compactLoop() 
 {
     log("Compactor: starting");
+}
+
+void RangeFragmentMap::clear()
+{
+    rangeMap.clear();
+}
+
+RangeFragmentMap & RangeFragmentMap::operator=(RangeFragmentMap const  & x)
+{
+    rangeMap = x.rangeMap;
+    return *this;
+}
+
+void RangeFragmentMap::addFragment(range_t range, Fragment const * f)
+{
+    map_t::iterator i = rangeMap.find(range);
+    if(i == rangeMap.end())
+    {
+        frag_list_t frags;
+        frags.push_back(f);
+        rangeMap[range] = frags;
+    }
+    else
+    {
+        i->second.push_back(f);
+    }
 }
