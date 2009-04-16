@@ -114,6 +114,36 @@ public:
     size_t getDataSize() const { return cellCount; }
 };
 
+/// Fill a fragment with cells of the form:
+///   ("row-i", "col-j", k, "val-i-j-k")
+/// for i in [1, nRows], j in [1, nCols], and k in [1, nRevs]
+void makeTestFragment(size_t blockSize, string const & filename, 
+                      size_t nRows, size_t nCols, size_t nRevs,
+                      string const & fmt = "%d")
+{
+    DiskOutput out(blockSize);
+    out.open(filename);
+
+    string rowFmt = (format("row-%s") % fmt).str();
+    string colFmt = (format("col-%s") % fmt).str();
+    string valFmt = (format("val-%s-%s-%s") % fmt % fmt % fmt).str();
+
+    for(size_t i = 1; i <= nRows; ++i)
+    {
+        string row = (format(rowFmt)%i).str();
+        for(size_t j = 1; j <= nCols; ++j)
+        {
+            string col = (format(colFmt)%j).str();
+            for(size_t k = 1; k <= nRevs; ++k)
+            {
+                string val = (format(valFmt)%i%j%k).str();
+                out.emitCell(row, col, k, val);
+            }
+        }
+    }
+    out.close();
+}
+ 
 } // namespace
 
 BOOST_AUTO_TEST_CASE(empty_test)
@@ -189,6 +219,45 @@ BOOST_AUTO_TEST_CASE(pred_test)
         "(row2,col3,42,val5)"
         "(row3,col2,23,val6)"
     ));
+}
+
+BOOST_AUTO_TEST_CASE(rewrite_test)
+{
+    DiskOutput out(128);
+    
+    // First fragment
+    out.open("memfs:one");
+    out.emitCell("row1", "col1", 42, "one1");
+    out.emitCell("row1", "col2", 42, "one2");
+    out.close();
+
+    // Second fragment
+    out.open("memfs:two");
+    out.emitCell("row1", "col1", 42, "two1");
+    out.emitCell("row1", "col3", 42, "two2");
+    out.close();
+
+    // Check first fragment
+    {
+        DiskFragment df("memfs:one");
+        TestCellOutput test;
+        dumpCells(df, test);
+        BOOST_CHECK(test.is_equal(
+            "(row1,col1,42,one1)"
+            "(row1,col2,42,one2)"
+        ));
+    }
+
+    // Check second fragment
+    {
+        DiskFragment df("memfs:two");
+        TestCellOutput test;
+        dumpCells(df, test);
+        BOOST_CHECK(test.is_equal(
+            "(row1,col1,42,two1)"
+            "(row1,col3,42,two2)"
+        ));
+    } 
 }
 
 BOOST_AUTO_TEST_CASE(compact_test)
