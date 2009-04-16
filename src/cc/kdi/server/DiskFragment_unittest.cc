@@ -159,6 +159,14 @@ BOOST_AUTO_TEST_CASE(empty_test)
     BOOST_CHECK_EQUAL(0, countCells(df));
 }
 
+#define CHECK_FRAGMENT(name, expected) \
+{ \
+    DiskFragment df(name); \
+    TestCellOutput test; \
+    dumpCells(df, test); \
+    BOOST_CHECK(test.is_equal(expected)); \
+}
+
 BOOST_AUTO_TEST_CASE(simple_test)
 {
     // Write some cells
@@ -178,9 +186,7 @@ BOOST_AUTO_TEST_CASE(simple_test)
     DiskFragment df("memfs:simple");
     BOOST_CHECK_EQUAL(7, countCells(df));
 
-    TestCellOutput test;
-    dumpCells(df, test);
-    BOOST_CHECK(test.is_equal(
+    CHECK_FRAGMENT("memfs:simple",
         "(row1,col1,42,val1)"
         "(row1,col2,42,val2)"
         "(row1,col2,23,val3)"
@@ -188,7 +194,7 @@ BOOST_AUTO_TEST_CASE(simple_test)
         "(row2,col1,42,val4)"
         "(row2,col3,42,val5)"
         "(row3,col2,23,val6)"
-    ));
+    );
 }
 
 BOOST_AUTO_TEST_CASE(pred_test)
@@ -207,10 +213,7 @@ BOOST_AUTO_TEST_CASE(pred_test)
         out.close();
     }
 
-    DiskFragment df("memfs:pred");
-    TestCellOutput test;
-    dumpCells(df, test);
-    BOOST_CHECK(test.is_equal(
+    CHECK_FRAGMENT("memfs:pred",
         "(row1,col1,42,val1)"
         "(row1,col2,42,val2)"
         "(row1,col2,23,val3)"
@@ -218,7 +221,7 @@ BOOST_AUTO_TEST_CASE(pred_test)
         "(row2,col1,42,val4)"
         "(row2,col3,42,val5)"
         "(row3,col2,23,val6)"
-    ));
+    );
 }
 
 BOOST_AUTO_TEST_CASE(rewrite_test)
@@ -238,26 +241,16 @@ BOOST_AUTO_TEST_CASE(rewrite_test)
     out.close();
 
     // Check first fragment
-    {
-        DiskFragment df("memfs:one");
-        TestCellOutput test;
-        dumpCells(df, test);
-        BOOST_CHECK(test.is_equal(
-            "(row1,col1,42,one1)"
-            "(row1,col2,42,one2)"
-        ));
-    }
+    CHECK_FRAGMENT("memfs:one",
+        "(row1,col1,42,one1)"
+        "(row1,col2,42,one2)"
+    );
 
     // Check second fragment
-    {
-        DiskFragment df("memfs:two");
-        TestCellOutput test;
-        dumpCells(df, test);
-        BOOST_CHECK(test.is_equal(
-            "(row1,col1,42,two1)"
-            "(row1,col3,42,two2)"
-        ));
-    } 
+    CHECK_FRAGMENT("memfs:two",
+        "(row1,col1,42,two1)"
+        "(row1,col3,42,two2)"
+    );
 }
 
 BOOST_AUTO_TEST_CASE(compact_test)
