@@ -55,12 +55,12 @@ void addFragment(RangeFragmentMap & rf,
                  string const & lastRow,
                  Fragment const * frag)
 {
-    PointType lower_t = minRow.size() == 0 
+    PointType lower_t = minRow.size() > 0 
         ? PT_EXCLUSIVE_LOWER_BOUND 
         : PT_INFINITE_LOWER_BOUND;
     IntervalPoint<string> lower(minRow, lower_t);
 
-    PointType upper_t = lastRow.size() == 0
+    PointType upper_t = lastRow.size() > 0
         ? PT_INCLUSIVE_UPPER_BOUND 
         : PT_INFINITE_UPPER_BOUND;
     IntervalPoint<string> upper(lastRow, upper_t);

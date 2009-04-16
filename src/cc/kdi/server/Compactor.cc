@@ -23,6 +23,7 @@
 #include <kdi/server/FragmentMerge.h>
 #include <kdi/server/TabletEventListener.h>
 #include <warp/call_or_die.h>
+#include <warp/fs.h>
 #include <warp/log.h>
 
 using namespace kdi;
@@ -33,6 +34,7 @@ using std::map;
 using std::search;
 using warp::Interval;
 using warp::log;
+using warp::File;
 
 Compactor::Compactor(BlockCache * cache) :
     cache(cache),
@@ -53,24 +55,59 @@ Compactor::Compactor(BlockCache * cache) :
     log("Compactor %p: created", this);
 }
 
+namespace {
+
+std::string getUniqueTableFile(std::string const & rootDir,
+                               std::string const & tableName)
+{
+    string dir = warp::fs::resolve(rootDir, tableName);
+
+    // XXX: this should be cached -- only need to make the directory
+    // once per table
+    warp::fs::makedirs(dir);
+   
+    return File::openUnique(warp::fs::resolve(dir, "$UNIQUE")).second;
+}
+
+}
+
 void Compactor::compact(RangeFragmentMap const & compactionSet,
                         RangeFragmentMap & outputSet) 
 {
+    string outputName = getUniqueTableFile("memfs:/", "test");
+    writer.open(outputName);
+
+    RangeFragmentMap::const_iterator i;
+    for(i = compactionSet.begin(); i != compactionSet.end(); ++i)
+    {
+        RangeFragmentMap::range_t const & range = i->first;
+        RangeFragmentMap::frag_list_t const & frags = i->second;
+
+        log("compacting %d frags in range %s", frags.size(), range);
+
+        FragmentMerge merge(frags, cache, ScanPredicate(""), 0); 
+        const size_t maxCells = 10000000;
+        const size_t maxSize= 10000000;
+
+        log("doing compaction merge");
+        bool done = merge.copyMerged(maxCells, maxSize, writer);
+        if(done) log("compaction merge finished");
+        log("cells: %d, size: %d", maxCells, maxSize);
+    }
+
+    writer.close();
 }
 
 void Compactor::chooseCompactionSet(RangeFragmentMap const & fragMap,
                                     RangeFragmentMap & compactionSet)
 {
+    compactionSet.clear();
+    compactionSet = fragMap;
 }
 
 void Compactor::compactLoop() 
 {
     log("Compactor: starting");
-}
-
-void RangeFragmentMap::clear()
-{
-    rangeMap.clear();
 }
 
 RangeFragmentMap & RangeFragmentMap::operator=(RangeFragmentMap const  & x)
