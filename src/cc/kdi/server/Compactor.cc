@@ -89,11 +89,10 @@ void Compactor::compact(RangeFragmentMap const & compactionSet,
         const size_t maxCells = 10000000;
         const size_t maxSize= 10000000;
 
-        log("doing compaction merge");
-        bool done = merge.copyMerged(maxCells, maxSize, writer);
-        if(done) log("compaction merge finished");
-        log("cells: %d, size: %d", maxCells, maxSize);
+        merge.copyMerged(maxCells, maxSize, writer);
     }
+
+    log("compaction output, cells: %d, size: %d", writer.getCellCount(), writer.getDataSize());
 
     writer.close();
 }
