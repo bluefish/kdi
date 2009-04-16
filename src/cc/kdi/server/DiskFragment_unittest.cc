@@ -252,8 +252,3 @@ BOOST_AUTO_TEST_CASE(rewrite_test)
         "(row1,col3,42,two2)"
     );
 }
-
-BOOST_AUTO_TEST_CASE(compact_test)
-{
-    
-}

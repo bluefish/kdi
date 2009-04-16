@@ -19,25 +19,24 @@
 //----------------------------------------------------------------------------
 
 #include <unittest/main.h>
+#include <kdi/server/Compactor.h>
 #include <kdi/server/DiskFragment.h>
 #include <kdi/server/CellBuilder.h>
+#include <kdi/server/DirectBlockCache.h>
 
 #include <warp/fs.h>
 #include <string>
 #include <boost/format.hpp>
 
-#include <kdi/local/disk_table.h>
-#include <kdi/local/disk_table_writer.h>
-#include <kdi/table_unittest.h>
-#include <kdi/cell_merge.h>
 
 using namespace kdi;
 using namespace kdi::local;
 using namespace kdi::server;
-using namespace kdi::unittest;
 using namespace warp;
 using namespace std;
 using boost::format;
+
+namespace {
 
 std::string getUniqueTableFile(std::string const & rootDir,
                                std::string const & tableName)
@@ -50,29 +49,32 @@ std::string getUniqueTableFile(std::string const & rootDir,
    
     return File::openUnique(fs::resolve(dir, "$UNIQUE")).second;
 }
-   
 
-BOOST_AUTO_TEST_CASE(new_file_test)
-{
-    cout << getUniqueTableFile("memfs:/data", "compact_test");
 }
-
-BOOST_AUTO_TEST_CASE(empty_test)
+  
+BOOST_AUTO_TEST_CASE(compact_test)
 {
-    // Make empty table
+    DirectBlockCache blockCache;
+    Compactor compactor(&blockCache);
+
+    // Make some test fragments
     {
-        DiskTableWriterV1 out(128);
-        out.open("memfs:empty");
+        DiskOutput out(128);
+        out.open("memfs:orig_1");
+        out.emitCell("row1", "col", 0, "val");
         out.close();
     }
 
-    // Make sure result is empty
-    {
-        DiskTableV1 t("memfs:empty");
-        test_out_t s;
-        BOOST_CHECK((s << t).is_empty());
-    }
+    DiskFragment f1("memfs:orig_1");
+    DiskFragment f2("memfs:orig_1");
+    DiskFragment f3("memfs:orig_1");
+    DiskFragment f4("memfs:orig_1");
+    DiskFragment f5("memfs:orig_1");
 
-    DiskFragment df("memfs:empty");
-    df.nextBlock(ScanPredicate(""), 0);
+    RangeFragmentMap candidateSet;
+    RangeFragmentMap compactionSet;
+    RangeFragmentMap outputSet;
+
+    compactor.chooseCompactionSet(candidateSet, compactionSet);
+    compactor.compact(compactionSet, outputSet);
 }

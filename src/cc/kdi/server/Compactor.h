@@ -59,11 +59,14 @@ class kdi::server::RangeFragmentMap
     map_t rangeMap;
 };
 
-class kdi::server::Compactor 
+class kdi::server::Compactor :
+    public boost::noncopyable
 {
     BlockCache * cache;
     DiskOutput writer;
     boost::scoped_ptr<boost::thread> thread;
+
+public:
 
     /// Compact some ranges.  
     ///
@@ -88,8 +91,6 @@ class kdi::server::Compactor
                              RangeFragmentMap & compactionSet);
 
     void compactLoop();
-
-public:
 
     Compactor(BlockCache *cache);
     virtual ~Compactor() {}

@@ -65,3 +65,7 @@ void Compactor::chooseCompactionSet(RangeFragmentMap const & fragMap,
 {
 }
 
+void Compactor::compactLoop() 
+{
+    log("Compactor: starting");
+}
