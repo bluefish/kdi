@@ -421,7 +421,10 @@ namespace {
             }
 
             // Make scanner locator
-            ScannerLocator * scannerLocator = new ScannerLocator(50);
+            size_t maxScanners = 200;
+            if(char * env = getenv("KDI_MAX_SCANNERS"))
+                maxScanners = parseSize(env);
+            ScannerLocator * scannerLocator = new ScannerLocator(maxScanners);
 
             // Create table server
             //   -- hack: tossing the scannerLocator in here so we can

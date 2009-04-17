@@ -199,7 +199,7 @@ bool FragmentMerge::copyMerged(size_t maxCells, size_t maxSize,
         bool hasMore = top->copyUntil(
             heap.empty() ? 0 : &heap.top()->getNextKey(),
             pred, cache, out);
-            
+
         if(hasMore)
             heap.push(top);
 

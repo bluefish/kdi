@@ -21,222 +21,394 @@
 #include <unittest/main.h>
 #include <kdi/server/DiskFragment.h>
 #include <kdi/server/CellBuilder.h>
+#include <kdi/memory_table.h>
 
 #include <warp/fs.h>
 #include <string>
 #include <boost/format.hpp>
+#include <boost/test/test_tools.hpp>
+#include <boost/test/output_test_stream.hpp>
 
-#include <kdi/local/disk_table.h>
-#include <kdi/local/disk_table_writer.h>
-#include <kdi/table_unittest.h>
-#include <kdi/cell_merge.h>
+#include <kdi/server/DiskOutput.h>
 
 using namespace kdi;
 using namespace kdi::local;
 using namespace kdi::server;
-using namespace kdi::unittest;
 using namespace warp;
 using namespace std;
 using boost::format;
 
+BOOST_AUTO_TEST_CASE(output_test)
+{
+    DiskOutput out(128);
+    out.open("memfs:output");
+    BOOST_CHECK_EQUAL(0, out.getCellCount());
+    size_t startSize = out.getDataSize();
+
+    out.emitCell("row", "col", 0, "val");
+    BOOST_CHECK_EQUAL(1, out.getCellCount());
+    BOOST_CHECK(out.getDataSize() > startSize);
+
+    out.emitErasure("erase", "col", 0);
+    BOOST_CHECK_EQUAL(2, out.getCellCount());
+
+    out.close();
+}
+
 namespace {
 
-    class CheaterDiskTable : public Table
+typedef std::auto_ptr<FragmentBlock> FragmentBlockPtr;
+typedef std::auto_ptr<FragmentBlockReader> FragmentBlockReaderPtr;
+
+void dumpCells(Fragment const & frag, CellOutput & out, string const & pred)
+{
+    ScanPredicate p(pred);
+    size_t blockAddr = frag.nextBlock(p, 0);
+    while(blockAddr != size_t(-1))
     {
-        MemoryTablePtr memTable;
-        DiskTablePtr diskTable;
-        size_t blockSz;
+        FragmentBlockPtr block = frag.loadBlock(blockAddr);
+        FragmentBlockReaderPtr reader = block->makeReader(p);
 
-    public:
-        explicit CheaterDiskTable(size_t blockSz=128) :
-            memTable(MemoryTable::create(false)),
-            blockSz(blockSz)
+        CellKey nextCell;
+        BOOST_CHECK(reader->advance(nextCell));
+        reader->copyUntil(0, out);
+        BOOST_CHECK(!reader->advance(nextCell));
+
+        blockAddr = frag.nextBlock(p, blockAddr+1);
+    }
+}
+
+void dumpCells(Fragment const & frag, CellOutput & out)
+{
+    dumpCells(frag, out, "");
+}
+
+size_t countCells(Fragment const & frag, string const & pred)
+{
+    CellBuilder cellBuilder;
+    dumpCells(frag, cellBuilder, pred);   
+    return cellBuilder.getCellCount();
+}
+
+size_t countCells(Fragment const & frag)
+{
+    return countCells(frag, "");
+}
+
+typedef boost::test_tools::output_test_stream test_out_t;
+
+class TestCellOutput : 
+    public CellOutput,
+    public test_out_t
+{
+    size_t cellCount;
+
+public:
+    TestCellOutput() : cellCount(0) {}
+    ~TestCellOutput() {}
+        
+    void emitCell(strref_t row, strref_t column, int64_t timestamp,
+                  strref_t value) 
+    {
+        *this << '(' << row << ',' << column << ',' << timestamp << ',' 
+              << value << ')';
+    }
+
+    void emitErasure(strref_t row, strref_t column, int64_t timestamp)
+    {
+        *this << '(' << row << ',' << column << ',' << timestamp << ',' 
+              << "ERASED)";
+    }
+
+    size_t getCellCount() const { return cellCount; }
+    size_t getDataSize() const { return cellCount; }
+};
+
+class TestFragmentBuilder
+{
+    MemoryTablePtr memTable;
+    DiskOutput out;
+
+public:
+    
+    explicit TestFragmentBuilder(string const & file, size_t blockSz=128) :
+        memTable(MemoryTable::create(false)),
+        out(blockSz)
+    {
+        out.open(file);
+    }
+
+    ~TestFragmentBuilder()
+    {
+        write();
+    }
+
+    void set(strref_t row, strref_t column,
+             int64_t timestamp, strref_t value)
+    {
+        memTable->set(row, column, timestamp, value);
+    }
+
+    void erase(strref_t row, strref_t column, int64_t timestamp)
+    {
+        memTable->erase(row, column, timestamp);
+    }
+
+    void write()
+    {
+        Cell x;
+        CellStreamPtr scan = memTable->scan();
+        while(scan->get(x))
         {
-            DiskTableWriterV1 out(blockSz);
-            out.open("memfs:cheater");
-            out.close();
-
-            diskTable.reset(new DiskTableV1("memfs:cheater"));
-        }
-
-        void set(strref_t row, strref_t column,
-                 int64_t timestamp, strref_t value)
-        {
-            memTable->set(row, column, timestamp, value);
-        }
-
-        void erase(strref_t row, strref_t column, int64_t timestamp)
-        {
-            memTable->erase(row, column, timestamp);
-        }
-
-        CellStreamPtr scan(ScanPredicate const & pred) const
-        {
-            return diskTable->scan(pred);
-        }
-
-        void sync()
-        {
-            if(memTable->getCellCount())
+            if(x.isErasure())
             {
-                CellStreamPtr merge = CellMerge::make(true);
-                merge->pipeFrom(memTable->scan());
-                if(diskTable)
-                    merge->pipeFrom(diskTable->scan());
-
-                DiskTableWriterV1 out(blockSz);
-                out.open("memfs:cheater.tmp");
-                Cell x;
-                while(merge->get(x))
-                    out.put(x);
-                out.close();
-
-                diskTable.reset();
-                fs::rename("memfs:cheater.tmp", "memfs:cheater", true);
-                diskTable.reset(new DiskTableV1("memfs:cheater"));
-
-                memTable = MemoryTable::create(false);
+                out.emitErasure(x.getRow(), x.getColumn(), x.getTimestamp());
+            }
+            else
+            {
+                out.emitCell(x.getRow(), x.getColumn(), x.getTimestamp(),
+                             x.getValue());
             }
         }
-    };
+        out.close();
+    }
+};
 
+/// Fill a fragment with cells of the form:
+///   ("row-i", "col-j", k, "val-i-j-k")
+/// for i in [1, nRows], j in [1, nCols], and k in [1, nRevs]
+void makeTestFragment(size_t blockSize, string const & filename, 
+                      size_t nRows, size_t nCols, size_t nRevs,
+                      string const & fmt = "%d")
+{
+    TestFragmentBuilder out(filename, blockSize);
+
+    string rowFmt = (format("row-%s") % fmt).str();
+    string colFmt = (format("col-%s") % fmt).str();
+    string valFmt = (format("val-%s-%s-%s") % fmt % fmt % fmt).str();
+
+    for(size_t i = 1; i <= nRows; ++i)
+    {
+        string row = (format(rowFmt)%i).str();
+        for(size_t j = 1; j <= nCols; ++j)
+        {
+            string col = (format(colFmt)%j).str();
+            for(size_t k = 1; k <= nRevs; ++k)
+            {
+                string val = (format(valFmt)%i%j%k).str();
+                out.set(row, col, k, val);
+            }
+        }
+    }
 }
+ 
+} // namespace
 
 BOOST_AUTO_TEST_CASE(empty_test)
 {
     // Make empty table
     {
-        DiskTableWriterV1 out(128);
+        DiskOutput out(128);
         out.open("memfs:empty");
         out.close();
     }
 
-    // Make sure result is empty
-    {
-        DiskTableV1 t("memfs:empty");
-        test_out_t s;
-        BOOST_CHECK((s << t).is_empty());
-    }
-
     DiskFragment df("memfs:empty");
-    df.nextBlock(ScanPredicate(""), 0);
+    BOOST_CHECK_EQUAL(0, countCells(df));
 }
 
-BOOST_AUTO_TEST_CASE(basic_test)
+#define CHECK_FRAGMENT(name, expected) \
+{ \
+    DiskFragment df(name); \
+    TestCellOutput test; \
+    dumpCells(df, test); \
+    BOOST_CHECK(test.is_equal(expected)); \
+}
+
+BOOST_AUTO_TEST_CASE(simple_test)
 {
     // Write some cells
     {
-        DiskTableWriterV1 out(128);
+        DiskOutput out(128);
         out.open("memfs:simple");
-        out.put(makeCell("row1", "col1", 42, "val1"));
-        out.put(makeCell("row1", "col2", 42, "val2"));
-        out.put(makeCell("row1", "col2", 23, "val3"));
-        out.put(makeCellErasure("row1", "col3", 23));
-        out.put(makeCell("row2", "col1", 42, "val4"));
-        out.put(makeCell("row2", "col3", 42, "val5"));
-        out.put(makeCell("row3", "col2", 23, "val6"));
+        out.emitCell("row1", "col1", 42, "val1");
+        out.emitCell("row1", "col2", 42, "val2");
+        out.emitCell("row1", "col2", 23, "val3");
+        out.emitErasure("row1", "col3", 23);
+        out.emitCell("row2", "col1", 42, "val4");
+        out.emitCell("row2", "col3", 42, "val5");
+        out.emitCell("row3", "col2", 23, "val6");
         out.close();
     }
 
-    // Make sure those cells are in the table
-    {
-        typedef std::auto_ptr<FragmentBlock> FragmentBlockPtr;
-        typedef std::auto_ptr<FragmentBlockReader> FragmentBlockReaderPtr;
+    DiskFragment df("memfs:simple");
+    BOOST_CHECK_EQUAL(7, countCells(df));
 
-        ScanPredicate pred("");
-        DiskFragment t("memfs:simple");
-        CellBuilder cellBuilder;
-        for(size_t blockAddr = 0; blockAddr != size_t(-1); 
-            blockAddr = t.nextBlock(pred, blockAddr+1))
-        {
-            FragmentBlockPtr block = t.loadBlock(blockAddr);
-            FragmentBlockReaderPtr reader = block->makeReader(pred);
-
-            CellKey nextCell;
-            BOOST_CHECK(reader->advance(nextCell));
-            reader->copyUntil(0, cellBuilder);
-            BOOST_CHECK(!reader->advance(nextCell));
-        }
-
-        size_t nCells = cellBuilder.getCellCount();
-        BOOST_CHECK_EQUAL(7, nCells);
-
-        CellKey lastKey;
-        std::vector<char> out;
-        cellBuilder.finish(out, lastKey);
-
-        /*  
-        test_out_t s;
-        BOOST_CHECK((s << t).is_equal(
-                        "(row1,col1,42,val1)"
-                        "(row1,col2,42,val2)"
-                        "(row1,col2,23,val3)"
-                        "(row1,col3,23,ERASED)"
-                        "(row2,col1,42,val4)"
-                        "(row2,col3,42,val5)"
-                        "(row3,col2,23,val6)"
-                        )
-            );
-        */
-    }
+    CHECK_FRAGMENT("memfs:simple",
+        "(row1,col1,42,val1)"
+        "(row1,col2,42,val2)"
+        "(row1,col2,23,val3)"
+        "(row1,col3,23,ERASED)"
+        "(row2,col1,42,val4)"
+        "(row2,col3,42,val5)"
+        "(row3,col2,23,val6)"
+    );
 }
 
 BOOST_AUTO_TEST_CASE(pred_test)
 {
     // Write some cells
     {
-        DiskTableWriterV1 out(128);
+        DiskOutput out(128);
         out.open("memfs:pred");
-        out.put(makeCell("row1", "col1", 42, "val1"));
-        out.put(makeCell("row1", "col2", 42, "val2"));
-        out.put(makeCell("row1", "col2", 23, "val3"));
-        out.put(makeCellErasure("row1", "col3", 23));
-        out.put(makeCell("row2", "col1", 42, "val4"));
-        out.put(makeCell("row2", "col3", 42, "val5"));
-        out.put(makeCell("row3", "col2", 23, "val6"));
+        out.emitCell("row1", "col1", 42, "val1");
+        out.emitCell("row1", "col2", 42, "val2");
+        out.emitCell("row1", "col2", 23, "val3");
+        out.emitErasure("row1", "col3", 23);
+        out.emitCell("row2", "col1", 42, "val4");
+        out.emitCell("row2", "col3", 42, "val5");
+        out.emitCell("row3", "col2", 23, "val6");
         out.close();
     }
 
-    // Make sure those cells are in the table
+    CHECK_FRAGMENT("memfs:pred",
+        "(row1,col1,42,val1)"
+        "(row1,col2,42,val2)"
+        "(row1,col2,23,val3)"
+        "(row1,col3,23,ERASED)"
+        "(row2,col1,42,val4)"
+        "(row2,col3,42,val5)"
+        "(row3,col2,23,val6)"
+    );
+}
+
+BOOST_AUTO_TEST_CASE(rewrite_test)
+{
+    DiskOutput out(128);
+    
+    // First fragment
+    out.open("memfs:one");
+    out.emitCell("row1", "col1", 42, "one1");
+    out.emitCell("row1", "col2", 42, "one2");
+    out.close();
+
+    // Second fragment
+    out.open("memfs:two");
+    out.emitCell("row1", "col1", 42, "two1");
+    out.emitCell("row1", "col3", 42, "two2");
+    out.close();
+
+    // Check first fragment
+    CHECK_FRAGMENT("memfs:one",
+        "(row1,col1,42,one1)"
+        "(row1,col2,42,one2)"
+    );
+
+    // Check second fragment
+    CHECK_FRAGMENT("memfs:two",
+        "(row1,col1,42,two1)"
+        "(row1,col3,42,two2)"
+    );
+}
+
+BOOST_AUTO_UNIT_TEST(rowscan_test)
+{
+    makeTestFragment(256, "memfs:rowscan", 1000, 30, 1, "%03d");
+    
+    DiskFragment df("memfs:rowscan");
+    BOOST_CHECK_EQUAL(30000u, countCells(df));
+    BOOST_CHECK_EQUAL(60u, countCells(df, "row = 'row-042' or row = 'row-700'"));
+    BOOST_CHECK_EQUAL(150u, countCells(df, "row < 'row-004' or row >= 'row-998'"));
+    BOOST_CHECK_EQUAL(210u, countCells(df, "'row-442' <  row <  'row-446' or "
+                                           "'row-447' <= row <= 'row-450'"));
+
+    // Need to test row scans on tiny tables as well
+    // Single block tables can be a corner case
+    DiskOutput out(2056);
+    out.open("memfs:rowscan_small");
+    out.emitCell("row1", "col1", 42, "one1");
+    out.emitCell("row2", "col2", 42, "one2");
+    out.close();
+
+    DiskFragment df_small("memfs:rowscan_small");
+    BOOST_CHECK_EQUAL(1u, countCells(df_small, "row = 'row2'")); 
+}
+
+namespace { 
+
+// Fill a table with cells of the form:
+//    ("row-i", "fam-j:qual-k", t, "val-i-j-k-t")
+// for i in [1, nRows], j in [1, nFams], k in [1, nQuals] and t in [1, nRevs]
+void makeColFamilyTestFragment(size_t blockSize, string const &filename,
+                               size_t nRows, size_t nFams, size_t nQuals, size_t nRevs,
+                               std::string const &fmt = "%d")
+{
+    TestFragmentBuilder out(filename, blockSize);
+
+    string rowFmt = (format("row-%s") % fmt).str();
+    string colFmt = (format("fam-%s:qual-%s") % fmt % fmt).str();
+    string valFmt = (format("val-%s-%s-%s-%s") % fmt % fmt % fmt % fmt).str();
+
+    for(size_t i = 1; i<= nRows; ++i) 
     {
-        typedef std::auto_ptr<FragmentBlock> FragmentBlockPtr;
-        typedef std::auto_ptr<FragmentBlockReader> FragmentBlockReaderPtr;
-
-        ScanPredicate pred("row = 'row1' or row = 'row3'");
-        DiskFragment t("memfs:pred");
-        CellBuilder cellBuilder;
-        for(size_t blockAddr = 0; blockAddr != size_t(-1); 
-            blockAddr = t.nextBlock(pred, blockAddr+1))
+        string row = (format(rowFmt)%i).str();
+        for(size_t j = 1; j <= nFams; ++j) 
         {
-            FragmentBlockPtr block = t.loadBlock(blockAddr);
-            FragmentBlockReaderPtr reader = block->makeReader(pred);
-
-            CellKey nextCell;
-            BOOST_CHECK(reader->advance(nextCell));
-            reader->copyUntil(0, cellBuilder);
-            BOOST_CHECK(!reader->advance(nextCell));
+            for(size_t k = 1; k <= nQuals; ++k) 
+            {
+                string col = (format(colFmt)%j%k).str();
+                for(size_t t = 1; t <= nRevs; ++t)
+                {
+                    string val = (format(valFmt)%i%j%k%t).str();
+                    out.set(row, col, k, val);
+                }
+            }
         }
-
-        size_t nCells = cellBuilder.getCellCount();
-        BOOST_CHECK_EQUAL(5, nCells);
-
-        CellKey lastKey;
-        std::vector<char> out;
-        cellBuilder.finish(out, lastKey);
-
-        /*  
-        test_out_t s;
-        BOOST_CHECK((s << t).is_equal(
-                        "(row1,col1,42,val1)"
-                        "(row1,col2,42,val2)"
-                        "(row1,col2,23,val3)"
-                        "(row1,col3,23,ERASED)"
-                        "(row2,col1,42,val4)"
-                        "(row2,col3,42,val5)"
-                        "(row3,col2,23,val6)"
-                        )
-            );
-        */
     }
 }
 
+}
+
+BOOST_AUTO_UNIT_TEST(colscan_test)
+{
+    makeColFamilyTestFragment(33, "memfs:colscan", 30, 33, 2, 1, "%03d");
+
+    DiskFragment df("memfs:colscan");
+    BOOST_CHECK_EQUAL(1980u, countCells(df));
+    BOOST_CHECK_EQUAL(0u, countCells(df, "row > 'a' and column ~= 'not-a-fam:'"));
+    BOOST_CHECK_EQUAL(60u, countCells(df, "row > 'a' and column ~= 'fam-001:'"));
+    BOOST_CHECK_EQUAL(120u, countCells(df, "row > 'a' and column ~= 'fam-001:' or "
+                                           "column ~= 'fam-033:'"));
+}
+
+BOOST_AUTO_UNIT_TEST(timescan_test)
+{
+    makeTestFragment(256, "memfs:timescan", 1000, 1, 30, "%03d");
+
+    DiskFragment df("memfs:timescan");
+    BOOST_CHECK_EQUAL(30000u, countCells(df));
+    BOOST_CHECK_EQUAL(1000u, countCells(df, "row > 'a' and time = @1"));
+    BOOST_CHECK_EQUAL(30000u, countCells(df, "row > 'a' and @0 <= time <= @666"));
+    BOOST_CHECK_EQUAL(2000u,  countCells(df, "row > 'a' and time = @1 or time = @23"));
+}
+
+BOOST_AUTO_UNIT_TEST(filtering_test)
+{
+    // Try to make verify that filtering blocks doesn't skip data it shouldn't
+    
+    // Column filtering of the last block of a row predicate with subsequent row predicate
+    DiskOutput out(1); // Force one cell per block
+    out.open("memfs:filtering");
+    out.emitCell("row-A", "fam-1:col", 1, "val");
+    out.emitCell("row-A", "fam-2:col", 1, "val");
+    out.emitCell("row-Z", "fam-3:col", 1, "val");
+    out.emitCell("row-Z", "fam-4:col", 1, "val");
+    out.close();
+
+    DiskFragment df("memfs:filtering");
+    BOOST_CHECK_EQUAL(1u, countCells(df, "row = 'row-A' or row = 'row-Z' and " 
+                                         "column = 'fam-1:col'"));
+    BOOST_CHECK_EQUAL(1u, countCells(df, "row = 'row-A' or row = 'row-Z' and "
+                                         "column = 'fam-2:col'"));
+
+}

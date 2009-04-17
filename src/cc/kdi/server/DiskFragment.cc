@@ -178,8 +178,14 @@ bool DiskBlockReader::getMoreCells()
 
 bool DiskBlockReader::advance(CellKey & nextKey)
 {
-    if(cellIt == cellEnd && !getMoreCells())
-        return false;
+    if(cellIt == cellEnd) 
+    {
+        if(!getMoreCells()) return false;
+    }
+    else
+    {
+        ++cellIt; 
+    }
 
     nextKey.setRow(*cellIt->key.row);
     nextKey.setColumn(*cellIt->key.column);
@@ -189,17 +195,29 @@ bool DiskBlockReader::advance(CellKey & nextKey)
 
 void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
 {
+    if(stopKey && cellIt != cellEnd && !(*cellIt < *stopKey)) return;
+
     while((cellIt != cellEnd || getMoreCells()) &&
           (!stopKey || *cellIt < *stopKey)) 
     {
-        //  (!stopKey || *cellIt < *stopKey)) 
-
         // Filter cells not matching the predicate
-        if(times && !times->contains(cellIt->key.timestamp)) continue;
-        if(cols && !cols->contains(*cellIt->key.column)) continue;
+        if(times && !times->contains(cellIt->key.timestamp)) { ++cellIt; continue; }
+        if(cols && !cols->contains(*cellIt->key.column)) { ++cellIt; continue; }
 
-        out.emitCell(*cellIt->key.row, *cellIt->key.column,
-                     cellIt->key.timestamp, *cellIt->value);
+        if(cellIt->value) {
+            out.emitCell(*cellIt->key.row, *cellIt->key.column,
+                         cellIt->key.timestamp, *cellIt->value);
+        } else {
+            out.emitErasure(*cellIt->key.row, *cellIt->key.column,
+                            cellIt->key.timestamp);
+        }
+
+        if(stopKey)
+        {
+            CellData const * nextIt = cellIt+1;
+            if(!(*nextIt < *stopKey)) break;
+        }
+
         ++cellIt;
     }
 }
@@ -264,15 +282,22 @@ size_t DiskFragment::nextBlock(ScanPredicate const & pred, size_t minBlock) cons
 
     if(rows)
     {
+        // This should really use std::lower_bound as well, not linear search,
+        // but much less important here
         IntervalSet<string>::const_iterator lowerBoundIt = rows->begin();
+        while(lowerBoundIt != rows->end())
+        {
+            IntervalSet<string>::const_iterator upperBoundIt = lowerBoundIt+1;
+            if(!RowLt()(*upperBoundIt, index->blocks[minBlock])) break;
+            lowerBoundIt = upperBoundIt+1;
+        }
+        if(lowerBoundIt == rows->end()) return size_t(-1);
 
         // Try finding the next block based on the index
         IndexEntryV1 const * ent;
         ent = std::lower_bound(
                 &index->blocks[minBlock], index->blocks.end(),
                 *lowerBoundIt, RowLt());
-        
-        ent = &index->blocks[minBlock];
 
         if(ent == index->blocks.end())
             return size_t(-1);
@@ -296,32 +321,6 @@ std::auto_ptr<FragmentBlock> DiskFragment::loadBlock(size_t blockAddr) const
         uint32_t colFamilyMask;
         ScanPredicate::TimestampSetCPtr times;
 
-        // Index data
-        CacheRecord indexRec;
-        IndexEntryV1 const * indexIt;
-
-        /// Read the next CellBlock record from the input stream.  If
-        /// there is a block, set the cell iterators to the full range
-        /// of the block.  Otherwise, release the record and set the
-        /// cell iterators to an empty range.
-        /// @returns true if a block was read, false if no block was
-        /// available
-        bool readNextBlock(IndexEntryV1 const *nextIndexIt = 0)
-        {
-            nextBlock:
-
-            // Advance to the index entry for the next block
-            if(nextIndexIt) {
-                if(nextIndexIt >= indexRec.cast<BlockIndexV1>()->blocks.end()) return false;
-                input->seek(nextIndexIt->blockOffset);
-                indexIt = nextIndexIt;
-                nextIndexIt = 0;
-            } else if(indexIt) {
-                ++indexIt;
-            } else {
-                indexIt = indexRec.cast<BlockIndexV1>()->blocks.begin();
-            }
-
             if(times) {
                 IntervalPoint<int64_t> lowTime(indexIt->lowestTime, PT_INCLUSIVE_LOWER_BOUND);
                 IntervalPoint<int64_t> highTime(indexIt->highestTime, PT_INCLUSIVE_UPPER_BOUND);
@@ -342,178 +341,6 @@ std::auto_ptr<FragmentBlock> DiskFragment::loadBlock(size_t blockAddr) const
                 }
             }
 
-            // Read the next record and make sure it is a CellBlock
-            if(input->get(blockRec) && blockRec.tryAs<CellBlock>())
-            {
-                // Verify the checksum
-                uint32_t checksum = adler((uint8_t*)blockRec.getData(), blockRec.getLength());
-                if(indexIt->blockChecksum != checksum) {
-                    log("BAD CHECKSUM: skipping block");
-                    goto nextBlock;
-                }
-
-                // Got one -- reset Cell iterators
-                CellBlock const * block = blockRec.cast<CellBlock>();
-                cellIt = block->cells.begin();
-                cellEnd = block->cells.end();
-                return true;
-            }
-            else
-            {
-                // Nothing left
-                cellIt = cellEnd = 0;
-                blockRec.release();
-                return false;
-            }
-        }
-
-        /// Load the next row segment.  The cell block containing the
-        /// beginning of the next row segment is loaded and the
-        /// current cell iterator is set to point to the first cell
-        /// contained in the row range lower bound.  The end cell
-        /// iterator is set to the end of the block, regardless of
-        /// whether or not it is contained in the row range.  The end
-        /// row variables are set to indicate the end of the range.
-        /// @return true if the next segment was loaded, or false for
-        /// end of stream
-        bool getNextRowSegment()
-        {
-            // If we have no row set, then we're reading everything.
-            // The first time we get here we'll read the first block
-            // of the file.  The next time we come back, we'll be at
-            // the end of the file.
-            if(!rows)
-                return readNextBlock();
-
-            // If we're at the last row, there is no next row segment, we're done.
-            if(nextRowIt == rows->end())
-                return false;
-
-            // Get the next row range and advance row iterator
-            IntervalSet<string>::const_iterator lowerBoundIt = nextRowIt;
-            ++nextRowIt;
-            assert(nextRowIt != rows->end());
-            upperBound = *nextRowIt;
-            ++nextRowIt;
-
-            // If the current block contains the beginning of the
-            // next row segment, use it.
-            if(blockRec)
-            {
-                CellBlock const * block = blockRec.cast<CellBlock>();
-                CellData const * cell = std::lower_bound(
-                    block->cells.begin(), block->cells.end(),
-                    *lowerBoundIt, RowLt());
-
-                if(cell != block->cells.end())
-                {
-                    cellIt = cell;
-                    cellEnd = block->cells.end();
-                    return true;
-                }
-            }
-
-            // Else use the index to find the position of the next
-            // row segment.  If the index points us off the end,
-            // we're done.
-            BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
-            IndexEntryV1 const * ent;
-
-            ent = std::lower_bound(
-                index->blocks.begin(), index->blocks.end(),
-                *lowerBoundIt, RowLt());
-
-            if(ent == index->blocks.end())
-                return false;
-
-            // Seek to the next block position and load the block.
-            if(!readNextBlock(ent))
-                return false;
-
-            // Set the start cell iterator
-            CellBlock const * block = blockRec.cast<CellBlock>();
-            cellIt = std::lower_bound(
-                block->cells.begin(), block->cells.end(),
-                *lowerBoundIt, RowLt());
-
-            return true;
-        }
-
-        /// Update the cell iterators to point to the next range of
-        /// cells.
-        /// @returns true if another range is available (note the
-        /// range may be empty)
-        bool getMoreCells()
-        {
-            // First, get the next CellBlock.
-
-            // If we've scanned to the end of the current block
-            // (instead of stopping in the middle somewhere), then the
-            // current row segment might extend into the next block.
-            if(blockRec && cellEnd == blockRec.cast<CellBlock>()->cells.end())
-            {
-                // Load the next block.  If there is no next block,
-                // then we're at the end of the stream.
-                if(!readNextBlock())
-                    return false;
-            }
-            else
-            {
-                // Else we finished a row segment.  Find the block for
-                // the next row segment.  If there is no next row
-                // segment, we're done.
-                if(!getNextRowSegment())
-                    return false;
-            }
-
-            // Now we have a valid block, use the current end row to
-            // get the last cell within the block.
-            if(!upperBound.isInfinite())
-            {
-                cellEnd = std::upper_bound(
-                    cellIt, cellEnd, upperBound, RowLt());
-            }
-
-            // We have more cells.
-            return true;
-        }
-
-    public:
-        /// Create a full-scan DiskScanner
-        explicit DiskScanner(FilePtr const & fp,
-                             IndexCache * cache,
-                             string const & fn) :
-            input(FileInput::make(fp)),
-            upperBound(string(), PT_INFINITE_UPPER_BOUND),
-            colFamilyMask(0),
-            indexRec(cache, fn),
-            indexIt(0),
-            cellIt(0),
-            cellEnd(0)
-        {
-        }
-
-        /// Create a DiskScanner over a set of rows
-        DiskScanner(FilePtr const & fp,
-                    ScanPredicate::StringSetCPtr const & rows,
-                    boost::shared_ptr< vector<string> > const & columnFamilies,
-                    ScanPredicate::TimestampSetCPtr const & times,
-                    IndexCache * cache,
-                    string const & fn) :
-            input(FileInput::make(fp)),
-            rows(rows),
-            upperBound(string(), PT_INFINITE_UPPER_BOUND),
-            columnFamilies(columnFamilies),
-            colFamilyMask(0),
-            times(times),
-            indexRec(cache, fn),
-            indexIt(0),
-            cellIt(0),
-            cellEnd(0)
-        {
-            if(rows)
-                nextRowIt = rows->begin();
-
             if(columnFamilies) {
                 BlockIndexV1 const * index = indexRec.as<BlockIndexV1>();
 
@@ -532,39 +359,6 @@ std::auto_ptr<FragmentBlock> DiskFragment::loadBlock(size_t blockAddr) const
                 }
             }
         }
-
-        bool get(Cell & x)
-        {
-            for(;;)
-            {
-                // If we still have stuff in the current cell range,
-                // return the next one
-                if(cellIt != cellEnd)
-                {
-                    if(cellIt->value)
-                    {
-                        // Normal Cell
-                        x = makeCell(
-                            *cellIt->key.row, *cellIt->key.column,
-                            cellIt->key.timestamp, *cellIt->value);
-                    }
-                    else
-                    {
-                        // Null value means erasure Cell
-                        x = makeCellErasure(
-                            *cellIt->key.row, *cellIt->key.column,
-                            cellIt->key.timestamp);
-                    }
-                    ++cellIt;
-                    return true;
-                }
-
-                // Range is empty, get more cells
-                if(!getMoreCells())
-                    return false;
-            }
-        }
-    };
 }
 
 //----------------------------------------------------------------------------
@@ -623,22 +417,6 @@ namespace
             return true;
         }
     };
-}
-
-//------------------------------------------------------------------------------
-// DiskTable - Always immutable
-//------------------------------------------------------------------------------
-void DiskTable::set(strref_t row, strref_t column, int64_t timestamp,
-                    strref_t value)
-{
-    raise<NotImplementedError>("DiskTable::set() not implemented: "
-                               "DiskTable is read-only");
-}
-
-void DiskTable::erase(strref_t row, strref_t column, int64_t timestamp)
-{
-    raise<NotImplementedError>("DiskTable::erase() not implemented: "
-                               "DiskTable is read-only");
 }
 
 size_t DiskTable::readVersion(std::string const & fn)

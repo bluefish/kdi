@@ -46,6 +46,9 @@ namespace server {
     typedef std::auto_ptr<DiskFragment> DiskFragmentPtr;
     typedef std::auto_ptr<DiskBlock> DiskBlockPtr;
 
+    typedef boost::shared_ptr<DiskFragment> DiskFragmentSPtr;
+    typedef std::vector<DiskFragmentSPtr> DiskFragmentVec;
+
 } // namespace server
 } // namespace kdi
 
