@@ -74,6 +74,12 @@ std::string getUniqueTableFile(std::string const & rootDir,
 void Compactor::compact(RangeFragmentMap const & compactionSet,
                         RangeFragmentMap & outputSet) 
 {
+    // Split outputs if they get bigger than this:
+    size_t const OUTPUT_SPLIT_SIZE = size_t(1) << 30;  // 1 GB
+
+    // Stop the compaction entirely if it gets bigger than this:
+    size_t const MAX_OUTPUT_SIZE = 4 * OUTPUT_SPLIT_SIZE;
+
     string outputName = getUniqueTableFile("memfs:/", "test");
     writer.open(outputName);
 
@@ -85,11 +91,26 @@ void Compactor::compact(RangeFragmentMap const & compactionSet,
 
         log("compacting %d frags in range %s", frags.size(), range);
 
-        FragmentMerge merge(frags, cache, ScanPredicate(""), 0); 
+        ScanPredicate rangePred("");
+        rangePred.clipRows(range);
+        FragmentMerge merge(frags, cache, rangePred, 0); 
+
         const size_t maxCells = 10000000;
         const size_t maxSize= 10000000;
+        size_t outputSize = writer.getDataSize();
+        while(merge.copyMerged(maxCells, maxSize, writer));
+        outputSize = writer.getDataSize()-outputSize;
+            
+        if(outputSize > 0)
+        {
+            // Put the new fragment in the replacement set
+        }
+        else
+        {
+            // Empty replacement set, this range has been compacted away
+        }
 
-        merge.copyMerged(maxCells, maxSize, writer);
+        if(writer.getDataSize() > MAX_OUTPUT_SIZE) break;
     }
 
     log("compaction output, cells: %d, size: %d", writer.getCellCount(), writer.getDataSize());
