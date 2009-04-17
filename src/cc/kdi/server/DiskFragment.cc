@@ -177,8 +177,14 @@ bool DiskBlockReader::getMoreCells()
 
 bool DiskBlockReader::advance(CellKey & nextKey)
 {
-    if(cellIt == cellEnd && !getMoreCells())
-        return false;
+    if(cellIt == cellEnd) 
+    {
+        if(!getMoreCells()) return false;
+    }
+    else
+    {
+        ++cellIt; 
+    }
 
     nextKey.setRow(*cellIt->key.row);
     nextKey.setColumn(*cellIt->key.column);
@@ -188,6 +194,8 @@ bool DiskBlockReader::advance(CellKey & nextKey)
 
 void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
 {
+    if(stopKey && cellIt != cellEnd && !(*cellIt < *stopKey)) return;
+
     while((cellIt != cellEnd || getMoreCells()) &&
           (!stopKey || *cellIt < *stopKey)) 
     {
@@ -202,6 +210,13 @@ void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
             out.emitErasure(*cellIt->key.row, *cellIt->key.column,
                             cellIt->key.timestamp);
         }
+
+        if(stopKey)
+        {
+            CellData const * nextIt = cellIt+1;
+            if(!(*nextIt < *stopKey)) break;
+        }
+
         ++cellIt;
     }
 }

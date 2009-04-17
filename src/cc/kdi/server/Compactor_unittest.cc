@@ -83,7 +83,7 @@ BOOST_AUTO_TEST_CASE(compact_test)
         out.emitCell("row1", "col", 0, "val");
         out.close();
     }
-
+    
     DiskFragment f1("memfs:orig_1");
     DiskFragment f2("memfs:orig_1");
     DiskFragment f3("memfs:orig_1");
