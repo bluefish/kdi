@@ -263,15 +263,22 @@ size_t DiskFragment::nextBlock(ScanPredicate const & pred, size_t minBlock) cons
 
     if(rows)
     {
+        // This should really use std::lower_bound as well, not linear search,
+        // but much less important here
         IntervalSet<string>::const_iterator lowerBoundIt = rows->begin();
+        while(lowerBoundIt != rows->end())
+        {
+            IntervalSet<string>::const_iterator upperBoundIt = lowerBoundIt+1;
+            if(!RowLt()(*upperBoundIt, index->blocks[minBlock])) break;
+            lowerBoundIt = upperBoundIt+1;
+        }
+        if(lowerBoundIt == rows->end()) return size_t(-1);
 
         // Try finding the next block based on the index
         IndexEntryV1 const * ent;
         ent = std::lower_bound(
                 &index->blocks[minBlock], index->blocks.end(),
                 *lowerBoundIt, RowLt());
-        
-        ent = &index->blocks[minBlock];
 
         if(ent == index->blocks.end())
             return size_t(-1);

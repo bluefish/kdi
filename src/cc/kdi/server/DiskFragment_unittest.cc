@@ -60,29 +60,39 @@ namespace {
 typedef std::auto_ptr<FragmentBlock> FragmentBlockPtr;
 typedef std::auto_ptr<FragmentBlockReader> FragmentBlockReaderPtr;
 
-void dumpCells(Fragment const & frag, CellOutput & out)
+void dumpCells(Fragment const & frag, CellOutput & out, string const & pred)
 {
-    ScanPredicate pred("");
-    size_t blockAddr = frag.nextBlock(pred, 0);
+    ScanPredicate p(pred);
+    size_t blockAddr = frag.nextBlock(p, 0);
     while(blockAddr != size_t(-1))
     {
         FragmentBlockPtr block = frag.loadBlock(blockAddr);
-        FragmentBlockReaderPtr reader = block->makeReader(pred);
+        FragmentBlockReaderPtr reader = block->makeReader(p);
 
         CellKey nextCell;
         BOOST_CHECK(reader->advance(nextCell));
         reader->copyUntil(0, out);
         BOOST_CHECK(!reader->advance(nextCell));
 
-        blockAddr = frag.nextBlock(pred, blockAddr+1);
+        blockAddr = frag.nextBlock(p, blockAddr+1);
     }
+}
+
+void dumpCells(Fragment const & frag, CellOutput & out)
+{
+    dumpCells(frag, out, "");
+}
+
+size_t countCells(Fragment const & frag, string const & pred)
+{
+    CellBuilder cellBuilder;
+    dumpCells(frag, cellBuilder, pred);   
+    return cellBuilder.getCellCount();
 }
 
 size_t countCells(Fragment const & frag)
 {
-    CellBuilder cellBuilder;
-    dumpCells(frag, cellBuilder);   
-    return cellBuilder.getCellCount();
+    return countCells(frag, "");
 }
 
 typedef boost::test_tools::output_test_stream test_out_t;
@@ -130,7 +140,7 @@ public:
 
     ~TestFragmentBuilder()
     {
-        out.close();
+        write();
     }
 
     void set(strref_t row, strref_t column,
@@ -144,10 +154,8 @@ public:
         memTable->erase(row, column, timestamp);
     }
 
-    void write(string const & file)
+    void write()
     {
-        out.open(file);
-
         Cell x;
         CellStreamPtr scan = memTable->scan();
         while(scan->get(x))
@@ -162,7 +170,6 @@ public:
                              x.getValue());
             }
         }
-
         out.close();
     }
 };
@@ -303,3 +310,28 @@ BOOST_AUTO_TEST_CASE(rewrite_test)
         "(row1,col3,42,two2)"
     );
 }
+
+BOOST_AUTO_UNIT_TEST(rowscan_test)
+{
+    makeTestFragment(256, "memfs:rowscan", 1000, 30, 1, "%03d");
+    
+    DiskFragment df("memfs:rowscan");
+    BOOST_CHECK_EQUAL(30000u, countCells(df));
+    BOOST_CHECK_EQUAL(60u, countCells(df, "row = 'row-042' or row = 'row-700'"));
+    BOOST_CHECK_EQUAL(150u, countCells(df, "row < 'row-004' or row >= 'row-998'"));
+    BOOST_CHECK_EQUAL(210u, countCells(df, "'row-442' <  row <  'row-446' or "
+                                           "'row-447' <= row <= 'row-450'"));
+
+    // Need to test row scans on tiny tables as well
+    // Single block tables can be a corner case
+    DiskOutput out(2056);
+    out.open("memfs:rowscan_small");
+    out.emitCell("row1", "col1", 42, "one1");
+    out.emitCell("row2", "col2", 42, "one2");
+    out.close();
+
+    DiskFragment df_small("memfs:rowscan_small");
+    BOOST_CHECK_EQUAL(1u, countCells(df_small, "row = 'row2'")); 
+}
+
+
