@@ -26,6 +26,7 @@
 #include <warp/string_range.h>
 #include <boost/noncopyable.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/enable_shared_from_this.hpp>
 #include <vector>
 
 namespace kdi {
@@ -42,6 +43,7 @@ namespace server {
 //----------------------------------------------------------------------------
 class kdi::server::CellBuffer
     : public kdi::server::Fragment,
+      public boost::enable_shared_from_this<CellBuffer>,
       private boost::noncopyable
 {
 public:
@@ -59,6 +61,12 @@ public:
 public:  // Fragment interface
     size_t nextBlock(ScanPredicate const & pred, size_t minBlock) const;
     std::auto_ptr<FragmentBlock> loadBlock(size_t blockAddr) const;
+
+    void getColumnFamilies(
+        std::vector<std::string> & families) const;
+
+    FragmentCPtr getRestricted(
+        std::vector<std::string> const & families) const;
 
 private:
     std::vector<char> data;

@@ -24,6 +24,8 @@
 #include <warp/string_range.h>
 #include <boost/shared_ptr.hpp>
 #include <memory>
+#include <string>
+#include <vector>
 #include <stddef.h>
 
 namespace kdi {
@@ -53,6 +55,16 @@ class kdi::server::Fragment
 {
 public:
     virtual ~Fragment() {}
+
+    /// Get the list of column families contained in this Fragment.
+    /// The returned families are in no particular order.
+    virtual void getColumnFamilies(
+        std::vector<std::string> & families) const = 0;
+
+    /// Get a handle to this fragment with its column families are
+    /// restricted to the given list.
+    virtual FragmentCPtr getRestricted(
+        std::vector<std::string> const & families) const = 0;
 
     /// Get the address of the next block in this Fragment that could
     /// match the given predicate.  The minimum block to consider is

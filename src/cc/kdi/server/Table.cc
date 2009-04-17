@@ -22,6 +22,7 @@
 #include <kdi/server/Tablet.h>
 #include <kdi/server/errors.h>
 #include <kdi/scan_predicate.h>
+#include <warp/string_interval.h>
 #include <ex/exception.h>
 
 using namespace kdi;
@@ -126,13 +127,17 @@ Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
     return tablets.back();
 }
 
+Table::Table()
+{
+}
+
 Table::~Table()
 {
     std::for_each(tablets.begin(), tablets.end(), warp::delete_ptr());
 }
 
 void Table::getFirstFragmentChain(ScanPredicate const & pred,
-                                  std::vector<Fragment const *> & chain,
+                                  std::vector<FragmentCPtr> & chain,
                                   warp::Interval<std::string> & rows) const
 {
     warp::IntervalPoint<std::string> first(
@@ -153,7 +158,144 @@ void Table::getFirstFragmentChain(ScanPredicate const & pred,
     if(lt(first, (*i)->getMinRow()))
         throw TabletNotLoadedError();
 
-    (*i)->getFragments(chain);
-    memFrags.getFragments(chain);
+    // Find mapping from predicate to locality groups
+    std::vector<int> predGroups;
+    getPredicateGroups(pred, predGroups);
+
+    chain.clear();
+    for(std::vector<int>::const_iterator gi = predGroups.begin();
+        gi != predGroups.end(); ++gi)
+    {
+        (*i)->getFragments(chain, *gi);
+        chain.insert(chain.end(),
+                     groupMemFrags[*gi].begin(),
+                     groupMemFrags[*gi].end());
+    }
     rows = (*i)->getRows();
+}
+
+void Table::getPredicateGroups(ScanPredicate const & pred, std::vector<int> & out) const
+{
+    out.clear();
+
+    if(!pred.getColumnPredicate())
+    {
+        // Need all groups
+        out.resize(schema.groups.size());
+        for(size_t i = 0; i < out.size(); ++i)
+            out[i] = i;
+
+        return;
+    }
+    
+    std::vector<warp::StringRange> fams;
+    if(pred.getColumnFamilies(fams))
+    {
+        // Predicate maps to discrete column families.
+
+        if(fams.empty())
+            return;
+
+        out.reserve(fams.size());
+        for(size_t i = 0; i < fams.size(); ++i)
+            out.push_back(groupIndex.get(fams[i]));
+    }
+    else
+    {
+        // Predicate spans column families.
+        ScanPredicate::StringSetCPtr cols = pred.getColumnPredicate();
+
+        for(size_t i = 0; i < schema.groups.size(); ++i)
+        {
+            TableSchema::Group const & g = schema.groups[i];
+            for(std::vector<std::string>::const_iterator j = g.columns.begin();
+                j != g.columns.end(); ++j)
+            {
+                if(cols->overlaps(warp::makePrefixInterval(*j)))
+                {
+                    out.push_back(i);
+                    continue;
+                }
+            }
+        }
+    }
+
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+}
+
+void Table::addMemoryFragment(FragmentCPtr const & frag)
+{
+    typedef std::vector<std::string> str_vec;
+    typedef std::tr1::unordered_set<int> group_set;
+
+    // Get all the column families in the fragment
+    str_vec families;
+    frag->getColumnFamilies(families);
+
+    // Figure out the set of groups covered by the fragment
+    group_set fragGroups;
+    for(str_vec::const_iterator i = families.begin();
+        i != families.end(); ++i)
+    {
+        fragGroups.insert(groupIndex.get(*i));
+    }
+
+    // Add the memory fragment to all affected groups
+    for(group_set::const_iterator i = fragGroups.begin();
+        i != fragGroups.end(); ++i)
+    {
+        groupMemFrags[*i].push_back(
+            frag->getRestricted(schema.groups[*i].columns));
+    }
+}
+
+void Table::applySchema(TableSchema const & s)
+{
+    typedef std::vector<std::string> str_vec;
+    typedef std::vector<FragmentCPtr> frag_vec;
+
+    // Copy new schema
+    schema = s;
+
+    // Rebuild group index
+    groupIndex.clear();
+    for(size_t i = 0; i < schema.groups.size(); ++i)
+    {
+        typedef std::vector<std::string> str_vec;
+        str_vec const & cols = schema.groups[i].columns;
+
+        for(str_vec::const_iterator j = cols.begin();
+            j != cols.end(); ++j)
+        {
+            groupIndex.set(*j, i);
+        }
+    }
+
+    // Rebuild memory fragment chains
+    frag_vec oldMemFrags;
+    for(fragvec_vec::const_iterator i = groupMemFrags.begin();
+        i != groupMemFrags.end(); ++i)
+    {
+        // XXX instead of tightening the restrictions, we could
+        // topo-merge the fragment chains and then partition them.
+        // It's probably not that critical since these are just memory
+        // fragments and should be flushed soon.
+        oldMemFrags.insert(oldMemFrags.end(), i->begin(), i->end());
+    }
+    groupMemFrags.clear();
+    groupMemFrags.resize(schema.groups.size());
+    for(frag_vec::const_iterator i = oldMemFrags.begin();
+        i != oldMemFrags.end(); ++i)
+    {
+        addMemoryFragment(*i);
+    }
+    oldMemFrags.clear();
+
+    // Apply new locality groups to all Tablets
+    for(tablet_vec::iterator i = tablets.begin();
+        i != tablets.end(); ++i)
+    {
+        (*i)->applySchema(schema);
+    }
 }

@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-03-17
+// Created 2009-04-17
 //
 // This file is part of KDI.
 //
@@ -18,35 +18,58 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_FRAGMENTLOADER_H
-#define KDI_SERVER_FRAGMENTLOADER_H
+#ifndef KDI_SERVER_RESTRICTEDFRAGMENT_H
+#define KDI_SERVER_RESTRICTEDFRAGMENT_H
 
 #include <kdi/server/Fragment.h>
-#include <vector>
-#include <string>
+#include <warp/interval.h>
+#include <boost/noncopyable.hpp>
+#include <boost/enable_shared_from_this.hpp>
 
 namespace kdi {
 namespace server {
 
-    class FragmentLoader;
+    class RestrictedFragment;
+
+    FragmentCPtr makeRestrictedFragment(
+        FragmentCPtr const & base,
+        std::vector<std::string> const & families);
 
 } // namespace server
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// FragmentLoader
+// RestrictedFragment
 //----------------------------------------------------------------------------
-class kdi::server::FragmentLoader
+class kdi::server::RestrictedFragment
+    : public kdi::server::Fragment,
+      public boost::enable_shared_from_this<RestrictedFragment>,
+      private boost::noncopyable
 {
 public:
-    /// Load the fragment from the given file, restricted to columns
-    /// from the given column families.
-    virtual FragmentCPtr load(
-        std::string const & filename,
+    RestrictedFragment(
+        FragmentCPtr const & base,
+        warp::IntervalSet<std::string> const & columns);
+
+public:
+    virtual void getColumnFamilies(
+        std::vector<std::string> & families) const;
+
+    virtual FragmentCPtr getRestricted(
         std::vector<std::string> const & families) const;
 
-protected:
-    ~FragmentLoader() {}
+    virtual size_t nextBlock(ScanPredicate const & pred,
+                             size_t minBlock) const;
+    
+    virtual std::auto_ptr<FragmentBlock>
+    loadBlock(size_t blockAddr) const;
+
+private:
+    typedef warp::IntervalSet<std::string> str_iset;
+
+private:
+    FragmentCPtr const base;
+    str_iset const columns;
 };
 
-#endif // KDI_SERVER_FRAGMENTLOADER_H
+#endif // KDI_SERVER_RESTRICTEDFRAGMENT_H

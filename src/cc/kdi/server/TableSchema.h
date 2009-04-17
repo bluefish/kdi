@@ -33,7 +33,7 @@ namespace server {
         {
             std::string name;
             std::string compressor;
-            std::vector<std::string> columns; // empty() means "include all"
+            std::vector<std::string> columns;
             int64_t maxAge;                   // <= 0 means "keep all"
             int64_t maxHistory;               // <= 0 means "keep all"
             size_t diskBlockSize;

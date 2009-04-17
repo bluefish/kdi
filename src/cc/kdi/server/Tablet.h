@@ -34,6 +34,11 @@ namespace server {
 
     class Tablet;
 
+    enum TabletState { TABLET_ACTIVE };
+
+    // Forward declarations
+    class TableSchema;
+
 } // namespace server
 } // namespace kdi
 
@@ -79,26 +84,37 @@ public:
         return loading.get();
     }
 
-    void getFragments(std::vector<Fragment const *> & out) const
+    void getFragments(std::vector<FragmentCPtr> & out, int groupIndex) const
     {
-        for(std::vector<FragmentCPtr>::const_iterator i = fragments.begin();
-            i != fragments.end(); ++i)
-        {
-            out.push_back(i->get());
-        }
+        out.insert(out.end(),
+                   fragGroups[groupIndex].begin(),
+                   fragGroups[groupIndex].end());
     }
+
+    void addLoadedFragment(FragmentCPtr const & frag);
+
+    void applySchema(TableSchema const & schema);
 
     void deferUntilLoaded(LoadedCb * cb);
     
-    void addFragment(FragmentCPtr const & frag);
     warp::Runnable * finishLoading();
+
+public:
+    /// Get an ordered list of all fragments in the Tablet.
+    /// Fragments shared across multiple groups will be unified in
+    /// a topologically consistent order.
+    void getFragmentNames(std::vector<std::string> & names) const;
 
 private:
     class Loading;
 
+    typedef std::vector<FragmentCPtr> frag_vec;
+    typedef std::vector<frag_vec> fragvec_vec;
+
 private:
+    TabletState state;
     warp::Interval<std::string> const rows;
-    std::vector<FragmentCPtr> fragments;
+    fragvec_vec fragGroups;
     std::auto_ptr<Loading> loading;
 };
 

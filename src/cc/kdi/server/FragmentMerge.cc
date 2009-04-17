@@ -37,7 +37,7 @@ class FragmentMerge::Input
     CellKey nextKey;
     size_t mergeIndex;
 
-    Fragment const * fragment;
+    FragmentCPtr fragment;
     size_t minBlock;
 
     FragmentBlock const * block;
@@ -52,7 +52,7 @@ private:
         if(minBlock == size_t(-1))
             return false;
 
-        block = cache->getBlock(fragment, minBlock);
+        block = cache->getBlock(fragment.get(), minBlock);
         reader.reset(block->makeReader(pred).release());
         return true;
     }
@@ -69,7 +69,7 @@ private:
 public:
     /// Initialize input on the given fragment at the given merge
     /// index.
-    void init(Fragment const * frag, size_t idx)
+    void init(FragmentCPtr const & frag, size_t idx)
     {
         fragment = frag;
         mergeIndex = idx;
@@ -147,7 +147,7 @@ bool FragmentMerge::InputLt::operator()(Input * a, Input * b) const
 // FragmentMerge
 //----------------------------------------------------------------------------
 FragmentMerge::FragmentMerge(
-    std::vector<Fragment const *> const & fragments,
+    std::vector<FragmentCPtr> const & fragments,
     BlockCache * cache,
     ScanPredicate const & pred,
     CellKey const * startAfter) :

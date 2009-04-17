@@ -30,9 +30,17 @@ namespace server {
 
     struct TabletConfig
     {
+        struct Fragment
+        {
+            // Location of fragment, relative to data root
+            std::string filename;
+            // Column families to use from the fragment
+            std::vector<std::string> columns;
+        };
+
         std::string tableName;
         warp::Interval<std::string> rows;
-        std::vector<std::string> fragments;
+        std::vector<Fragment> fragments;
         std::string log;
         std::string location;
 

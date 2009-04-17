@@ -491,7 +491,7 @@ void TabletServer::apply_async(
         table->updateRowCommits(rows, commit.txn);
         
         // Add the new fragment to the table's active list
-        table->addMemoryFragment(commit.cells, commit.cells->getDataSize());
+        table->addMemoryFragment(commit.cells);
 
         tableLock.unlock();
 
@@ -677,6 +677,41 @@ void TabletServer::logLoop()
     }
 }
 
+//void TabletServer::serializeLoop()
+//{
+//    for(;;)
+//    {
+//        lock_t serverLock(serverMutex);
+//        if(quit)
+//            break;
+//
+//        Table * t = chooseTableForSerialization();
+//        if(!t)
+//        {
+//            waitForSomethingToDo(serverLock);
+//            continue;
+//        }
+//        
+//        lock_t tableLock(t->tableMutex);
+//        serverLock.unlock();
+//
+//        std::vector<Fragment const *> frags;
+//        IntervalSet<std::string> rows;
+//        t->getFragments(frags);
+//        t->getTabletRows(rows);
+//
+//        tableLock.unlock();
+//
+//        FragmentMerge merge(frags,
+//                            blockCache, 
+//                            ScanPredicate().setRowPredicate(rows),
+//                            0);
+//
+//        DiskFragmentWriter out;
+//        
+//    }
+//}
+
 void TabletServer::applySchemas(std::vector<TableSchema> const & schemas)
 {
     // For each schema:
@@ -696,6 +731,46 @@ void TabletServer::applySchemas(std::vector<TableSchema> const & schemas)
         table->applySchema(*i);
     }
 }
+
+// std::vector<TabletConfig::Fragment>
+// topoMerge(std::vector<TabletConfig::Fragment> const & frags)
+// {
+//     std::vector<TabletConfig::Fragment> out;
+// 
+//     typedef std::vector<TabletConfig::Fragment> frag_vec;
+//     typedef std::vector<std::string> str_vec;
+//     typedef std::tr1::unordered_set<std::string> str_set;
+//     typedef std::tr1::unordered_map<std::string, str_vec> ssv_map;
+//     typedef std::tr1::unordered_map<std::string, str_set> sss_map;
+// 
+//     ssv_map colChains;
+//     sss_map fragCols;
+// 
+//     for(frag_vec::const_iterator f = frags.begin();
+//         f != frags.end(); ++f)
+//     {
+//         for(str_vec::const_iterator c = f->columns.begin();
+//             c != f->columns.end(); ++c)
+//         {
+//             colChains[*c].push_back(f->tableName);
+//             fragCols[f->tableName].insert(*c);
+//         }
+//     }
+// 
+//     //  colChain = {}  # col -> [fn1, fn2, ...]
+//     //  fragCols = {}  # fn -> set(col1, col2, ..)
+//     //
+//     //  for fn, cols in config.fragments:
+//     //     for col in cols.split():
+//     //        colChain.setdefault(col,[]).append(fn)
+//     //        fragCols.setdefault(fn,set()).add(col)
+//     //  
+//     //  for g in groups:
+//     //     chains = [ colChain[c] for c in group.columns if c in colChain ]
+//     //     g.frags = [ loadFrag(fn, fragCols[fn].intersection(group.columns))
+//     //                 for fn in topoMerge(chains) ]
+// 
+// }
 
 void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
 {
@@ -776,12 +851,13 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
         for(loading_vec::const_iterator i = first;
             i != last; ++i)
         {
-            string_vec const & frags = i->config->fragments;
-            for(string_vec::const_iterator f = frags.begin();
-                f != frags.end(); ++f)
+            typedef std::vector<TabletConfig::Fragment> fvec;
+            fvec const & frags = i->config->fragments;
+            for(fvec::const_iterator f = frags.begin(); f != frags.end(); ++f)
             {
-                FragmentCPtr frag = bits.fragmentLoader->load(*f);
-                i->tablet->addFragment(frag);
+                FragmentCPtr frag = bits.fragmentLoader->load(
+                    f->filename, f->columns);
+                i->tablet->addLoadedFragment(frag);
             }
         }
 

@@ -21,6 +21,7 @@
 #include <kdi/server/Fragment.h>
 #include <kdi/server/DiskFragment.h>
 #include <kdi/server/CellOutput.h>
+#include <kdi/server/RestrictedFragment.h>
 #include <kdi/scan_predicate.h>
 #include <kdi/marshal/cell_block.h>
 #include <kdi/local/index_cache.h>
@@ -233,6 +234,24 @@ DiskFragment::DiskFragment(std::string const & fn) :
     input(FileInput::make(fp)),
     indexRec(IndexCache::getGlobal(), fn)
 {
+}
+
+void DiskFragment::getColumnFamilies(
+    std::vector<std::string> & families) const
+{
+    families.clear();
+    BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
+    for(warp::StringOffset const * i = index->colFamilies.begin();
+        i != index->colFamilies.end(); ++i)
+    {
+        families.push_back((*i)->toString());
+    }
+}
+
+FragmentCPtr DiskFragment::getRestricted(
+    std::vector<std::string> const & families) const
+{
+    return makeRestrictedFragment(shared_from_this(), families);
 }
 
 size_t DiskFragment::nextBlock(ScanPredicate const & pred, size_t minBlock) const

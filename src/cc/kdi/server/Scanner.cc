@@ -187,7 +187,7 @@ bool Scanner::startMerge(lock_t & scannerLock)
     scanTxn = table->getLastCommitTxn();
 
     // Get the next fragment chain
-    vector<Fragment const *> chain;
+    vector<FragmentCPtr> chain;
     table->getFirstFragmentChain(pred, chain, rows);
 
     // Done with table lock, need scanner lock again.

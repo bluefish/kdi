@@ -31,6 +31,7 @@ class Tablet::Loading
 {
 public:
     std::vector<LoadedCb *> callbacks;
+    std::vector<FragmentCPtr> fragments;
 
     void run()
     {
@@ -57,15 +58,21 @@ Tablet::~Tablet()
 {
 }
 
+void Tablet::addLoadedFragment(FragmentCPtr const & frag)
+{
+    assert(loading.get());
+    loading->fragments.push_back(frag);
+}
+
+void Tablet::applySchema(TableSchema const & s)
+{
+    EX_UNIMPLEMENTED_FUNCTION;
+}
+
 void Tablet::deferUntilLoaded(LoadedCb * cb)
 {
     assert(loading.get());
     loading->callbacks.push_back(cb);
-}
-
-void Tablet::addFragment(FragmentCPtr const & frag)
-{
-    fragments.push_back(frag);
 }
 
 warp::Runnable * Tablet::finishLoading()

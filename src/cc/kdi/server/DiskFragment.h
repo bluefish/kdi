@@ -33,6 +33,9 @@
 #include <kdi/local/index_cache.h>
 #include <oort/fileio.h>
 
+#include <boost/enable_shared_from_this.hpp>
+#include <boost/noncopyable.hpp>
+
 namespace kdi {
 namespace server {
 
@@ -50,7 +53,9 @@ namespace server {
 // DiskFragment
 //----------------------------------------------------------------------------
 class kdi::server::DiskFragment
-    : public kdi::server::Fragment
+    : public kdi::server::Fragment,
+      public boost::enable_shared_from_this<DiskFragment>,
+      private boost::noncopyable
 {
     warp::FilePtr fp;
     oort::FileInput::handle_t input;
@@ -58,6 +63,12 @@ class kdi::server::DiskFragment
 
 public:
     explicit DiskFragment(std::string const & fn);
+
+    virtual void getColumnFamilies(
+        std::vector<std::string> & families) const;
+
+    virtual FragmentCPtr getRestricted(
+        std::vector<std::string> const & families) const;
 
     virtual size_t nextBlock(ScanPredicate const & pred,
                              size_t minBlock) const;

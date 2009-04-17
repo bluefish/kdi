@@ -24,6 +24,7 @@
 #include <kdi/scan_predicate.h>
 #include <warp/heap.h>
 #include <boost/scoped_array.hpp>
+#include <boost/shared_ptr.hpp>
 
 namespace kdi {
 namespace server {
@@ -34,6 +35,7 @@ namespace server {
     class BlockCache;
     class Fragment;
     class CellOutput;
+    typedef boost::shared_ptr<Fragment const> FragmentCPtr;
 
 } // namespace server
 
@@ -61,7 +63,7 @@ class kdi::server::FragmentMerge
     warp::MinHeap<Input *, InputLt> heap;
 
 public:
-    FragmentMerge(std::vector<Fragment const *> const & fragments,
+    FragmentMerge(std::vector<FragmentCPtr> const & fragments,
                   BlockCache * cache,
                   ScanPredicate const & pred,
                   CellKey const * startAfter);

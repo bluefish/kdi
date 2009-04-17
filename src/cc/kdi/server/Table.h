@@ -25,6 +25,8 @@
 #include <kdi/server/TableSchema.h>
 #include <kdi/server/CommitRing.h>
 #include <warp/interval.h>
+#include <warp/hashmap.h>
+#include <warp/strhash.h>
 #include <boost/thread/mutex.hpp>
 #include <tr1/unordered_set>
 #include <string>
@@ -35,6 +37,8 @@ namespace kdi {
 namespace server {
 
     class Table;
+
+    enum TableState { TABLE_ACTIVE };
 
     // Forward declarations
     class Tablet;
@@ -58,6 +62,7 @@ public:
     boost::mutex tableMutex;
 
 public:
+    Table();
     ~Table();
 
     /// Make sure that the tablets containing all the given rows are
@@ -114,60 +119,44 @@ public:
     /// merge order.  The row interval over which the chain is valid
     /// is also returned.
     void getFirstFragmentChain(ScanPredicate const & pred,
-                               std::vector<Fragment const *> & chain,
+                               std::vector<FragmentCPtr> & chain,
                                warp::Interval<std::string> & rows) const;
 
-    void addMemoryFragment(FragmentCPtr const & p, size_t sz)
-    {
-        memFrags.addFragment(p, sz);
-    }
+    void addMemoryFragment(FragmentCPtr const & frag);
 
-    void applySchema(TableSchema const & s)
-    {
-        schema = s;
-    }
+private:
+    void getAllMemFrags(std::vector<FragmentCPtr> const & out);
+
+    void getPredicateGroups(ScanPredicate const & pred,
+                            std::vector<int> & out) const;
+
+public:
+    void applySchema(TableSchema const & s);
 
 private:
     class TabletLt;
 
+    typedef std::vector<FragmentCPtr> frag_vec;
+    typedef std::vector<frag_vec> fragvec_vec;
+
     typedef std::vector<Tablet *> tablet_vec;
+    typedef warp::HashMap<std::string, int, warp::HsiehHash> group_map;
 
-    class FragmentBuffer
-    {
-        typedef std::pair<FragmentCPtr, size_t> frag_pair;
-        typedef std::vector<frag_pair> frag_vec;
-        
-        frag_vec frags;
-        size_t totalSz;
-
-    public:
-        void addFragment(FragmentCPtr const & p, size_t sz)
-        {
-            frags.push_back(std::make_pair(p, sz));
-            totalSz += sz;
-        }
-
-        void getFragments(std::vector<Fragment const *> & out) const
-        {
-            for(frag_vec::const_iterator i = frags.begin();
-                i != frags.end(); ++i)
-            {
-                out.push_back(i->first.get());
-            }
-        }
-    };
+    typedef std::tr1::unordered_set<FragmentEventListener *> fel_set;
+    typedef std::tr1::unordered_set<TabletEventListener *> tel_set;
 
 private:
     inline Tablet * findContainingTablet(strref_t row) const;
 
 private:
-    tablet_vec tablets;
-    CommitRing rowCommits;
-    FragmentBuffer memFrags;
     TableSchema schema;
+    CommitRing rowCommits;
 
-    typedef std::tr1::unordered_set<FragmentEventListener *> fel_set;
-    typedef std::tr1::unordered_set<TabletEventListener *> tel_set;
+    fragvec_vec groupMemFrags;
+
+    group_map groupIndex;
+
+    tablet_vec tablets;
 
     fel_set fragmentListeners;
     tel_set tabletListeners;

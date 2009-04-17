@@ -20,9 +20,11 @@
 
 #include <kdi/server/CellBuffer.h>
 #include <kdi/server/CellOutput.h>
+#include <kdi/server/RestrictedFragment.h>
 #include <kdi/server/errors.h>
 #include <kdi/rpc/PackedCellReader.h>
 #include <kdi/scan_predicate.h>
+#include <set>
 
 using namespace kdi;
 using namespace kdi::server;
@@ -184,4 +186,29 @@ std::auto_ptr<FragmentBlock> CellBuffer::loadBlock(size_t blockAddr) const
     assert(blockAddr == 0);
     std::auto_ptr<FragmentBlock> p(new Block(*this));
     return p;
+}
+
+void CellBuffer::getColumnFamilies(
+    std::vector<std::string> & families) const
+{
+    PackedCellReader reader(data);
+
+    std::set<std::string> fset;
+    while(reader.next())
+    {
+        strref_t col = reader.getColumn();
+        char const * s = std::find(col.begin(), col.end(), ':');
+        if(s == col.end())
+            s = col.begin();
+        fset.insert(std::string(col.begin(), s));
+    }
+
+    families.clear();
+    families.insert(families.end(), fset.begin(), fset.end());
+}
+
+FragmentCPtr CellBuffer::getRestricted(
+    std::vector<std::string> const & families) const
+{
+    return makeRestrictedFragment(shared_from_this(), families);
 }
