@@ -21,7 +21,7 @@
 #include <unittest/main.h>
 #include <kdi/server/DiskFragment.h>
 #include <kdi/server/CellBuilder.h>
-#include <kdi/local/disk_table_writer.h>
+#include <kdi/memory_table.h>
 
 #include <warp/fs.h>
 #include <string>
@@ -114,6 +114,59 @@ public:
     size_t getDataSize() const { return cellCount; }
 };
 
+class TestFragmentBuilder
+{
+    MemoryTablePtr memTable;
+    DiskOutput out;
+
+public:
+    
+    explicit TestFragmentBuilder(string const & file, size_t blockSz=128) :
+        memTable(MemoryTable::create(false)),
+        out(blockSz)
+    {
+        out.open(file);
+    }
+
+    ~TestFragmentBuilder()
+    {
+        out.close();
+    }
+
+    void set(strref_t row, strref_t column,
+             int64_t timestamp, strref_t value)
+    {
+        memTable->set(row, column, timestamp, value);
+    }
+
+    void erase(strref_t row, strref_t column, int64_t timestamp)
+    {
+        memTable->erase(row, column, timestamp);
+    }
+
+    void write(string const & file)
+    {
+        out.open(file);
+
+        Cell x;
+        CellStreamPtr scan = memTable->scan();
+        while(scan->get(x))
+        {
+            if(x.isErasure())
+            {
+                out.emitErasure(x.getRow(), x.getColumn(), x.getTimestamp());
+            }
+            else
+            {
+                out.emitCell(x.getRow(), x.getColumn(), x.getTimestamp(),
+                             x.getValue());
+            }
+        }
+
+        out.close();
+    }
+};
+
 /// Fill a fragment with cells of the form:
 ///   ("row-i", "col-j", k, "val-i-j-k")
 /// for i in [1, nRows], j in [1, nCols], and k in [1, nRevs]
@@ -121,8 +174,7 @@ void makeTestFragment(size_t blockSize, string const & filename,
                       size_t nRows, size_t nCols, size_t nRevs,
                       string const & fmt = "%d")
 {
-    DiskOutput out(blockSize);
-    out.open(filename);
+    TestFragmentBuilder out(filename, blockSize);
 
     string rowFmt = (format("row-%s") % fmt).str();
     string colFmt = (format("col-%s") % fmt).str();
@@ -137,11 +189,10 @@ void makeTestFragment(size_t blockSize, string const & filename,
             for(size_t k = 1; k <= nRevs; ++k)
             {
                 string val = (format(valFmt)%i%j%k).str();
-                out.emitCell(row, col, k, val);
+                out.set(row, col, k, val);
             }
         }
     }
-    out.close();
 }
  
 } // namespace
