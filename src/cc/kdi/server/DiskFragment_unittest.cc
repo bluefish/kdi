@@ -392,3 +392,23 @@ BOOST_AUTO_UNIT_TEST(timescan_test)
     BOOST_CHECK_EQUAL(2000u,  countCells(df, "row > 'a' and time = @1 or time = @23"));
 }
 
+BOOST_AUTO_UNIT_TEST(filtering_test)
+{
+    // Try to make verify that filtering blocks doesn't skip data it shouldn't
+    
+    // Column filtering of the last block of a row predicate with subsequent row predicate
+    DiskOutput out(1); // Force one cell per block
+    out.open("memfs:filtering");
+    out.emitCell("row-A", "fam-1:col", 1, "val");
+    out.emitCell("row-A", "fam-2:col", 1, "val");
+    out.emitCell("row-Z", "fam-3:col", 1, "val");
+    out.emitCell("row-Z", "fam-4:col", 1, "val");
+    out.close();
+
+    DiskFragment df("memfs:filtering");
+    BOOST_CHECK_EQUAL(1u, countCells(df, "row = 'row-A' or row = 'row-Z' and " 
+                                         "column = 'fam-1:col'"));
+    BOOST_CHECK_EQUAL(1u, countCells(df, "row = 'row-A' or row = 'row-Z' and "
+                                         "column = 'fam-2:col'"));
+
+}
