@@ -334,4 +334,61 @@ BOOST_AUTO_UNIT_TEST(rowscan_test)
     BOOST_CHECK_EQUAL(1u, countCells(df_small, "row = 'row2'")); 
 }
 
+namespace { 
+
+// Fill a table with cells of the form:
+//    ("row-i", "fam-j:qual-k", t, "val-i-j-k-t")
+// for i in [1, nRows], j in [1, nFams], k in [1, nQuals] and t in [1, nRevs]
+void makeColFamilyTestFragment(size_t blockSize, string const &filename,
+                               size_t nRows, size_t nFams, size_t nQuals, size_t nRevs,
+                               std::string const &fmt = "%d")
+{
+    TestFragmentBuilder out(filename, blockSize);
+
+    string rowFmt = (format("row-%s") % fmt).str();
+    string colFmt = (format("fam-%s:qual-%s") % fmt % fmt).str();
+    string valFmt = (format("val-%s-%s-%s-%s") % fmt % fmt % fmt % fmt).str();
+
+    for(size_t i = 1; i<= nRows; ++i) 
+    {
+        string row = (format(rowFmt)%i).str();
+        for(size_t j = 1; j <= nFams; ++j) 
+        {
+            for(size_t k = 1; k <= nQuals; ++k) 
+            {
+                string col = (format(colFmt)%j%k).str();
+                for(size_t t = 1; t <= nRevs; ++t)
+                {
+                    string val = (format(valFmt)%i%j%k%t).str();
+                    out.set(row, col, k, val);
+                }
+            }
+        }
+    }
+}
+
+}
+
+BOOST_AUTO_UNIT_TEST(colscan_test)
+{
+    makeColFamilyTestFragment(33, "memfs:colscan", 30, 33, 2, 1, "%03d");
+
+    DiskFragment df("memfs:colscan");
+    BOOST_CHECK_EQUAL(1980u, countCells(df));
+    BOOST_CHECK_EQUAL(0u, countCells(df, "row > 'a' and column ~= 'not-a-fam:'"));
+    BOOST_CHECK_EQUAL(60u, countCells(df, "row > 'a' and column ~= 'fam-001:'"));
+    BOOST_CHECK_EQUAL(120u, countCells(df, "row > 'a' and column ~= 'fam-001:' or "
+                                           "column ~= 'fam-033:'"));
+}
+
+BOOST_AUTO_UNIT_TEST(timescan_test)
+{
+    makeTestFragment(256, "memfs:timescan", 1000, 1, 30, "%03d");
+
+    DiskFragment df("memfs:timescan");
+    BOOST_CHECK_EQUAL(30000u, countCells(df));
+    BOOST_CHECK_EQUAL(1000u, countCells(df, "row > 'a' and time = @1"));
+    BOOST_CHECK_EQUAL(30000u, countCells(df, "row > 'a' and @0 <= time <= @666"));
+    BOOST_CHECK_EQUAL(2000u,  countCells(df, "row > 'a' and time = @1 or time = @23"));
+}
 
