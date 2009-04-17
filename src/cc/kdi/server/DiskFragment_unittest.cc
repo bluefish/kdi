@@ -412,3 +412,32 @@ BOOST_AUTO_UNIT_TEST(filtering_test)
                                          "column = 'fam-2:col'"));
 
 }
+
+BOOST_AUTO_UNIT_TEST(advance_test)
+{
+    // Column filtering of the last block of a row predicate with subsequent row predicate
+    DiskOutput out(4096);  // Make sure they are all in the same block
+    out.open("memfs:advance");
+    out.emitCell("row-A", "col1", 1, "val");
+    out.emitCell("row-A", "col2", 1, "val");
+    out.emitCell("row-A", "col3", 2, "val");
+    out.close();
+
+    // Get the block out 
+    DiskFragment df("memfs:advance");
+    size_t blockAddr = df.nextBlock(ScanPredicate(""), 0);
+    BOOST_CHECK(blockAddr != size_t(-1));
+    FragmentBlockPtr block = df.loadBlock(blockAddr);
+
+    CellKey nextCell;
+    FragmentBlockReaderPtr reader; 
+
+    reader = block->makeReader(ScanPredicate("column = 'col2'"));
+    BOOST_CHECK(reader->advance(nextCell));
+    BOOST_CHECK_EQUAL("col2", nextCell.getColumn());
+    
+    reader = block->makeReader(ScanPredicate("time = @2"));
+    BOOST_CHECK(reader->advance(nextCell));
+    BOOST_CHECK_EQUAL(2, nextCell.getTimestamp());
+
+}
