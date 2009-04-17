@@ -55,7 +55,7 @@ public:
         }
     };
 
-    typedef std::vector<Fragment const *> frag_list_t;
+    typedef std::vector<FragmentCPtr> frag_list_t;
     typedef std::map<range_t, frag_list_t, RangeLt> map_t;
     typedef map_t::const_iterator const_iterator;
     map_t rangeMap;
@@ -65,7 +65,7 @@ public:
     const_iterator begin() const { return rangeMap.begin(); }
     const_iterator end() const { return rangeMap.end(); }
 
-    void addFragment(range_t range, Fragment const * frag);
+    void addFragment(range_t range, FragmentCPtr const & frag);
 };
 
 class kdi::server::Compactor :

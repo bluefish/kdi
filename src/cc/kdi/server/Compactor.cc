@@ -136,7 +136,7 @@ RangeFragmentMap & RangeFragmentMap::operator=(RangeFragmentMap const  & x)
     return *this;
 }
 
-void RangeFragmentMap::addFragment(range_t range, Fragment const * f)
+void RangeFragmentMap::addFragment(range_t range, FragmentCPtr const & f)
 {
     map_t::iterator i = rangeMap.find(range);
     if(i == rangeMap.end())

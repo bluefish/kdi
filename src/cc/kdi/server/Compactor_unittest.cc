@@ -53,7 +53,7 @@ std::string getUniqueTableFile(std::string const & rootDir,
 void addFragment(RangeFragmentMap & rf,
                  string const & minRow,
                  string const & lastRow,
-                 Fragment const * frag)
+                 FragmentCPtr const & frag)
 {
     PointType lower_t = minRow.size() > 0 
         ? PT_EXCLUSIVE_LOWER_BOUND 
@@ -84,21 +84,21 @@ BOOST_AUTO_TEST_CASE(compact_test)
         out.close();
     }
     
-    DiskFragment f1("memfs:orig_1");
-    DiskFragment f2("memfs:orig_1");
-    DiskFragment f3("memfs:orig_1");
-    DiskFragment f4("memfs:orig_1");
-    DiskFragment f5("memfs:orig_1");
-
+    FragmentCPtr f1(new DiskFragment("memfs:orig_1"));
+    FragmentCPtr f2(new DiskFragment("memfs:orig_1"));
+    FragmentCPtr f3(new DiskFragment("memfs:orig_1"));
+    FragmentCPtr f4(new DiskFragment("memfs:orig_1"));
+    FragmentCPtr f5(new DiskFragment("memfs:orig_1"));
+    
     RangeFragmentMap candidateSet;
     RangeFragmentMap compactionSet;
     RangeFragmentMap outputSet;
 
-    addFragment(candidateSet, "a", "b", &f1);
-    addFragment(candidateSet, "a", "b", &f2);
-    addFragment(candidateSet, "b", "c", &f3);
-    addFragment(candidateSet, "b", "c", &f4);
-    addFragment(candidateSet, "b", "c", &f5);
+    addFragment(candidateSet, "a", "b", f1);
+    addFragment(candidateSet, "a", "b", f2);
+    addFragment(candidateSet, "b", "c", f3);
+    addFragment(candidateSet, "b", "c", f4);
+    addFragment(candidateSet, "b", "c", f5);
 
     compactor.chooseCompactionSet(candidateSet, compactionSet);
     compactor.compact(compactionSet, outputSet);
