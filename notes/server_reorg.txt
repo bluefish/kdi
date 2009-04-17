@@ -218,30 +218,7 @@
 # Server RPC 
 #----------------------------------------------------------------------------
 
-TabletServer:
-
-    Table open(table)
-
-    ... load(table, rangeSpec)
-    ... drop(table, rangeSpec)
-
-
-Table:
-
-    apply(packedCells, commitMaxTxn, waitForSync, out commitTxn)
-    sync(syncAtLeastTxn, out syncTxn)
-
-    Scanner scan(pred)
-
-    ... stat(table, pred, out cellStats)
-
-    close()
-
-
-Scanner:
-
-    get(maxResponse, out packedCells, out scanTxn, out endOfScan)
-    close()
+See src/cc/kdi/rpc/TabletServer.ice
 
 
 #----------------------------------------------------------------------------
@@ -1046,7 +1023,225 @@ Disk format:
   - Fast row seek
 
 
-struct LineFormat
-{
+#----------------------------------------------------------------------------
+# Serialization : flushing mem-fragments to disk to free space for more
+#----------------------------------------------------------------------------
+
+Each Table has a list of cached Fragments that are available for
+reading but not yet backed by a disk fragment.  Some of these
+Fragments will be recorded in the server's log file, while some have
+yet to make it into the log.
+
+Serialize task:
+
+  - Find the "best" Table to flush.  Best can mean the one hogging the
+    most memory, or the one covering the most on-disk log space.  A
+    combination of the two is probably best:
+      (A * mem-size + B * log-size)
+
+  - Merge all mem fragments available at the beginning of the merge to
+    a new disk fragment.  Sync the fragment to disk.
+
+    - The merge should only cover currently loaded/active Tablet
+      ranges.  Tablets that have already been unloaded or are in the
+      process of unloading have their data pulled out separately.
+
+    - During the merge, it may make sense to build an intersection of
+      the output rows with currently loaded tablet ranges.  Or just
+      make a list of all output rows.  This will help in deciding
+      which Tablets need to add the fragment.
+
+  - Coordinate these steps in some way that makes sense:
+  
+    - Add the new disk fragment to all Tablets that overlap with the
+      output.  Initiate config writes.  When the config writes sync,
+      we release references to the log files (but not before).
+
+    - Remove the fragments from the Table's mem fragment list.
+
+    - Notify everyone referencing the serialized fragments that they
+      need to drop said references.  Not sure how to do this.
+
+Questions:
+
+  - What happens when tablets are loading and unloading in the mean
+    time?
+
+  - How do we indicate that log files aren't needed any more?
+    Similarly, how do we decide how much log space a Table is using?
+
+
+
+#----------------------------------------------------------------------------
+# Shared fragments and schema changes
+#----------------------------------------------------------------------------
+
+    Trying to unify fragment lists by topological sorting has issues:
+
+    Schema = X:(a b) Y:(c d)
+    {
+        X: Y:
+        Insert 1=[a c]
+        X:1 Y:1
+        Insert 2=[a b]
+        X:1,2 Y:1
+        Insert 3=[c d]
+        X:1,2 Y;1,3
+    }
+    Schema = X:(a b c) Y:(d)
+    {
+        X:1,2,3 Y:3
+        Compact X, 4=[a b c]
+        X:4 Y:3
+    }
+    Schema - X:(a) Y:(b c d)
+    {
+        X:4 Y:4,3  <-- broken: 3[c] comes after 4[c]
+    }
+
+
+    (Broken) Solution: when each fragment is created or loaded, assign
+    a sequence number.  The sequence number server-local -- not
+    written to disk or communicated anywhere.  When saving fragments,
+    they must always be saved in increasing sequence order.  Broken:
+    suppose we compact 1+2 above to 4.  The correct order in X would
+    be 4,3.
+
+    Fix(?) for above: we track two numbers: creation sequence and load
+    sequence.  Primary ordering is by load sequence, and creation
+    sequence is a tie-breaker.  When compacting, the load sequence of
+    the output is the max load sequence of the input.  So above we'd
+    have:
+        Insert 1-1
+        Insert 2-2
+        Insert 3-3
+        Compact (1-1,2-2,3-3) -> 3-4
+
     
-};
+
+
+    How about if erasures get filtered out, as in a rooted compaction?
+
+    Schema = X:(a b) Y:(c d)
+    {
+        X: Y:
+        Insert 1=[a c]
+        X:1 Y:1
+        Insert 2=[a b]
+        X:1,2 Y:1
+        Insert 3=[c d]
+        X:1,2 Y;1,3
+        Insert 4=[-c]  (erases all 1[c] and 3[c])
+        X:1,2,4 Y;1,3
+    }
+    Schema = X:(a b c) Y:(d)
+    {
+        X:1,2,3,4 Y:3
+        Compact X, 5=[a b]
+        X:5 Y:3
+    }
+    Schema = X:(a) Y:(b c d)
+    {
+        X:5 Y:3,5  <-- broken: 3[c] is back
+    }
+
+
+    Solution(?): only allow erasure filtering on columns that have no
+    fragments containing them in other groups.  That is, every
+    fragment containing the column is in column's current group and no
+    other.  This might be correct, but it can make it very hard to
+    reclaim erasures after a schema change.  Boo...  Otoh, maybe this
+    is just the price of doing a column-shifting schema change.  They
+    shouldn't be done often.  Also, the condition to allow filtering
+    is a pain to track.
+
+
+    In both cases above, the problem could be avoided by restricting
+    fragment 3 to [d].
+
+    Solution(?): save column restrictions for fragments in tablet
+    configs.  Default is no restrictions.
+
+
+
+  The Plan:
+
+    When loading:
+    
+      colChain = {}  # col -> [fn1, fn2, ...]
+      fragCols = {}  # fn -> set(col1, col2, ..)
+
+      for fn, cols in config.fragments:
+         for col in cols.split():
+            colChain.setdefault(col,[]).append(fn)
+            fragCols.setdefault(fn,set()).add(col)
+      
+      for g in groups:
+         chains = [ colChain[c] for c in group.columns if c in colChain ]
+         g.frags = [ loadFrag(fn, fragCols[fn].intersection(group.columns))
+                     for fn in topoMerge(chains) ]
+
+
+    When saving:
+
+      out = []
+      for g in groups:
+         for f in g.frags:
+            out.append( (f.getFilename(), f.getColumns()) )
+      config.fragments = out
+
+
+    On schema change, drop all fragments and reload them.
+
+      This can proceed one Tablet at a time.  Probably the fastest
+      thing would be to swap all the old fragment pointers into a
+      temporary vector, clear the tablet vectors, reload all, and drop
+      the temp vector.  The point of the temporary is to keep cached
+      fragments from getting destroyed.  Leaky abstractions are the
+      best!
+
+
+#----------------------------------------------------------------------------
+# Group / Tablet layout
+#----------------------------------------------------------------------------
+
+Disk fragments are partitioned between locality groups and tablets.
+The partitioning is not necessarily disjoint and can change over time.
+
+Operations:
+
+  - Serialize: A serialization completes and needs to add the
+    serialized Fragment to each affected Tablet.  Usually the Fragment
+    will map to one Group, but that may not be the case if the schema
+    just changes.  (Is that safe?)
+
+  - Compact: A compaction completes and needs to replace a list of
+    Fragments with a new Fragment.  Same concern as above.
+
+  - Scan: Get a merged view of all Fragments in a Tablet that match a
+    ScanPredicate.
+
+
+  - Load: loading a Tablet; we must add multiple Fragments
+
+  - Unload: unloading a Tablet
+
+  - Schema change
+
+  - Add commit to mem pool
+
+  - Pick a mem-group to serialize:
+       argmax (A * mem-size(x) + B * log-size(x))
+       mem-size(x) = sum ( frag-size(f) for f in x.frags )
+       log-size(x) = sum ( file-size(f) for f in allLogFiles
+                           if max-commit(f) >= min-commit(x) )
+
+Layout:
+
+  Table {
+  }
+
+  TabletServer {
+ 
+
+  }
