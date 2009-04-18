@@ -184,7 +184,14 @@ bool DiskBlockReader::advance(CellKey & nextKey)
     }
     else
     {
-        ++cellIt; 
+        ++cellIt;
+    }
+
+    // skip cells that don't match the predicate
+    while(times && !times->contains(cellIt->key.timestamp) ||
+          cols && !cols->contains(*cellIt->key.column))
+    {
+        if(++cellIt == cellEnd && !getMoreCells()) return false; 
     }
 
     nextKey.setRow(*cellIt->key.row);

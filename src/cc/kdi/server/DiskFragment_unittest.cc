@@ -70,7 +70,7 @@ void dumpCells(Fragment const & frag, CellOutput & out, string const & pred)
         FragmentBlockReaderPtr reader = block->makeReader(p);
 
         CellKey nextCell;
-        BOOST_CHECK(reader->advance(nextCell));
+        reader->advance(nextCell);
         reader->copyUntil(0, out);
         BOOST_CHECK(!reader->advance(nextCell));
 
