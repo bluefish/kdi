@@ -188,8 +188,8 @@ bool DiskBlockReader::advance(CellKey & nextKey)
     }
 
     // skip cells that don't match the predicate
-    while(times && !times->contains(cellIt->key.timestamp) ||
-          cols && !cols->contains(*cellIt->key.column))
+    while((times && !times->contains(cellIt->key.timestamp)) ||
+          (cols && !cols->contains(*cellIt->key.column)))
     {
         if(++cellIt == cellEnd && !getMoreCells()) return false; 
     }
@@ -282,10 +282,14 @@ FragmentCPtr DiskFragment::getRestricted(
 size_t DiskFragment::nextBlock(ScanPredicate const & pred, size_t minBlock) const
 {
     BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
+
+nextBlock:
+
     if(minBlock >= index->blocks.size())
         return size_t(-1);
 
-    ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate();
+    ScanPredicate::StringSetCPtr rows = pred.getRowPredicate();
+    ScanPredicate::TimestampSetCPtr times = pred.getTimePredicate();
 
     if(rows)
     {
@@ -309,7 +313,22 @@ size_t DiskFragment::nextBlock(ScanPredicate const & pred, size_t minBlock) cons
         if(ent == index->blocks.end())
             return size_t(-1);
 
-        return ent-index->blocks.begin();
+        minBlock = ent-index->blocks.begin();
+
+        if(times) {
+            IntervalPoint<int64_t> lowTime(ent->lowestTime, PT_INCLUSIVE_LOWER_BOUND);
+            IntervalPoint<int64_t> highTime(ent->highestTime, PT_INCLUSIVE_UPPER_BOUND);
+            Interval<int64_t> timeInterval(lowTime, highTime);
+
+            // If there is no overlap between the time ranges we are looking for and the
+            // interval of times in this block, skip to the next block
+            if(!times->overlaps(timeInterval)) {
+                minBlock += 1;
+                goto nextBlock;
+            }
+        }
+
+        return minBlock;
     }
 
     return minBlock;
