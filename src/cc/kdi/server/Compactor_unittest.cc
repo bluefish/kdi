@@ -69,8 +69,20 @@ void addFragment(RangeFragmentMap & rf,
     rf.addFragment(range, frag);
 }
 
+class TestFragMaker : public DiskFragmentMaker
+{
+public:
+    string newDiskFragment()
+    {
+        string rootDir = "memfs:/";
+        string tableName = "test";
+        string dir = warp::fs::resolve(rootDir, tableName);
+        return File::openUnique(warp::fs::resolve(dir, "$UNIQUE")).second;
+    }
+};
+
 }
-  
+
 BOOST_AUTO_TEST_CASE(compact_test)
 {
     DirectBlockCache blockCache;
@@ -100,6 +112,7 @@ BOOST_AUTO_TEST_CASE(compact_test)
     addFragment(candidateSet, "b", "c", f4);
     addFragment(candidateSet, "b", "c", f5);
 
+    TestFragMaker fragMaker;
     compactor.chooseCompactionSet(candidateSet, compactionSet);
-    compactor.compact(compactionSet, outputSet);
+    compactor.compact(compactionSet, &fragMaker, outputSet);
 }

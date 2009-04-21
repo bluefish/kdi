@@ -91,7 +91,8 @@ public:
     /// the fragments given for that range in the compaction set.  If no
     /// fragment is specified for the output range, the fragments for that range
     /// had no output and can be removed from the ranges tablet set.
-    void compact(RangeFragmentMap const & compactionSet, 
+    void compact(RangeFragmentMap const & compactionSet,
+                 DiskFragmentMaker * fragMaker,
                  RangeFragmentMap & outputSet);
     
     /// Choose a more limited compaction set given a set of all the fragment

@@ -55,23 +55,8 @@ Compactor::Compactor(BlockCache * cache) :
     log("Compactor %p: created", this);
 }
 
-namespace {
-
-std::string getUniqueTableFile(std::string const & rootDir,
-                               std::string const & tableName)
-{
-    string dir = warp::fs::resolve(rootDir, tableName);
-
-    // XXX: this should be cached -- only need to make the directory
-    // once per table
-    warp::fs::makedirs(dir);
-   
-    return File::openUnique(warp::fs::resolve(dir, "$UNIQUE")).second;
-}
-
-}
-
 void Compactor::compact(RangeFragmentMap const & compactionSet,
+                        DiskFragmentMaker * fragMaker,
                         RangeFragmentMap & outputSet) 
 {
     // Split outputs if they get bigger than this:
@@ -80,8 +65,7 @@ void Compactor::compact(RangeFragmentMap const & compactionSet,
     // Stop the compaction entirely if it gets bigger than this:
     size_t const MAX_OUTPUT_SIZE = 4 * OUTPUT_SPLIT_SIZE;
 
-    string outputName = getUniqueTableFile("memfs:/", "test");
-    writer.open(outputName);
+    writer.open(fragMaker->newDiskFragment());
 
     RangeFragmentMap::const_iterator i;
     for(i = compactionSet.begin(); i != compactionSet.end(); ++i)

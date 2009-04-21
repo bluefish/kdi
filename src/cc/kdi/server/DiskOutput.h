@@ -29,12 +29,13 @@ namespace kdi {
 namespace server {
 
     class DiskOutput;
+    class DiskFragmentMaker;
 
 } // namespace server
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// CellOutput
+// DiskOutput
 //----------------------------------------------------------------------------
 class kdi::server::DiskOutput : public kdi::server::CellOutput
 {
@@ -57,6 +58,15 @@ public:
 
     size_t getCellCount() const;
     size_t getDataSize() const;
+    std::string getFilename() const;
 };
 
+//----------------------------------------------------------------------------
+// DiskFragmentMaker
+//----------------------------------------------------------------------------
+class kdi::server::DiskFragmentMaker
+{
+public:
+    virtual std::string newDiskFragment() = 0;
+};
 #endif // KDI_SERVER_DISKOUTPUT_H
