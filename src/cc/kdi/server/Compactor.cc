@@ -70,6 +70,12 @@ void Compactor::compact(RangeFragmentMap const & compactionSet,
     RangeFragmentMap::const_iterator i;
     for(i = compactionSet.begin(); i != compactionSet.end(); ++i)
     {
+        if(writer.getDataSize() > MAX_OUTPUT_SIZE)
+        {
+            writer.close();
+            writer.open(fragMaker->newDiskFragment());
+        }
+
         RangeFragmentMap::range_t const & range = i->first;
         RangeFragmentMap::frag_list_t const & frags = i->second;
 
@@ -93,8 +99,6 @@ void Compactor::compact(RangeFragmentMap const & compactionSet,
         {
             // Empty replacement set, this range has been compacted away
         }
-
-        if(writer.getDataSize() > MAX_OUTPUT_SIZE) break;
     }
 
     log("compaction output, cells: %d, size: %d", writer.getCellCount(), writer.getDataSize());
