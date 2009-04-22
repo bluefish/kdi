@@ -70,7 +70,7 @@ void Compactor::compact(RangeFragmentMap const & compactionSet,
     RangeFragmentMap::const_iterator i;
     for(i = compactionSet.begin(); i != compactionSet.end(); ++i)
     {
-        if(writer.getDataSize() > MAX_OUTPUT_SIZE)
+        if(writer.getDataSize() > OUTPUT_SPLIT_SIZE)
         {
             writer.close();
             writer.open(fragMaker->newDiskFragment());
