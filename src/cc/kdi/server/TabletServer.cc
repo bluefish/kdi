@@ -69,12 +69,17 @@ namespace {
 
     struct Loading
     {
-        Tablet * tablet;
         TabletConfig const * config;
+        std::vector<FragmentCPtr> frags;
 
-        Loading() : tablet(0), config(0) {}
-        Loading(Tablet * tablet, TabletConfig const * config) :
-            tablet(tablet), config(config) {}
+        Loading() : config(0) {}
+        Loading(TabletConfig const * config) :
+            config(config) {}
+
+        void addLoadedFragment(FragmentCPtr const & frag)
+        {
+            frags.push_back(frag);
+        }
 
         bool operator<(Loading const & o) const
         {
@@ -833,7 +838,7 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
             continue;
         }
         tablet = table->createTablet(i->rows);
-        loading.push_back(Loading(tablet, &*i));
+        loading.push_back(Loading(&*i));
     }
 
     serverLock.unlock();
@@ -841,15 +846,14 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
     std::sort(loading.begin(), loading.end());
 
     LogPlayer::filter_vec replayFilter;
-    for(loading_vec::const_iterator last, first = loading.begin();
+    for(loading_vec::iterator last, first = loading.begin();
         first != loading.end(); first = last)
     {
-        last = std::find_if<loading_vec::const_iterator>(
+        last = std::find_if(
             first+1, loading.end(),
             Loading::LogNeq(first->config->log));
 
-        for(loading_vec::const_iterator i = first;
-            i != last; ++i)
+        for(loading_vec::iterator i = first; i != last; ++i)
         {
             typedef std::vector<TabletConfig::Fragment> fvec;
             fvec const & frags = i->config->fragments;
@@ -857,9 +861,18 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
             {
                 FragmentCPtr frag = bits.fragmentLoader->load(
                     f->filename, f->columns);
-                i->tablet->addLoadedFragment(frag);
+                i->addLoadedFragment(frag);
             }
         }
+
+        serverLock.lock();
+        for(loading_vec::iterator i = first; i != last; ++i)
+        {
+            Table * table = getTable(i->config->tableName);
+            lock_t tableLock(table->tableMutex);
+            table->addLoadedFragments(i->config->rows, i->frags);
+        }
+        serverLock.unlock();
 
         if(first->config->log.empty())
             continue;
@@ -877,12 +890,13 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
         replayFilter.clear();
     }
 
-    for(loading_vec::const_iterator i = loading.begin();
-        i != loading.end(); ++i)
-    {
-        bits.configWriter->saveTablet(i->tablet);
-    }
-    bits.configWriter->sync();
+    // XXX need to save config
+    //for(loading_vec::const_iterator i = loading.begin();
+    //    i != loading.end(); ++i)
+    //{
+    //    bits.configWriter->saveTablet(i->tablet);
+    //}
+    //bits.configWriter->sync();
 
         
     typedef std::vector<warp::Runnable *> callback_vec;
@@ -893,7 +907,10 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
     for(loading_vec::const_iterator i = loading.begin();
         i != loading.end(); ++i)
     {
-        warp::Runnable * loadCallback = i->tablet->finishLoading();
+        Table * table = getTable(i->config->tableName);
+        lock_t tableLock(table->tableMutex);
+        Tablet * tablet = table->findTablet(i->config->rows.getUpperBound());
+        warp::Runnable * loadCallback = tablet->finishLoading();
         if(loadCallback)
             callbacks.push_back(loadCallback);
     }

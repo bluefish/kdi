@@ -38,6 +38,10 @@
 #include <exception>
 #include <unittest/main.h>
 
+#include <iostream>
+using std::cout;
+using std::endl;
+
 using namespace kdi;
 using namespace kdi::server;
 
@@ -174,6 +178,7 @@ BOOST_AUTO_UNIT_TEST(no_table_test)
 
 BOOST_AUTO_UNIT_TEST(simple_test)
 {
+    BOOST_TEST_CHECKPOINT("Init Bits");
     warp::WorkerPool pool(1, "pool", true);
     TestConfigReader cfgReader;
     NullConfigWriter cfgWriter;
@@ -184,13 +189,15 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     bits.workerPool = &pool;
     bits.configReader = &cfgReader;
     bits.configWriter = &cfgWriter;
-    
+
     // Make a server
+    BOOST_TEST_CHECKPOINT("Create ServerInit");
     TabletServer server(bits);
 
     BOOST_CHECK(server.findTable("table") == 0);
 
     // Load a single tablet in table "table"
+    BOOST_TEST_CHECKPOINT("Load");
     {
         TestLoadCb loadCb;
         std::vector<std::string> tablets;
@@ -205,6 +212,7 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     }
 
     // Write a block of test cells
+    BOOST_TEST_CHECKPOINT("Apply");
     int64_t commitTxn = -1;
     {
         TestApplyCb applyCb;
@@ -220,6 +228,7 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     }
 
     // Wait until the cells have been logged
+    BOOST_TEST_CHECKPOINT("Sync");
     {
         TestSyncCb syncCb;
         server.sync_async(&syncCb, TabletServer::MAX_TXN);
@@ -232,6 +241,7 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     }
 
     // Create a scnner to read the cells back
+    BOOST_TEST_CHECKPOINT("Create Scanner");
     DirectBlockCache testCache;
     Scanner scanner(
         server.findTable("table"),
@@ -243,6 +253,7 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     BOOST_CHECK_EQUAL(scanner.scanContinues(), true);
 
     // Scan the first block
+    BOOST_TEST_CHECKPOINT("Scanning");
     {
         TestScanCb scanCb;
         scanner.scan_async(&scanCb, size_t(-1), size_t(-1));
@@ -261,6 +272,7 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     }
 
     // Unload the table
+    BOOST_TEST_CHECKPOINT("Unloading");
     {
         TestUnloadCb unloadCb;
         std::vector<std::string> tablets;
