@@ -91,7 +91,10 @@ public:
                    fragGroups[groupIndex].end());
     }
 
-    void addLoadedFragment(FragmentCPtr const & frag);
+    void addFragment(FragmentCPtr const & frag, int groupIndex)
+    {
+        fragGroups[groupIndex].push_back(frag);
+    }
 
     void applySchema(TableSchema const & schema);
 

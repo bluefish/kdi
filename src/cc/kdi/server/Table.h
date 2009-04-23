@@ -124,6 +124,9 @@ public:
 
     void addMemoryFragment(FragmentCPtr const & frag);
 
+    void addLoadedFragments(warp::Interval<std::string> const & rows,
+                            std::vector<FragmentCPtr> const & frags);
+
 private:
     void getAllMemFrags(std::vector<FragmentCPtr> const & out);
 

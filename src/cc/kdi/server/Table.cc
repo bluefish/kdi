@@ -123,8 +123,10 @@ void Table::updateRowCommits(std::vector<warp::StringRange> const & rows,
 
 Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
 {
-    tablets.push_back(new Tablet(rows));
-    return tablets.back();
+    Tablet * t = new Tablet(rows);
+    tablets.push_back(t);
+    t->applySchema(schema);
+    return t;
 }
 
 Table::Table()
@@ -238,7 +240,9 @@ void Table::addMemoryFragment(FragmentCPtr const & frag)
     for(str_vec::const_iterator i = families.begin();
         i != families.end(); ++i)
     {
-        fragGroups.insert(groupIndex.get(*i));
+        int idx = groupIndex.get(*i, -1);
+        if(idx >= 0)
+            fragGroups.insert(idx);
     }
 
     // Add the memory fragment to all affected groups
@@ -247,6 +251,46 @@ void Table::addMemoryFragment(FragmentCPtr const & frag)
     {
         groupMemFrags[*i].push_back(
             frag->getRestricted(schema.groups[*i].columns));
+    }
+}
+
+void Table::addLoadedFragments(warp::Interval<std::string> const & rows,
+                               std::vector<FragmentCPtr> const & frags)
+{
+    Tablet * tablet = findTablet(rows.getUpperBound());
+    assert(tablet);
+    assert(rows.getLowerBound() == tablet->getMinRow());
+
+    typedef std::vector<std::string> str_vec;
+    typedef std::tr1::unordered_set<int> group_set;
+    str_vec families;
+    group_set fragGroups;
+
+    for(std::vector<FragmentCPtr>::const_iterator fi = frags.begin();
+        fi != frags.end(); ++fi)
+    {
+        // Get all the column families in the fragment
+        families.clear();
+        (*fi)->getColumnFamilies(families);
+
+        // Figure out the set of groups covered by the fragment
+        fragGroups.clear();
+        for(str_vec::const_iterator i = families.begin();
+            i != families.end(); ++i)
+        {
+            int idx = groupIndex.get(*i, -1);
+            if(idx >= 0)
+                fragGroups.insert(idx);
+        }
+
+        // Add the fragment to all affected groups
+        for(group_set::const_iterator i = fragGroups.begin();
+            i != fragGroups.end(); ++i)
+        {
+            tablet->addFragment(
+                (*fi)->getRestricted(schema.groups[*i].columns),
+                *i);
+        }
     }
 }
 

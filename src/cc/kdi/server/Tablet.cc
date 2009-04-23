@@ -19,6 +19,7 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/server/Tablet.h>
+#include <kdi/server/TableSchema.h>
 
 using namespace kdi;
 using namespace kdi::server;
@@ -31,7 +32,6 @@ class Tablet::Loading
 {
 public:
     std::vector<LoadedCb *> callbacks;
-    std::vector<FragmentCPtr> fragments;
 
     void run()
     {
@@ -58,15 +58,10 @@ Tablet::~Tablet()
 {
 }
 
-void Tablet::addLoadedFragment(FragmentCPtr const & frag)
-{
-    assert(loading.get());
-    loading->fragments.push_back(frag);
-}
-
 void Tablet::applySchema(TableSchema const & s)
 {
-    EX_UNIMPLEMENTED_FUNCTION;
+    assert(fragGroups.empty());
+    fragGroups.resize(s.groups.size());
 }
 
 void Tablet::deferUntilLoaded(LoadedCb * cb)
