@@ -27,6 +27,26 @@ using namespace kdi::server;
 //----------------------------------------------------------------------------
 // TestConfigReader
 //----------------------------------------------------------------------------
+TestConfigReader::TestConfigReader()
+{
+    groups.resize(1);
+    groups[0].push_back("test");
+}
+
+TestConfigReader::TestConfigReader(char const * const * familyGroups)
+{
+    while(*familyGroups)
+    {
+        groups.resize(groups.size() + 1);
+        std::vector<std::string> & families = groups.back();
+        while(*familyGroups)
+        {
+            families.push_back(*familyGroups);
+            ++familyGroups;
+        }
+    }
+}
+
 void TestConfigReader::readSchemas_async(
     ReadSchemasCb * cb,
     std::vector<std::string> const & tableNames)
@@ -35,7 +55,11 @@ void TestConfigReader::readSchemas_async(
     for(size_t i = 0; i < tableNames.size(); ++i)
     {
         schemas[i].tableName = tableNames[i];
-        schemas[i].groups.push_back(TableSchema::Group());
+        schemas[i].groups.resize(groups.size());
+        for(size_t j = 0; j < groups.size(); ++j)
+        {
+            schemas[i].groups[j].columns = groups[j];
+        }
     }
     cb->done(schemas);
 }
