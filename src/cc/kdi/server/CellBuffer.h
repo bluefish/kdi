@@ -59,7 +59,11 @@ public:
     size_t getDataSize() const { return data.size(); }
 
 public:  // Fragment interface
+
+    std::string getFilename() const;
+
     size_t nextBlock(ScanPredicate const & pred, size_t minBlock) const;
+
     std::auto_ptr<FragmentBlock> loadBlock(size_t blockAddr) const;
 
     void getColumnFamilies(

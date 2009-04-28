@@ -67,6 +67,8 @@ class kdi::server::DiskFragment
 public:
     explicit DiskFragment(std::string const & fn);
 
+    virtual std::string getFilename() const;
+
     virtual void getColumnFamilies(
         std::vector<std::string> & families) const;
 

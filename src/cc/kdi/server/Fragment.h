@@ -56,6 +56,9 @@ class kdi::server::Fragment
 public:
     virtual ~Fragment() {}
 
+    /// Get the name of the file backing this Fragment.
+    virtual std::string getFilename() const = 0;
+
     /// Get the list of column families contained in this Fragment.
     /// The returned families are in no particular order.
     virtual void getColumnFamilies(
