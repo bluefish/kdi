@@ -38,6 +38,9 @@ struct kdi::server::TestConfigReader
     : public ConfigReader
 {
 public:
+    TestConfigReader();
+    explicit TestConfigReader(char const * const * familyGroups);
+
     void readSchemas_async(
         ReadSchemasCb * cb,
         std::vector<std::string> const & tableNames);
@@ -45,6 +48,9 @@ public:
     void readConfigs_async(
         ReadConfigsCb * cb,
         std::vector<std::string> const & tabletNames);
+
+public:
+    std::vector< std::vector< std::string > > groups;
 };
 
 #endif // KDI_SERVER_TESTCONFIGREADER_H
