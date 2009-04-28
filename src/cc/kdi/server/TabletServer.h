@@ -115,6 +115,8 @@ public:
         FragmentLoader     * fragmentLoader;
         ConfigWriter       * configWriter;
         LogPlayer          * logPlayer;
+        std::string          serverLogDir;
+        std::string          serverLocation;
 
         Bits() :
             workerPool(0),
