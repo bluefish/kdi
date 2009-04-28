@@ -38,6 +38,7 @@ namespace server {
 
     // Forward declarations
     class TableSchema;
+    class TabletConfig;
 
 } // namespace server
 } // namespace kdi
@@ -87,10 +88,11 @@ public:
     }
 
     void applySchema(TableSchema const & schema);
-
     void deferUntilLoaded(LoadedCb * cb);
-    
     warp::Runnable * finishLoading();
+
+    /// Fill in the rows and fragments part of the TabletConfig.
+    void fillConfig(TabletConfig & cfg) const;
 
 private:
     class Loading;
