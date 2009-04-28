@@ -1245,3 +1245,80 @@ Layout:
  
 
   }
+
+#----------------------------------------------------------------------------
+# Config writing
+#----------------------------------------------------------------------------
+
+When do tablet configs need to be saved?
+
+  1. After loading, we need to save the config so that the Tablet has
+     the new server's log directory and location.
+
+  2. After unloading, we need to save with the final fragment list and
+     remove the server's log directory and location.
+
+  3. We should "eventually" save the config after serialization and
+     compaction, so that old disk files can be cleaned up by the GC.
+
+     A. For serialization, we want to clean up dead files in the log
+        directory so we don't have to replay them later in the event
+        of a server crash.  We also want to reclaim the disk space.
+
+        When can the log GC reclaim a file?
+
+        Log GC is local to the server controlling the log directory.
+        
+        Each log file covers a compact sequence of commits.  Each log
+        file can be shared between multiple Tables.  A log file is no
+        longer needed when all Tables have serialized past the last
+        commit in the log file AND the resulting fragments from the
+        serializion(s) have been recorded for all affected Tablets'
+        configs.
+
+
+     B. For compaction, we want to reclaim disk space and avoid
+        recompacting on another server in the event of a server crash.
+
+        When can the disk fragment GC reclaim a file?
+
+        Disk fragment GC is global.  Fragment files exist in a global
+        namespace and may be shared between Tablets on different
+        Servers.
+
+        The GC can reclaim a file that is not referenced (or soon to
+        be referenced) by any Tablet.  A file is "referenced" by a
+        Tablet if it is named in the Tablet's config.  It is "soon to
+        be referenced" if a server could add it to a Tablet's config
+        at some point in the future.
+
+        The "referenced" condition is easy enough for the GC to check
+        by reading Tablet configs.  The "soon to be referenced"
+        condition is more difficult.
+
+        STBR 1: The GC asks each server for its oldest STBR file
+        creation time.  The GC then ignores any file younger than the
+        oldest STBR file for all servers.  Use the start-time of the
+        GC round as a maximum time (always ignore files created after
+        the GC started up).  Annoyance: have to talk to all servers to
+        do GC.
+
+        STBR 2: The GC looks at all candidate files and chooses a
+        cutoff time that is some about of time (1 day?) older than the
+        most recent.  It ignores all files newer than that.  Problems:
+        how much garbage can we accumulate in the cutoff window?  What
+        if some server is going really slow?  If nothing is changing,
+        we'll never clean the last.
+
+        STBR 3: STBR files are explicitly named by servers that own
+        them.  Problems: overhead, race on new files.
+
+        STBR 4: Like STBR 1, except servers report their oldest STBR
+        ctime when doing periodic check-ins with a master server.  The
+        GC just asks the master for the oldest ctime among the
+        currently active servers.
+        
+        
+
+
+        
