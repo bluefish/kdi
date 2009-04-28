@@ -34,11 +34,11 @@ namespace server {
 //----------------------------------------------------------------------------
 // NullConfigWriter
 //----------------------------------------------------------------------------
-struct kdi::server::NullConfigWriter
-    : public ConfigWriter
+class kdi::server::NullConfigWriter
+    : public kdi::server::ConfigWriter
 {
-    void saveTablet(Tablet const * tablet) {}
-    void sync() {}
+public:
+    virtual void writeConfigs(std::vector<TabletConfig> const & configs) {}
 };
 
 #endif // KDI_SERVER_NULLCONFIGWRITER_H

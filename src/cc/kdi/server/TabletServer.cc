@@ -890,14 +890,35 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
         replayFilter.clear();
     }
 
-    // XXX need to save config
-    //for(loading_vec::const_iterator i = loading.begin();
-    //    i != loading.end(); ++i)
-    //{
-    //    bits.configWriter->saveTablet(i->tablet);
-    //}
-    //bits.configWriter->sync();
+    // Save configs for all loaded tablets
+    {
+        // Init to size of all loaded tablets
+        std::vector<TabletConfig> out(loading.size());
+        for(size_t i = 0; i < out.size(); ++i)
+        {
+            // Set log and location to reference this server
+            out[i].log = bits.serverLogDir;
+            out[i].location = bits.serverLocation;
 
+            // Set name and rows from loaded config (assuming no
+            // splits possible?)
+            out[i].tableName = loading[i].config->tableName;
+            out[i].rows = loading[i].config->rows;
+        }
+
+        // Get Fragment lists for each Tablet
+        serverLock.lock();
+        for(size_t i = 0; i < out.size(); ++i)
+        {
+            Table * table = getTable(out[i].tableName);
+            lock_t tableLock(table->tableMutex);
+            Tablet * tablet = table->findTablet(out[i].rows.getUpperBound());
+            tablet->getConfigFragments(out[i]);
+        }
+        serverLock.unlock();
+
+        bits.configWriter->writeConfigs(out);
+    }
         
     typedef std::vector<warp::Runnable *> callback_vec;
     callback_vec callbacks;

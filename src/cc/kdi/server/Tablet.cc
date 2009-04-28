@@ -82,10 +82,8 @@ warp::Runnable * Tablet::finishLoading()
     return 0;
 }
 
-void Tablet::fillConfig(TabletConfig & cfg) const
+void Tablet::getConfigFragments(TabletConfig & cfg) const
 {
-    cfg.rows = getRows();
-
     size_t n = 0;
     for(fragvec_vec::const_iterator i = fragGroups.begin();
         i != fragGroups.end(); ++i)

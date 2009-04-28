@@ -91,8 +91,8 @@ public:
     void deferUntilLoaded(LoadedCb * cb);
     warp::Runnable * finishLoading();
 
-    /// Fill in the rows and fragments part of the TabletConfig.
-    void fillConfig(TabletConfig & cfg) const;
+    /// Fill in the fragments part of the TabletConfig.
+    void getConfigFragments(TabletConfig & cfg) const;
 
 private:
     class Loading;

@@ -21,13 +21,13 @@
 #ifndef KDI_SERVER_CONFIGWRITER_H
 #define KDI_SERVER_CONFIGWRITER_H
 
+#include <kdi/server/TabletConfig.h>
+#include <vector>
+
 namespace kdi {
 namespace server {
 
     class ConfigWriter;
-
-    // Forward declarations
-    class Tablet;
 
 } // namespace server
 } // namespace kdi
@@ -38,8 +38,7 @@ namespace server {
 class kdi::server::ConfigWriter
 {
 public:
-    virtual void saveTablet(Tablet const * tablet) = 0;
-    virtual void sync() = 0;
+    virtual void writeConfigs(std::vector<TabletConfig> const & configs) = 0;
 
 protected:
     ~ConfigWriter() {}
