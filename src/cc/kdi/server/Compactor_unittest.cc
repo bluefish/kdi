@@ -38,18 +38,6 @@ using boost::format;
 
 namespace {
 
-std::string getUniqueTableFile(std::string const & rootDir,
-                               std::string const & tableName)
-{
-    string dir = fs::resolve(rootDir, tableName);
-
-    // XXX: this should be cached -- only need to make the directory
-    // once per table
-    fs::makedirs(dir);
-   
-    return File::openUnique(fs::resolve(dir, "$UNIQUE")).second;
-}
-
 void addFragment(RangeFragmentMap & rf,
                  string const & minRow,
                  string const & lastRow,
