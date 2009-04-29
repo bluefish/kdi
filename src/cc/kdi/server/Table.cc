@@ -177,11 +177,12 @@ public:
 void Table::serialize(Serializer & serialize)
 {
     frag_vec frags;
-    int groupIndex = 0;
+    unsigned groupIndex = 0;
+    TableSchema::Group group;
 
     {
         lock_t tableLock(tableMutex);
-          
+
         // Choose the longest mem fragment chain and serialize it
         frag_vec & longestChain = groupMemFrags.front();
         for(fragvec_vec::iterator i = groupMemFrags.begin();
@@ -195,6 +196,7 @@ void Table::serialize(Serializer & serialize)
         }
 
         frags = longestChain;
+        group = schema.groups[groupIndex];
     }
 
     if(frags.empty()) return;
@@ -205,6 +207,12 @@ void Table::serialize(Serializer & serialize)
 
     {
         lock_t tableLock(tableMutex);
+
+        // did the schema change?
+        if(groupIndex > schema.groups.size()) return;
+        if(schema.groups[groupIndex].columns.size() != group.columns.size()) return;
+        if(!std::equal(group.columns.begin(), group.columns.end(),
+                       schema.groups[groupIndex].columns.begin())) return;
 
         warp::StringRange row;
         while(serialize.getNextRow(row)) 
