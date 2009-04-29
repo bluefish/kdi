@@ -176,18 +176,35 @@ public:
 
 void Table::serialize(Serializer & serialize)
 {
-    lock_t tableLock(tableMutex);
+    frag_vec frags;
+    int groupIndex = 0;
 
-    for(fragvec_vec::iterator i = groupMemFrags.begin();
-        i != groupMemFrags.end(); ++i)
     {
-        frag_vec & frags = *i;
-        if(frags.empty()) continue;
-        int groupIndex = i-groupMemFrags.begin();
+        lock_t tableLock(tableMutex);
+          
+        // Choose the longest mem fragment chain and serialize it
+        frag_vec & longestChain = groupMemFrags.front();
+        for(fragvec_vec::iterator i = groupMemFrags.begin();
+            i != groupMemFrags.end(); ++i)
+        {
+            if(i->size() >= longestChain.size())
+            {
+                longestChain = *i;
+                groupIndex = i-groupMemFrags.begin();
+            }
+        }
 
-        std::string fn = getUniqueTableFile("/home/tbagby/kdi_test", "this_table");
-        serialize(frags, fn); 
-        FragmentCPtr newFrag(new DiskFragment(fn));
+        frags = longestChain;
+    }
+
+    if(frags.empty()) return;
+
+    std::string fn = getUniqueTableFile("/home/tbagby/kdi_test", "this_table");
+    serialize(frags, fn); 
+    FragmentCPtr newFrag(new DiskFragment(fn));
+
+    {
+        lock_t tableLock(tableMutex);
 
         warp::StringRange row;
         while(serialize.getNextRow(row)) 
@@ -196,8 +213,6 @@ void Table::serialize(Serializer & serialize)
             row = t->getRows().getUpperBound().getValue();
             t->addFragment(newFrag, groupIndex);
         }
-
-        frags.clear();
     }
 }
 
