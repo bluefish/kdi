@@ -24,6 +24,7 @@
 #include <kdi/server/Fragment.h>
 #include <kdi/server/TableSchema.h>
 #include <kdi/server/CommitRing.h>
+#include <kdi/server/Compactor.h>
 #include <warp/interval.h>
 #include <warp/hashmap.h>
 #include <warp/strhash.h>
@@ -45,6 +46,7 @@ namespace server {
     class CellBuffer;
     class FragmentEventListener;
     class TabletEventListener;
+    class Serializer;
 
 } // namespace server
 
@@ -135,6 +137,8 @@ private:
 
 public:
     void applySchema(TableSchema const & s);
+    void serialize(Serializer & serialize);
+    void compact(Compactor & compactor);
 
 private:
     class TabletLt;

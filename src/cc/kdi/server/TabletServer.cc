@@ -24,6 +24,7 @@
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
 #include <kdi/server/Fragment.h>
+#include <kdi/server/Serializer.h>
 
 #include <kdi/server/FragmentLoader.h>
 #include <kdi/server/LogPlayer.h>
@@ -690,6 +691,7 @@ void TabletServer::logLoop()
 void TabletServer::serializeLoop()
 {
     std::vector<Table*> tablesForSerializer;
+    Serializer serializer;
 
     for(;;)
     {
@@ -707,39 +709,9 @@ void TabletServer::serializeLoop()
 
         Table * t = tablesForSerializer.back();
         tablesForSerializer.pop_back();
-        t->serialize();
+        t->serialize(serializer);
     }
 }
-//        lock_t serverLock(serverMutex);
-//        if(quit)
-//            break;
-//
-//        Table * t = chooseTableForSerialization();
-//        if(!t)
-//        {
-//            waitForSomethingToDo(serverLock);
-//            continue;
-//        }
-//        
-//        lock_t tableLock(t->tableMutex);
-//        serverLock.unlock();
-//
-//        std::vector<Fragment const *> frags;
-//        IntervalSet<std::string> rows;
-//        t->getFragments(frags);
-//        t->getTabletRows(rows);
-//
-//        tableLock.unlock();
-//
-//        FragmentMerge merge(frags,
-//                            blockCache, 
-//                            ScanPredicate().setRowPredicate(rows),
-//                            0);
-//
-//        DiskFragmentWriter out;
-//        
-//    }
-//}
 
 void TabletServer::applySchemas(std::vector<TableSchema> const & schemas)
 {
