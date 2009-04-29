@@ -167,6 +167,7 @@ private:
     Table * getTable(strref_t tableName) const;
 
     void logLoop();
+    void serializeLoop();
 
     void applySchemas(std::vector<TableSchema> const & schemas);
     void loadTablets(std::vector<TabletConfig> const & configs);

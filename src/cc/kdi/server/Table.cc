@@ -18,10 +18,15 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
+#include <kdi/server/DiskOutput.h>
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
+#include <kdi/server/Serializer.h>
 #include <kdi/server/errors.h>
 #include <kdi/scan_predicate.h>
+#include <warp/fs.h>
+#include <warp/file.h>
+#include <warp/log.h>
 #include <warp/string_interval.h>
 #include <ex/exception.h>
 
@@ -137,6 +142,86 @@ Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
     tablets.push_back(t);
     t->applySchema(schema);
     return t;
+}
+
+typedef boost::mutex::scoped_lock lock_t; 
+
+namespace {
+
+std::string getUniqueTableFile(std::string const & rootDir,
+                               std::string const & tableName)
+{
+    std::string dir = warp::fs::resolve(rootDir, tableName);
+
+    // XXX: this should be cached -- only need to make the directory
+    // once per table
+    warp::fs::makedirs(dir);
+   
+    return warp::File::openUnique(warp::fs::resolve(dir, "$UNIQUE")).second;
+}
+
+class TestFragMaker : public DiskFragmentMaker
+{
+public:
+    std::string newDiskFragment()
+    {
+        std::string rootDir = "memfs:/";
+        std::string tableName = "test";
+        std::string dir = warp::fs::resolve(rootDir, tableName);
+        return warp::File::openUnique(warp::fs::resolve(dir, "$UNIQUE")).second;
+    }
+};
+
+}
+
+void Table::serialize(Serializer & serialize)
+{
+    frag_vec frags;
+    unsigned groupIndex = 0;
+    TableSchema::Group group;
+
+    {
+        lock_t tableLock(tableMutex);
+
+        // Choose the longest mem fragment chain and serialize it
+        frag_vec & longestChain = groupMemFrags.front();
+        for(fragvec_vec::iterator i = groupMemFrags.begin();
+            i != groupMemFrags.end(); ++i)
+        {
+            if(i->size() >= longestChain.size())
+            {
+                longestChain = *i;
+                groupIndex = i-groupMemFrags.begin();
+            }
+        }
+
+        frags = longestChain;
+        group = schema.groups[groupIndex];
+    }
+
+    if(frags.empty()) return;
+
+    std::string fn = getUniqueTableFile("/home/tbagby/kdi_test", "this_table");
+    serialize(frags, fn); 
+    FragmentCPtr newFrag(new DiskFragment(fn));
+
+    {
+        lock_t tableLock(tableMutex);
+
+        // did the schema change?
+        if(groupIndex > schema.groups.size()) return;
+        if(schema.groups[groupIndex].columns.size() != group.columns.size()) return;
+        if(!std::equal(group.columns.begin(), group.columns.end(),
+                       schema.groups[groupIndex].columns.begin())) return;
+
+        warp::StringRange row;
+        while(serialize.getNextRow(row)) 
+        {
+            Tablet * t = findContainingTablet(row);
+            row = t->getRows().getUpperBound().getValue();
+            t->addFragment(newFrag, groupIndex);
+        }
+    }
 }
 
 Table::Table()

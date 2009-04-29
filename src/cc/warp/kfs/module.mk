@@ -1,0 +1,10 @@
+MAGIC_REQUIRE_VARS := KOSMOSFS_HOME
+
+MAGIC_FLAGS_CPPFLAGS := -I$(KOSMOSFS_HOME)/include
+vpath %.a $(KOSMOSFS_HOME)/lib/static
+vpath %.so $(KOSMOSFS_HOME)/lib
+
+MAGIC_MODULE_DEPS := warp
+MAGIC_EXTERNAL_DEPS := kfsClient_PREFER_STATIC kfsIO_PREFER_STATIC \
+	kfsCommon_PREFER_STATIC qcdio_PREFER_STATIC log4cpp
+include magic.mk
