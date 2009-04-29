@@ -199,10 +199,12 @@ void Table::serialize(Serializer & serialize)
         group = schema.groups[groupIndex];
     }
 
+    // nothing to serialize?
     if(frags.empty()) return;
 
-    std::string fn = getUniqueTableFile("/home/tbagby/kdi_test", "this_table");
-    serialize(frags, fn); 
+    // write out the new disk fragment and load it
+    std::string fn = getUniqueTableFile("/home/tbagby/kdi_test", schema.tableName);
+    serialize(frags, fn, group); 
     FragmentCPtr newFrag(new DiskFragment(fn));
 
     {
@@ -214,6 +216,13 @@ void Table::serialize(Serializer & serialize)
         if(!std::equal(group.columns.begin(), group.columns.end(),
                        schema.groups[groupIndex].columns.begin())) return;
 
+        // is the set of fragments to replace what we are expecting?
+        frag_vec & memFrags = groupMemFrags[groupIndex];
+        if(memFrags.size() < frags.size()) return;
+        if(!std::equal(frags.begin(), frags.end(), memFrags.begin()))
+            return;
+        
+        // find affected tablets and insert new fragments
         warp::StringRange row;
         while(serialize.getNextRow(row)) 
         {
@@ -221,6 +230,9 @@ void Table::serialize(Serializer & serialize)
             row = t->getRows().getUpperBound().getValue();
             t->addFragment(newFrag, groupIndex);
         }
+
+        // remove the existing mem fragments
+        memFrags.erase(memFrags.begin(), memFrags.begin()+frags.size());
     }
 }
 

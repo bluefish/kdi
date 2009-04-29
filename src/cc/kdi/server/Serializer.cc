@@ -23,6 +23,7 @@
 #include <kdi/server/FragmentMerge.h>
 #include <kdi/server/TabletEventListener.h>
 #include <kdi/server/DirectBlockCache.h>
+#include <kdi/server/TableSchema.h>
 #include <warp/call_or_die.h>
 #include <warp/fs.h>
 #include <warp/log.h>
@@ -48,7 +49,8 @@ void Serializer::addRow(strref_t row)
         rows.push_back(row);
 }
 
-void Serializer::operator()(vector<FragmentCPtr> frags, string const & fn)
+void Serializer::operator()(vector<FragmentCPtr> frags, string const & fn,
+                            TableSchema::Group const & group)
 {
     log("Serializing to %s", fn);
     output.open(fn);
