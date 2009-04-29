@@ -24,6 +24,7 @@
 #include <kdi/server/TabletEventListener.h>
 #include <kdi/server/DirectBlockCache.h>
 #include <kdi/server/TableSchema.h>
+#include <kdi/server/RestrictedFragment.h>
 #include <warp/call_or_die.h>
 #include <warp/fs.h>
 #include <warp/log.h>
@@ -35,6 +36,7 @@ using std::vector;
 using std::map;
 using std::search;
 using warp::Interval;
+using warp::IntervalSet;
 using warp::log;
 using warp::File;
 
@@ -57,7 +59,10 @@ void Serializer::operator()(vector<FragmentCPtr> frags, string const & fn,
     rows.clear();
     
     DirectBlockCache cache;
-    FragmentMerge merge(frags, &cache, ScanPredicate(), 0);
+    ScanPredicate pred;
+    pred.setColumnPredicate(getColumnSet(group.columns));
+    
+    FragmentMerge merge(frags, &cache, pred, 0);
     const size_t maxCells = 10000;
     const size_t maxSize = 10000;
     while(merge.copyMerged(maxCells, maxSize, *this));

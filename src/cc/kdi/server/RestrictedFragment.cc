@@ -25,20 +25,16 @@
 using namespace kdi;
 using namespace kdi::server;
 
-namespace {
-
-    warp::IntervalSet<std::string>
-    getColumnSet(std::vector<std::string> const & families)
+warp::IntervalSet<std::string>
+kdi::server::getColumnSet(std::vector<std::string> const & families)
+{
+    warp::IntervalSet<std::string> r;
+    for(std::vector<std::string>::const_iterator i = families.begin();
+        i != families.end(); ++i)
     {
-        warp::IntervalSet<std::string> r;
-        for(std::vector<std::string>::const_iterator i = families.begin();
-            i != families.end(); ++i)
-        {
-            r.add(warp::makePrefixInterval(*i + ":"));
-        }
-        return r;
+        r.add(warp::makePrefixInterval(*i + ":"));
     }
-
+    return r;
 }
 
 //----------------------------------------------------------------------------
