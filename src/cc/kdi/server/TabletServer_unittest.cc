@@ -163,6 +163,19 @@ namespace {
 
         BOOST_CHECK_EQUAL(reader.next(), false);
     }
+
+    void loadTablet(TabletServer * srv, std::string const & tablet)
+    {
+        TestLoadCb loadCb;
+        std::vector<std::string> tablets;
+        tablets.push_back(tablet);
+        srv->load_async(&loadCb, tablets);
+
+        loadCb.wait();
+
+        BOOST_REQUIRE_EQUAL(loadCb.succeeded, true);
+        BOOST_REQUIRE_EQUAL(loadCb.errorMsg, "");
+    }
 }
 
 BOOST_AUTO_UNIT_TEST(no_table_test)
@@ -292,4 +305,30 @@ BOOST_AUTO_UNIT_TEST(simple_test)
         BOOST_CHECK_EQUAL(unloadCb.errorMsg, "");
     }
 #endif
+}
+
+BOOST_AUTO_UNIT_TEST(wrong_column_test)
+{
+    char const * groups[] = { "meh", 0, 0 };
+    TestConfigReader cfgReader(groups);
+    NullConfigWriter cfgWriter;
+    TabletServer::Bits bits;
+    bits.configReader = &cfgReader;
+    bits.configWriter = &cfgWriter;
+
+    TabletServer server(bits);
+    loadTablet(&server, "test!");
+
+    kdi::rpc::PackedCellWriter writer;
+    writer.append("foo", "bar", 0, "baz");
+    writer.finish();
+
+    TestApplyCb applyCb;
+    server.apply_async(&applyCb, "test", writer.getPacked(),
+                       TabletServer::MAX_TXN, false);
+
+    applyCb.wait();
+    
+    BOOST_CHECK_EQUAL(applyCb.succeeded, false);
+    BOOST_CHECK_EQUAL(applyCb.errorMsg, "UnknownColumnFamilyError");
 }

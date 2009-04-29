@@ -23,6 +23,7 @@
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/Scanner.h>
 #include <kdi/server/ScannerLocator.h>
+#include <kdi/server/errors.h>
 #include <warp/log.h>
 #include <Ice/Ice.h>
 
@@ -50,8 +51,41 @@ public:
 
     void error(std::exception const & err)
     {
-        // Should translate app exceptions to RPC exceptions
-        cb->ice_exception(err);
+        // Translate app exceptions to RPC exceptions
+        try {
+            throw err;
+        }
+
+        catch(::kdi::server::NotLoadedError const &) {
+            cb->ice_exception(::kdi::rpc::TabletNotLoadedError());
+        }
+
+        catch(::kdi::server::BadOrderError const &) {
+            cb->ice_exception(::kdi::rpc::CellDisorderError());
+        }
+        catch(::kdi::server::BadMagicError const &) {
+            cb->ice_exception(::kdi::rpc::InvalidPackedFormatError());
+        }
+        catch(::kdi::server::BadChecksumError const &) {
+            cb->ice_exception(::kdi::rpc::InvalidPackedFormatError());
+        }
+        catch(::kdi::server::UnknownColumnFamilyError const &) {
+            cb->ice_exception(::kdi::rpc::UnknownColumnFamilyError());
+        }
+        catch(::kdi::server::CellDataError const &) {
+            cb->ice_exception(::kdi::rpc::InvalidCellsError());
+        }
+
+        catch(::kdi::server::MutationConflictError const &) {
+            cb->ice_exception(::kdi::rpc::MutationConflictError());
+        }
+        catch(::kdi::server::TransactionError const &) {
+            cb->ice_exception(::kdi::rpc::TransactionError());
+        }
+
+        catch(...) {
+            cb->ice_exception(err);
+        }
         delete this;
     }
 };

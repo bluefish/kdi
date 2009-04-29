@@ -20,6 +20,7 @@
 
 #include <kdi/server/Tablet.h>
 #include <kdi/server/TableSchema.h>
+#include <kdi/server/TabletConfig.h>
 
 using namespace kdi;
 using namespace kdi::server;
@@ -81,3 +82,26 @@ warp::Runnable * Tablet::finishLoading()
     return 0;
 }
 
+void Tablet::getConfigFragments(TabletConfig & cfg) const
+{
+    size_t n = 0;
+    for(fragvec_vec::const_iterator i = fragGroups.begin();
+        i != fragGroups.end(); ++i)
+    {
+        n += i->size();
+    }
+    cfg.fragments.clear();
+    cfg.fragments.resize(n);
+
+    std::vector<TabletConfig::Fragment>::iterator oi = cfg.fragments.begin();
+    for(fragvec_vec::const_iterator i = fragGroups.begin();
+        i != fragGroups.end(); ++i)
+    {
+        for(frag_vec::const_iterator j = i->begin();
+            j != i->end(); ++j, ++oi)
+        {
+            oi->filename = (*j)->getFilename();
+            (*j)->getColumnFamilies(oi->columns);
+        }
+    }
+}

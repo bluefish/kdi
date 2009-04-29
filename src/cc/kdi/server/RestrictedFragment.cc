@@ -52,6 +52,11 @@ RestrictedFragment::RestrictedFragment(
 {
 }
 
+std::string RestrictedFragment::getFilename() const
+{
+    return base->getFilename();
+}
+
 void RestrictedFragment::getColumnFamilies(
     std::vector<std::string> & families) const
 {

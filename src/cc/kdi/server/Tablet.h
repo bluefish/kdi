@@ -38,6 +38,7 @@ namespace server {
 
     // Forward declarations
     class TableSchema;
+    class TabletConfig;
 
 } // namespace server
 } // namespace kdi
@@ -69,16 +70,6 @@ public:
         return rows;
     }
 
-    warp::IntervalPoint<std::string> const & getMinRow() const
-    {
-        return rows.getLowerBound();
-    }
-    
-    warp::IntervalPoint<std::string> const & getMaxRow() const
-    {
-        return rows.getUpperBound();
-    }
-
     bool isLoading() const
     {
         return loading.get();
@@ -97,16 +88,11 @@ public:
     }
 
     void applySchema(TableSchema const & schema);
-
     void deferUntilLoaded(LoadedCb * cb);
-    
     warp::Runnable * finishLoading();
 
-public:
-    /// Get an ordered list of all fragments in the Tablet.
-    /// Fragments shared across multiple groups will be unified in
-    /// a topologically consistent order.
-    void getFragmentNames(std::vector<std::string> & names) const;
+    /// Fill in the fragments part of the TabletConfig.
+    void getConfigFragments(TabletConfig & cfg) const;
 
 private:
     class Loading;

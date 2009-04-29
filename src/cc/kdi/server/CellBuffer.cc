@@ -173,6 +173,11 @@ void CellBuffer::getRows(std::vector<warp::StringRange> & rows) const
     }
 }
 
+std::string CellBuffer::getFilename() const
+{
+    EX_UNIMPLEMENTED_FUNCTION;
+}
+
 size_t CellBuffer::nextBlock(ScanPredicate const & pred, size_t minBlock) const
 {
     if(minBlock == 0)

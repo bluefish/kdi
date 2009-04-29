@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-03-17
+// Created 2009-04-28
 //
 // This file is part of KDI.
 //
@@ -18,30 +18,36 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_CONFIGWRITER_H
-#define KDI_SERVER_CONFIGWRITER_H
+#ifndef KDI_SERVER_FILECONFIGWRITER_H
+#define KDI_SERVER_FILECONFIGWRITER_H
 
-#include <kdi/server/TabletConfig.h>
-#include <vector>
+#include <kdi/server/ConfigWriter.h>
 
 namespace kdi {
 namespace server {
 
-    class ConfigWriter;
+    class FileConfigWriter;
 
 } // namespace server
 } // namespace kdi
 
+
 //----------------------------------------------------------------------------
-// ConfigWriter
+// FileConfigWriter
 //----------------------------------------------------------------------------
-class kdi::server::ConfigWriter
+class kdi::server::FileConfigWriter
+    : public kdi::server::ConfigWriter
 {
 public:
-    virtual void writeConfigs(std::vector<TabletConfig> const & configs) = 0;
+    explicit FileConfigWriter(std::string const & configDir);
 
-protected:
-    ~ConfigWriter() {}
+    virtual void writeConfigs(std::vector<TabletConfig> const & configs);
+
+private:
+    void writeConfig(TabletConfig const & cfg);
+
+private:
+    std::string configDir;
 };
 
-#endif // KDI_SERVER_CONFIGWRITER_H
+#endif // KDI_SERVER_FILECONFIGWRITER_H

@@ -261,6 +261,11 @@ DiskFragment::DiskFragment(std::string const & fn) :
 {
 }
 
+std::string DiskFragment::getFilename() const
+{
+    return fp->getName();
+}
+
 void DiskFragment::getColumnFamilies(
     std::vector<std::string> & families) const
 {

@@ -42,7 +42,7 @@ class Table::TabletLt
     warp::IntervalPointOrder<warp::less> lt;
 
     inline static warp::IntervalPoint<std::string> const &
-    get(Tablet const * x) { return x->getMaxRow(); }
+    get(Tablet const * x) { return x->getRows().getUpperBound(); }
 
     inline static warp::IntervalPoint<std::string> const &
     get(warp::IntervalPoint<std::string> const & x) { return x; }
@@ -68,7 +68,7 @@ Tablet * Table::findContainingTablet(strref_t row) const
         return 0;
     
     warp::IntervalPointOrder<warp::less> lt;
-    if(!lt((*i)->getMinRow(), row))
+    if(!lt((*i)->getRows().getLowerBound(), row))
         return 0;
 
     return *i;
@@ -82,7 +82,7 @@ Tablet * Table::findTablet(warp::IntervalPoint<std::string> const & last) const
         return 0;
     
     warp::IntervalPointOrder<warp::less> lt;
-    if(lt(last, (*i)->getMaxRow()))
+    if(lt(last, (*i)->getRows().getUpperBound()))
         return 0;
 
     return *i;
@@ -96,6 +96,16 @@ void Table::verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) con
         Tablet * tablet = findContainingTablet(*i);
         if(!tablet)
             throw TabletNotLoadedError();
+    }
+}
+
+void Table::verifyColumnFamilies(std::vector<std::string> const & columns) const
+{
+    for(std::vector<std::string>::const_iterator i = columns.begin();
+        i != columns.end(); ++i)
+    {
+        if(!groupIndex.contains(*i))
+            throw UnknownColumnFamilyError();
     }
 }
     
@@ -219,7 +229,7 @@ void Table::getFirstFragmentChain(ScanPredicate const & pred,
         throw TabletNotLoadedError();
     
     warp::IntervalPointOrder<warp::less> lt;
-    if(lt(first, (*i)->getMinRow()))
+    if(lt(first, (*i)->getRows().getLowerBound()))
         throw TabletNotLoadedError();
 
     // Find mapping from predicate to locality groups
@@ -321,7 +331,7 @@ void Table::addLoadedFragments(warp::Interval<std::string> const & rows,
 {
     Tablet * tablet = findTablet(rows.getUpperBound());
     assert(tablet);
-    assert(rows.getLowerBound() == tablet->getMinRow());
+    assert(rows.getLowerBound() == tablet->getRows().getLowerBound());
 
     typedef std::vector<std::string> str_vec;
     typedef std::tr1::unordered_set<int> group_set;

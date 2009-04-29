@@ -155,7 +155,7 @@ namespace warp
         /// filesystems may have more difficulty renaming directories.
         void rename(std::string const & sourceUri,
                     std::string const & targetUri,
-                    bool overwrite = false);
+                    bool overwrite);
     
         /// Get the size of a file in bytes.  Path must exist.
         size_t filesize(std::string const & uri);
