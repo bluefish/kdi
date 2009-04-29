@@ -45,6 +45,8 @@ class kdi::server::Serializer :
     DiskOutput output;
     typedef std::vector<warp::StringRange> frag_vec;
     frag_vec rows;
+
+    void addRow(strref_t row);
     
 public:
     Serializer();

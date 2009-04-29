@@ -193,7 +193,7 @@ void Table::serialize(Serializer & serialize)
         while(serialize.getNextRow(row)) 
         {
             Tablet * t = findContainingTablet(row);
-            row = t->getMaxRow().getValue();
+            row = t->getRows().getUpperBound().getValue();
             t->addFragment(newFrag, groupIndex);
         }
 

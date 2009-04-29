@@ -42,6 +42,12 @@ Serializer::Serializer() :
 {
 }
 
+void Serializer::addRow(strref_t row)
+{
+    if(rows.empty() || row != rows.back())
+        rows.push_back(row);
+}
+
 void Serializer::operator()(vector<FragmentCPtr> frags, string const & fn)
 {
     log("Serializing to %s", fn);
@@ -60,13 +66,13 @@ void Serializer::operator()(vector<FragmentCPtr> frags, string const & fn)
 void Serializer::emitCell(strref_t row, strref_t column, int64_t timestamp,
                           strref_t value)
 {
-    rows.push_back(row);
+    addRow(row);
     output.emitCell(row, column, timestamp, value);
 }
 
 void Serializer::emitErasure(strref_t row, strref_t column, int64_t timestamp)
 {
-    rows.push_back(row);
+    addRow(row);
     output.emitErasure(row, column, timestamp);
 }
 
