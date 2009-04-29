@@ -229,6 +229,11 @@ TabletServer::TabletServer(Bits const & bits) :
         warp::callOrDie(
             boost::bind(&TabletServer::logLoop, this),
             "TabletServer::logLoop", true));
+
+    threads.create_thread(
+        warp::callOrDie(
+            boost::bind(&TabletServer::serializeLoop, this),
+            "TabletServer::serializeLoop", true));
 }
 
 TabletServer::~TabletServer()
@@ -682,10 +687,29 @@ void TabletServer::logLoop()
     }
 }
 
-//void TabletServer::serializeLoop()
-//{
-//    for(;;)
-//    {
+void TabletServer::serializeLoop()
+{
+    std::vector<Table*> tablesForSerializer;
+
+    for(;;)
+    {
+        {
+            lock_t serverLock(serverMutex);
+            if(tablesForSerializer.empty()) 
+            {
+                for(table_map::const_iterator i = tableMap.begin();
+                    i != tableMap.end(); ++i) 
+                {
+                    tablesForSerializer.push_back(i->second);
+                }
+            }
+        }
+
+        Table * t = tablesForSerializer.back();
+        tablesForSerializer.pop_back();
+        t->serialize();
+    }
+}
 //        lock_t serverLock(serverMutex);
 //        if(quit)
 //            break;
