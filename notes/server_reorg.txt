@@ -1258,7 +1258,18 @@ When do tablet configs need to be saved?
   2. After unloading, we need to save with the final fragment list and
      remove the server's log directory and location.
 
-  3. We should "eventually" save the config after serialization and
+  3. Split/join?  Not sure about this one.  It seems like it's not
+     essential for split or joined tablets to have their configs saved
+     immediately, but the update ought to be saved in one operation.
+     We'll need a way to delete old configs as well as save new ones.
+
+     "Same time" saving/deleting is probably too strict.  In a meta
+     table, the configs will be in different rows, potentially on
+     different servers.  Let's not get into that kind of transaction
+     mess.  Figure out a way to store configs so we can recover
+     gracefully.
+
+  4. We should "eventually" save the config after serialization and
      compaction, so that old disk files can be cleaned up by the GC.
 
      A. For serialization, we want to clean up dead files in the log
