@@ -399,9 +399,11 @@ void TabletServer::apply_async(
         commit.tableName.assign(tableName.begin(), tableName.end());
         commit.cells.reset(new CellBuffer(packedCells));
 
-        // Get the rows from the commit
+        // Get the rows and column families from the commit
         std::vector<warp::StringRange> rows;
+        std::vector<std::string> families;
         commit.cells->getRows(rows);
+        commit.cells->getColumnFamilies(families);
 
         // Try to apply the commit
         lock_t serverLock(serverMutex);
@@ -447,6 +449,9 @@ void TabletServer::apply_async(
         
         // Make sure tablets are loaded
         table->verifyTabletsLoaded(rows);
+
+        // Make sure columns fit in with current schema
+        table->verifyColumnFamilies(families);
 
         // Make sure all cells map to loaded tablets and that the
         // transaction will apply.  The transaction can proceed only

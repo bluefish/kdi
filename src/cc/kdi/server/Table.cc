@@ -93,6 +93,16 @@ void Table::verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) con
             throw TabletNotLoadedError();
     }
 }
+
+void Table::verifyColumnFamilies(std::vector<std::string> const & columns) const
+{
+    for(std::vector<std::string>::const_iterator i = columns.begin();
+        i != columns.end(); ++i)
+    {
+        if(!groupIndex.contains(*i))
+            throw UnknownColumnFamilyError();
+    }
+}
     
 void Table::verifyCommitApplies(std::vector<warp::StringRange> const & rows,
                                 int64_t maxTxn) const

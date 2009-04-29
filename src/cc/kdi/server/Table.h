@@ -69,6 +69,10 @@ public:
     /// currently loaded in the table.
     void verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const;
     
+    /// Make sure that the current schema for this table has a place
+    /// for each of the given column families.
+    void verifyColumnFamilies(std::vector<std::string> const & families) const;
+
     /// Make sure that all of the given rows have a commit number less
     /// than or equal to maxTxn.
     void verifyCommitApplies(std::vector<warp::StringRange> const & rows,

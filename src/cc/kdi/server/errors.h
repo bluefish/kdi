@@ -46,6 +46,7 @@ namespace server {
     KDI_SERVER_EXCEPTION(    BadMagicError,               CellDataError);
     KDI_SERVER_EXCEPTION(    BadChecksumError,            CellDataError);
     KDI_SERVER_EXCEPTION(    BadOrderError,               CellDataError);
+    KDI_SERVER_EXCEPTION(    UnknownColumnFamilyError,    CellDataError);
     KDI_SERVER_EXCEPTION(  TransactionError,              ServerError);
     KDI_SERVER_EXCEPTION(    MutationConflictError,       TransactionError);
     KDI_SERVER_EXCEPTION(    ScanConflictError,           TransactionError);
