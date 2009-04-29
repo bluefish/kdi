@@ -146,35 +146,7 @@ Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
 
 typedef boost::mutex::scoped_lock lock_t; 
 
-namespace {
-
-std::string getUniqueTableFile(std::string const & rootDir,
-                               std::string const & tableName)
-{
-    std::string dir = warp::fs::resolve(rootDir, tableName);
-
-    // XXX: this should be cached -- only need to make the directory
-    // once per table
-    warp::fs::makedirs(dir);
-   
-    return warp::File::openUnique(warp::fs::resolve(dir, "$UNIQUE")).second;
-}
-
-class TestFragMaker : public DiskFragmentMaker
-{
-public:
-    std::string newDiskFragment()
-    {
-        std::string rootDir = "memfs:/";
-        std::string tableName = "test";
-        std::string dir = warp::fs::resolve(rootDir, tableName);
-        return warp::File::openUnique(warp::fs::resolve(dir, "$UNIQUE")).second;
-    }
-};
-
-}
-
-void Table::serialize(Serializer & serialize)
+void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
 {
     frag_vec frags;
     unsigned groupIndex = 0;
@@ -203,7 +175,7 @@ void Table::serialize(Serializer & serialize)
     if(frags.empty()) return;
 
     // write out the new disk fragment and load it
-    std::string fn = getUniqueTableFile("/home/tbagby/kdi_test", schema.tableName);
+    std::string fn = fragMaker->make(schema.tableName);
     serialize(frags, fn, group); 
     FragmentCPtr newFrag(new DiskFragment(fn));
 

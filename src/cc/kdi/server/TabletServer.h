@@ -48,6 +48,7 @@ namespace server {
     class ConfigWriter;
     class LogPlayer;
     class FragmentLoader;
+    class FragmentMaker;
     class TableSchema;
     class TabletConfig;
     typedef boost::shared_ptr<Fragment const> FragmentCPtr;
@@ -113,6 +114,7 @@ public:
         warp::WorkerPool   * workerPool;
         ConfigReader       * configReader;
         FragmentLoader     * fragmentLoader;
+        FragmentMaker      * fragmentMaker; 
         ConfigWriter       * configWriter;
         LogPlayer          * logPlayer;
         std::string          serverLogDir;
@@ -122,6 +124,7 @@ public:
             workerPool(0),
             configReader(0),
             fragmentLoader(0),
+            fragmentMaker(0),
             configWriter(0),
             logPlayer(0)
         {}
