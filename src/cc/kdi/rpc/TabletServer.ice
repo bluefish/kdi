@@ -66,6 +66,9 @@ exception InvalidPackedFormatError
 exception CellDisorderError
     extends InvalidCellsError {};
 
+exception UnknownColumnFamilyError
+    extends InvalidCellsError {};
+
 
 exception TransactionError {};
 
