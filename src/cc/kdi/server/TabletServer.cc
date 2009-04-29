@@ -714,7 +714,7 @@ void TabletServer::serializeLoop()
 
         Table * t = tablesForSerializer.back();
         tablesForSerializer.pop_back();
-        t->serialize(serializer);
+        t->serialize(serializer, bits.fragmentMaker);
     }
 }
 

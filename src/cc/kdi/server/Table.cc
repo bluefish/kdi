@@ -146,35 +146,7 @@ Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
 
 typedef boost::mutex::scoped_lock lock_t; 
 
-namespace {
-
-std::string getUniqueTableFile(std::string const & rootDir,
-                               std::string const & tableName)
-{
-    std::string dir = warp::fs::resolve(rootDir, tableName);
-
-    // XXX: this should be cached -- only need to make the directory
-    // once per table
-    warp::fs::makedirs(dir);
-   
-    return warp::File::openUnique(warp::fs::resolve(dir, "$UNIQUE")).second;
-}
-
-class TestFragMaker : public DiskFragmentMaker
-{
-public:
-    std::string newDiskFragment()
-    {
-        std::string rootDir = "memfs:/";
-        std::string tableName = "test";
-        std::string dir = warp::fs::resolve(rootDir, tableName);
-        return warp::File::openUnique(warp::fs::resolve(dir, "$UNIQUE")).second;
-    }
-};
-
-}
-
-void Table::serialize(Serializer & serialize)
+void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
 {
     frag_vec frags;
     unsigned groupIndex = 0;
@@ -199,10 +171,12 @@ void Table::serialize(Serializer & serialize)
         group = schema.groups[groupIndex];
     }
 
+    // nothing to serialize?
     if(frags.empty()) return;
 
-    std::string fn = getUniqueTableFile("/home/tbagby/kdi_test", "this_table");
-    serialize(frags, fn); 
+    // write out the new disk fragment and load it
+    std::string fn = fragMaker->make(schema.tableName);
+    serialize(frags, fn, group); 
     FragmentCPtr newFrag(new DiskFragment(fn));
 
     {
@@ -214,6 +188,13 @@ void Table::serialize(Serializer & serialize)
         if(!std::equal(group.columns.begin(), group.columns.end(),
                        schema.groups[groupIndex].columns.begin())) return;
 
+        // is the set of fragments to replace what we are expecting?
+        frag_vec & memFrags = groupMemFrags[groupIndex];
+        if(memFrags.size() < frags.size()) return;
+        if(!std::equal(frags.begin(), frags.end(), memFrags.begin()))
+            return;
+        
+        // find affected tablets and insert new fragments
         warp::StringRange row;
         while(serialize.getNextRow(row)) 
         {
@@ -221,6 +202,9 @@ void Table::serialize(Serializer & serialize)
             row = t->getRows().getUpperBound().getValue();
             t->addFragment(newFrag, groupIndex);
         }
+
+        // remove the existing mem fragments
+        memFrags.erase(memFrags.begin(), memFrags.begin()+frags.size());
     }
 }
 

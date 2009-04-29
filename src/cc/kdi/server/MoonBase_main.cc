@@ -23,6 +23,7 @@
 #include <kdi/server/ScannerLocator.h>
 #include <warp/options.h>
 #include <warp/filestream.h>
+#include <warp/fs.h>
 #include <warp/log.h>
 #include <ex/exception.h>
 #include <Ice/Ice.h>
@@ -35,6 +36,7 @@
 #include <kdi/server/DirectBlockCache.h>
 #include <kdi/server/NullLogWriter.h>
 #include <kdi/server/NullConfigWriter.h>
+#include <kdi/server/FragmentMaker.h>
 
 using namespace kdi::server;
 using namespace kdi;
@@ -51,6 +53,22 @@ namespace {
         p = 0;
     }
 
+    class RootFragmentMaker : public FragmentMaker
+    {
+        string root;
+
+    public:
+        RootFragmentMaker(string const & root) : root(root) {}
+        ~RootFragmentMaker() {}
+        
+        string make(string const & table) const
+        {
+            string dir = fs::resolve(root, table);
+            return File::openUnique(fs::resolve(dir, "$UNIQUE")).second;
+        }
+
+    };
+        
     class MainServerAssembly
         : private boost::noncopyable
     {
@@ -59,6 +77,7 @@ namespace {
         boost::scoped_ptr<warp::WorkerPool> workerPool;
         boost::scoped_ptr<TabletServer> server;
         boost::scoped_ptr<DirectBlockCache> cache;
+        boost::scoped_ptr<RootFragmentMaker> fragMaker;
 
         struct LoadCb : public TabletServer::LoadCb
         {
@@ -103,17 +122,20 @@ namespace {
         TabletServer * getServer() const { return server.get(); }
         BlockCache * getBlockCache() const { return cache.get(); }
 
-        void init()
+        void init(string const & root)
         {
             workerPool.reset(new WorkerPool(4, "Pool", true));
-            configReader.reset(new TestConfigReader);
+            char const *groups[] = { "group", 0, 0 };
+            configReader.reset(new TestConfigReader(groups));
             configWriter.reset(new NullConfigWriter);
+            fragMaker.reset(new RootFragmentMaker(root));
 
             TabletServer::Bits bits;
             bits.createNewLog = &NullLogWriter::make;
             bits.configReader = configReader.get();
             bits.configWriter = configWriter.get();
             bits.workerPool = workerPool.get();
+            bits.fragmentMaker = fragMaker.get();
             
             server.reset(new TabletServer(bits));
             cache.reset(new DirectBlockCache);
@@ -133,6 +155,7 @@ namespace {
             server.reset();
             configReader.reset();
             configWriter.reset();
+            fragMaker.reset();
             workerPool.reset();
         }
     };
@@ -187,7 +210,7 @@ namespace {
 
             // Make our TabletServer
             MainServerAssembly serverAssembly;
-            serverAssembly.init();
+            serverAssembly.init(root);
 
             // Create TableManagerI object
             Ice::ObjectPtr obj = new TabletServerI(serverAssembly.getServer(),

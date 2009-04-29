@@ -22,6 +22,7 @@
 #define KDI_SERVER_TABLE_H
 
 #include <kdi/server/Fragment.h>
+#include <kdi/server/FragmentMaker.h>
 #include <kdi/server/TableSchema.h>
 #include <kdi/server/CommitRing.h>
 #include <kdi/server/Compactor.h>
@@ -141,7 +142,7 @@ private:
 
 public:
     void applySchema(TableSchema const & s);
-    void serialize(Serializer & serialize);
+    void serialize(Serializer & serialize, FragmentMaker const * fragMaker);
     void compact(Compactor & compactor);
 
 private:
