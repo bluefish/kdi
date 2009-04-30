@@ -149,6 +149,7 @@ void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
 {
     frag_vec frags;
     unsigned groupIndex = 0;
+    size_t curSchema = 0;
     TableSchema::Group group;
 
     {
@@ -168,6 +169,7 @@ void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
 
         frags = longestChain;
         group = schema.groups[groupIndex];
+        curSchema = applySchemaCtr;
     }
 
     // nothing to serialize?
@@ -182,10 +184,7 @@ void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
         lock_t tableLock(tableMutex);
 
         // did the schema change?
-        if(groupIndex > schema.groups.size()) return;
-        if(schema.groups[groupIndex].columns.size() != group.columns.size()) return;
-        if(!std::equal(group.columns.begin(), group.columns.end(),
-                       schema.groups[groupIndex].columns.begin())) return;
+        if(curSchema != applySchemaCtr) return;
 
         // is the set of fragments to replace what we are expecting?
         frag_vec & memFrags = groupMemFrags[groupIndex];
@@ -198,8 +197,11 @@ void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
         while(serialize.getNextRow(row)) 
         {
             Tablet * t = findContainingTablet(row);
-            row = t->getRows().getUpperBound().getValue();
             t->addFragment(newFrag, groupIndex);
+
+            warp::IntervalPoint<std::string> const & p = t->getRows().getUpperBound();
+            if(p.isInfinite()) break; // at the last tablet
+            row = p.getValue();
         }
 
         // remove the existing mem fragments
@@ -207,7 +209,8 @@ void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
     }
 }
 
-Table::Table()
+Table::Table() :
+    applySchemaCtr(0)
 {
 }
 
@@ -376,6 +379,8 @@ void Table::applySchema(TableSchema const & s)
 {
     typedef std::vector<std::string> str_vec;
     typedef std::vector<FragmentCPtr> frag_vec;
+
+    ++applySchemaCtr;
 
     // Copy new schema
     schema = s;

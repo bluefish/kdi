@@ -34,6 +34,7 @@
 #include <kdi/server/errors.h>
 #include <warp/call_or_die.h>
 #include <warp/functional.h>
+#include <warp/log.h>
 #include <boost/scoped_ptr.hpp>
 #include <boost/bind.hpp>
 #include <algorithm>
@@ -712,14 +713,14 @@ void TabletServer::serializeLoop()
             }
         }
 
+        if(tablesForSerializer.empty()) continue;
+
         Table * t = tablesForSerializer.back();
         tablesForSerializer.pop_back();
         t->serialize(serializer, bits.fragmentMaker);
     }
 }
-
-void TabletServer::applySchemas(std::vector<TableSchema> const & schemas)
-{
+void TabletServer::applySchemas(std::vector<TableSchema> const & schemas) {
     // For each schema:
     //   if the referenced table doesn't already exist, create it
     //   tell the table to update its schema

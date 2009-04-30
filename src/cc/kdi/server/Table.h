@@ -162,6 +162,7 @@ private:
 
 private:
     TableSchema schema;
+    size_t applySchemaCtr;
     CommitRing rowCommits;
 
     fragvec_vec groupMemFrags;
