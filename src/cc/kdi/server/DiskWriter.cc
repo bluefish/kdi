@@ -19,7 +19,7 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/local/table_types.h>
-#include <kdi/server/DiskOutput.h>
+#include <kdi/server/DiskWriter.h>
 
 #include <warp/file.h>
 #include <warp/log.h>
@@ -114,9 +114,9 @@ namespace
 }
 
 //----------------------------------------------------------------------------
-// DiskOutput::Impl
+// DiskWriter::Impl
 //----------------------------------------------------------------------------
-class DiskOutput::Impl
+class DiskWriter::Impl
 {
     FilePtr fp;
     FileOutput::handle_t output;
@@ -146,7 +146,7 @@ class DiskOutput::Impl
 public:
     explicit Impl(size_t blockSize);
 
-    void open(string const & fn);
+    void open(FilePtr const & out);
     void close();
 
     void emit(strref_t row, strref_t column, int64_t timestamp, 
@@ -157,9 +157,9 @@ public:
 };
 
 //----------------------------------------------------------------------------
-// DiskOutput::Impl
+// DiskWriter::Impl
 //----------------------------------------------------------------------------
-void DiskOutput::Impl::addIndexEntry(Record const & cbRec)
+void DiskWriter::Impl::addIndexEntry(Record const & cbRec)
 {
     BOOST_STATIC_ASSERT(disk::BlockIndexV1::VERSION == 1);
 
@@ -190,7 +190,7 @@ void DiskOutput::Impl::addIndexEntry(Record const & cbRec)
     ++index.nItems;
 }
 
-void DiskOutput::Impl::addCell(strref_t row, strref_t column, int64_t timestamp, 
+void DiskWriter::Impl::addCell(strref_t row, strref_t column, int64_t timestamp, 
                                strref_t value, bool isErasure)
 {
     BOOST_STATIC_ASSERT(disk::CellBlock::VERSION == 0);
@@ -244,7 +244,7 @@ void DiskOutput::Impl::addCell(strref_t row, strref_t column, int64_t timestamp,
 */
 }
 
-void DiskOutput::Impl::writeCellBlock()
+void DiskWriter::Impl::writeCellBlock()
 {
     Record r;
     block.build(r, &alloc);
@@ -256,7 +256,7 @@ void DiskOutput::Impl::writeCellBlock()
     block.write(output, r);
 }
 
-void DiskOutput::Impl::writeBlockIndex()
+void DiskWriter::Impl::writeBlockIndex()
 {
     BuilderBlock * b = index.pool.getStringBlock();
     uint32_t nFams = 0;
@@ -273,7 +273,7 @@ void DiskOutput::Impl::writeBlockIndex()
     index.write(output, &alloc);
 }
 
-DiskOutput::Impl::Impl(size_t blockSize) :
+DiskWriter::Impl::Impl(size_t blockSize) :
     alloc(),
     blockSize(blockSize),
     cellCount(0)
@@ -282,9 +282,9 @@ DiskOutput::Impl::Impl(size_t blockSize) :
     index.builder.setHeader<disk::BlockIndexV1>();
 }
 
-void DiskOutput::Impl::open(string const & fn)
+void DiskWriter::Impl::open(FilePtr const & out)
 {
-    fp = File::output(fn);
+    fp = out;
     output = FileOutput::make(fp);
 
     block.reset();
@@ -298,7 +298,7 @@ void DiskOutput::Impl::open(string const & fn)
     curColMask = 0;
 }
 
-void DiskOutput::Impl::close()
+void DiskWriter::Impl::close()
 {
     // Flush last cell block if there's something pending
     if(block.nItems) {
@@ -323,7 +323,7 @@ void DiskOutput::Impl::close()
     fp.reset();
 }
 
-void DiskOutput::Impl::emit(strref_t row, strref_t column, int64_t timestamp,
+void DiskWriter::Impl::emit(strref_t row, strref_t column, int64_t timestamp,
                             strref_t value, bool isErasure)
 {
     ++cellCount;
@@ -337,12 +337,12 @@ void DiskOutput::Impl::emit(strref_t row, strref_t column, int64_t timestamp,
     }
 }
 
-size_t DiskOutput::Impl::getDataSize() const
+size_t DiskWriter::Impl::getDataSize() const
 {
     return fp->tell() + block.getDataSize() + index.getDataSize();
 }
 
-size_t DiskOutput::Impl::getCellCount() const
+size_t DiskWriter::Impl::getCellCount() const
 {
     return cellCount;
 }
@@ -350,64 +350,79 @@ size_t DiskOutput::Impl::getCellCount() const
 //----------------------------------------------------------------------------
 // DiskTableWriter
 //----------------------------------------------------------------------------
-DiskOutput::DiskOutput(size_t blockSize) :
-    impl(new DiskOutput::Impl(blockSize)),
-    closed(true)
+DiskWriter::DiskWriter(warp::FilePtr const & out, std::string const & fn,
+                       size_t blockSize) :
+    impl(new DiskWriter::Impl(blockSize)),
+    fn(fn),
+    blockSize_deprecated(blockSize)
+{
+    impl->open(out);
+}
+
+DiskWriter::DiskWriter(size_t blockSize) :
+    blockSize_deprecated(blockSize)
 {
 }
 
-DiskOutput::~DiskOutput()
+DiskWriter::~DiskWriter()
 {
-    if(!closed) close();
+    impl.reset();
 }
 
-void DiskOutput::open(std::string const & fn)
+void DiskWriter::open(std::string const & fn)
 {
-    if(!closed)
-        raise<RuntimeError>("DiskTableWriter already open");
+    if(impl)
+        raise<RuntimeError>("DiskWriter already open");
 
-    impl->open(fn);
-    closed = false;
+    impl.reset(new Impl(blockSize_deprecated));
+    impl->open(File::output(fn));
+    this->fn = fn;
 }
 
-void DiskOutput::close()
+void DiskWriter::close()
 {
-    if(closed)
-        raise<RuntimeError>("DiskOutput already closed");
-
-    impl->close();
-    closed = true;
+    finish();
 }
 
-void DiskOutput::emitCell(strref_t row, strref_t column, int64_t timestamp,
+void DiskWriter::emitCell(strref_t row, strref_t column, int64_t timestamp,
                           strref_t value)
 {
-    if(closed)
-        raise<RuntimeError>("emitCell() to closed DiskOutput");
+    if(!impl)
+        raise<RuntimeError>("emitCell() to closed DiskWriter");
 
     impl->emit(row, column, timestamp, value, false);
 }
 
-void DiskOutput::emitErasure(strref_t row, strref_t column, int64_t timestamp)
+void DiskWriter::emitErasure(strref_t row, strref_t column, int64_t timestamp)
 {
-    if(closed)
-        raise<RuntimeError>("emitErasure() to closed DiskOutput");
+    if(!impl)
+        raise<RuntimeError>("emitErasure() to closed DiskWriter");
 
     impl->emit(row, column, timestamp, StringRange(), true);
 }
 
-size_t DiskOutput::getCellCount() const
+size_t DiskWriter::getCellCount() const
 {
-    if(closed)
-        raise<RuntimeError>("getCellCount() to closed DiskOutput");
+    if(!impl)
+        raise<RuntimeError>("getCellCount() on closed DiskWriter");
 
     return impl->getCellCount();
 }
 
-size_t DiskOutput::getDataSize() const
+size_t DiskWriter::getDataSize() const
 {
-    if(closed)
-        raise<RuntimeError>("getDataSize() to closed DiskOutput");
+    if(!impl)
+        raise<RuntimeError>("getDataSize() on closed DiskWriter");
 
     return impl->getDataSize();
+}
+
+std::string DiskWriter::finish()
+{
+    if(!impl)
+        raise<RuntimeError>("DiskWriter already closed");
+
+    impl->close();
+    impl.reset();
+    return fn;
 }

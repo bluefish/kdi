@@ -18,7 +18,6 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include <kdi/server/DiskOutput.h>
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
 #include <kdi/server/Serializer.h>

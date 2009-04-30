@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-04-03
+// Created 2009-04-29
 //
 // This file is part of KDI.
 //
@@ -18,55 +18,35 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_DISKOUTPUT_H
-#define KDI_SERVER_DISKOUTPUT_H
+#ifndef KDI_SERVER_FRAGMENTWRITERFACTORY_H
+#define KDI_SERVER_FRAGMENTWRITERFACTORY_H
 
-#include <boost/scoped_ptr.hpp>
-#include <kdi/strref.h>
-#include <kdi/server/CellOutput.h>
+#include <memory>
 
 namespace kdi {
 namespace server {
 
-    class DiskOutput;
-    class DiskFragmentMaker;
+    class FragmentWriterFactory;
+
+    // Forward declarations
+    class TableSchema;
+    class FragmentWriter;
 
 } // namespace server
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// DiskOutput
+// FragmentWriterFactory
 //----------------------------------------------------------------------------
-class kdi::server::DiskOutput : public kdi::server::CellOutput
-{
-protected: 
-    class Impl;
-    boost::scoped_ptr<Impl> impl;
-    bool closed;
-    
-public:
-    DiskOutput(size_t blockSize);
-    ~DiskOutput();
-
-    void open(std::string const & fn);
-    void close();
-
-    void emitCell(strref_t row, strref_t column, int64_t timestamp,
-                  strref_t value);
-    void emitErasure(strref_t row, strref_t column,
-                     int64_t timestamp);
-
-    size_t getCellCount() const;
-    size_t getDataSize() const;
-    std::string getFilename() const;
-};
-
-//----------------------------------------------------------------------------
-// DiskFragmentMaker
-//----------------------------------------------------------------------------
-class kdi::server::DiskFragmentMaker
+class kdi::server::FragmentWriterFactory
 {
 public:
-    virtual std::string newDiskFragment() = 0;
+    /// Create a new FragmentWriter for the given TableSchema group.
+    virtual std::auto_ptr<FragmentWriter>
+    start(TableSchema const & schema, int groupIndex) = 0;
+
+protected:
+    ~FragmentWriterFactory() {}
 };
-#endif // KDI_SERVER_DISKOUTPUT_H
+
+#endif // KDI_SERVER_FRAGMENTWRITERFACTORY_H

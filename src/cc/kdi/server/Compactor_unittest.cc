@@ -80,7 +80,7 @@ BOOST_AUTO_TEST_CASE(compact_test)
 
     // Make some test fragments
     {
-        DiskOutput out(128);
+        DiskWriter out(128);
         out.open("memfs:orig_1");
         out.emitCell("row1", "col", 0, "val");
         out.close();

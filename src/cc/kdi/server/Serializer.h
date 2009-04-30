@@ -23,7 +23,7 @@
 
 #include <kdi/server/CellBuffer.h>
 #include <kdi/server/DiskFragment.h>
-#include <kdi/server/DiskOutput.h>
+#include <kdi/server/DiskWriter.h>
 #include <kdi/server/FragmentEventListener.h>
 #include <kdi/server/TableSchema.h>
 #include <kdi/strref.h>
@@ -43,7 +43,7 @@ namespace server {
 class kdi::server::Serializer :
     public server::CellOutput
 {
-    DiskOutput output;
+    DiskWriter output;
     typedef std::vector<warp::StringRange> frag_vec;
     frag_vec rows;
 

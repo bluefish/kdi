@@ -23,7 +23,7 @@
 
 #include <kdi/server/CellBuffer.h>
 #include <kdi/server/DiskFragment.h>
-#include <kdi/server/DiskOutput.h>
+#include <kdi/server/DiskWriter.h>
 #include <kdi/server/FragmentEventListener.h>
 #include <kdi/strref.h>
 #include <boost/function.hpp>
@@ -72,7 +72,7 @@ class kdi::server::Compactor :
     public boost::noncopyable
 {
     BlockCache * cache;
-    DiskOutput writer;
+    DiskWriter writer;
     boost::scoped_ptr<boost::thread> thread;
 
 public:
