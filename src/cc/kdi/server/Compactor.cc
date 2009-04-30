@@ -41,7 +41,7 @@ Compactor::Compactor(BlockCache * cache) :
     writer(64 << 10)
 {
     EX_CHECK_NULL(cache);
-
+/*
     thread.reset(
         new boost::thread(
             warp::callOrDie(
@@ -53,6 +53,7 @@ Compactor::Compactor(BlockCache * cache) :
             )));
 
     log("Compactor %p: created", this);
+*/
 }
 
 void Compactor::compact(RangeFragmentMap const & compactionSet,
