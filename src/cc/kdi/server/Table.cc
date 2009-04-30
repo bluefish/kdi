@@ -199,8 +199,11 @@ void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
         while(serialize.getNextRow(row)) 
         {
             Tablet * t = findContainingTablet(row);
-            row = t->getRows().getUpperBound().getValue();
             t->addFragment(newFrag, groupIndex);
+
+            warp::IntervalPoint<std::string> const & p = t->getRows().getUpperBound();
+            if(p.isInfinite()) break; // at the last tablet
+            row = p.getValue();
         }
 
         // remove the existing mem fragments
