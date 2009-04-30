@@ -58,7 +58,7 @@ void TestConfigReader::readSchemas_async(
         schemas[i].groups.resize(groups.size());
         for(size_t j = 0; j < groups.size(); ++j)
         {
-            schemas[i].groups[j].columns = groups[j];
+            schemas[i].groups[j].families = groups[j];
         }
     }
     cb->done(schemas);

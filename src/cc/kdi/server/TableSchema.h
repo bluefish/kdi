@@ -27,32 +27,49 @@
 namespace kdi {
 namespace server {
 
-    struct TableSchema
-    {
-        struct Group
-        {
-            std::string name;
-            std::string compressor;
-            std::vector<std::string> columns;
-            int64_t maxAge;                   // <= 0 means "keep all"
-            int64_t maxHistory;               // <= 0 means "keep all"
-            size_t diskBlockSize;
-            bool inMemory;
-
-            Group() :
-                maxAge(0),
-                maxHistory(0),
-                diskBlockSize(64<<10),
-                inMemory(false)
-            {
-            }
-        };
-
-        std::string tableName;
-        std::vector<Group> groups;
-    };
+    struct TableSchema;
 
 } // namespace server
+
+    class ScanPredicate;
+
 } // namespace kdi
+
+//----------------------------------------------------------------------------
+// TableSchema
+//----------------------------------------------------------------------------
+struct kdi::server::TableSchema
+{
+    struct Group
+    {
+        std::string name;
+        std::string compressor;
+        std::vector<std::string> families;
+        int64_t maxAge;                   // <= 0 means "keep all"
+        int64_t maxHistory;               // <= 0 means "keep all"
+        size_t diskBlockSize;
+        bool inMemory;
+
+        Group() :
+            maxAge(0),
+            maxHistory(0),
+            diskBlockSize(64<<10),
+            inMemory(false)
+        {
+        }
+
+        /// Get a scan predicate suitable for reading this column
+        /// group.  The column set will be restricted to the families
+        /// in this group.  If maxAge is set, the time set will be
+        /// restricted to cells younger than (NOW - maxAge).  If
+        /// maxHistory is set, the history predicate will be set
+        /// correspondingly.
+        ScanPredicate getPredicate() const;
+    };
+
+    std::string tableName;
+    std::vector<Group> groups;
+};
+
 
 #endif // KDI_SERVER_TABLESCHEMA_H

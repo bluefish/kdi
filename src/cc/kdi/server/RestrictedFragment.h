@@ -34,9 +34,6 @@ namespace server {
     FragmentCPtr makeRestrictedFragment(
         FragmentCPtr const & base,
         std::vector<std::string> const & families);
-
-    warp::IntervalSet<std::string>
-    getColumnSet(std::vector<std::string> const & families);
  
 } // namespace server
 } // namespace kdi

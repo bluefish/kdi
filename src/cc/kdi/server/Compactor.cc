@@ -18,29 +18,28 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include <boost/bind.hpp>
 #include <kdi/server/Compactor.h>
 #include <kdi/server/FragmentMerge.h>
-#include <kdi/server/TabletEventListener.h>
+#include <kdi/server/FragmentWriterFactory.h>
+#include <kdi/server/FragmentWriter.h>
+#include <kdi/server/TableSchema.h>
 #include <warp/call_or_die.h>
-#include <warp/fs.h>
 #include <warp/log.h>
+#include <warp/strutil.h>
+#include <boost/bind.hpp>
+#include <cassert>
 
-using namespace kdi;
 using namespace kdi::server;
-using std::string;
-using std::vector;
-using std::map;
-using std::search;
-using warp::Interval;
 using warp::log;
-using warp::File;
+using warp::sizeString;
 
-Compactor::Compactor(BlockCache * cache) :
-    cache(cache),
-    writer(64 << 10)
+Compactor::Compactor(FragmentWriterFactory * writerFactory,
+                     BlockCache * cache) :
+    writerFactory(writerFactory),
+    cache(cache)
 {
-    EX_CHECK_NULL(cache);
+    assert(writerFactory);
+    assert(cache);
 
     thread.reset(
         new boost::thread(
@@ -55,43 +54,61 @@ Compactor::Compactor(BlockCache * cache) :
     log("Compactor %p: created", this);
 }
 
-void Compactor::compact(RangeFragmentMap const & compactionSet,
-                        DiskFragmentMaker * fragMaker,
+class CompactorOutput
+{
+public:
+    
+
+};
+    
+
+void Compactor::compact(TableSchema const & schema, int groupIndex,
+                        RangeFragmentMap const & compactionSet,
                         RangeFragmentMap & outputSet) 
 {
+    assert(groupIndex >= 0 && (size_t)groupIndex < schema.groups.size());
+    ScanPredicate groupPred = schema.groups[groupIndex].getPredicate();
+
     // Split outputs if they get bigger than this:
     size_t const OUTPUT_SPLIT_SIZE = size_t(1) << 30;  // 1 GB
 
     // Stop the compaction entirely if it gets bigger than this:
-    size_t const MAX_OUTPUT_SIZE = 4 * OUTPUT_SPLIT_SIZE;
+    //size_t const MAX_OUTPUT_SIZE = 4 * OUTPUT_SPLIT_SIZE;
+    
+    size_t totSz = 0;
+    size_t totCells = 0;
 
-    writer.open(fragMaker->newDiskFragment());
+    boost::scoped_ptr<FragmentWriter> writer;
 
     RangeFragmentMap::const_iterator i;
     for(i = compactionSet.begin(); i != compactionSet.end(); ++i)
     {
-        if(writer.getDataSize() > OUTPUT_SPLIT_SIZE)
-        {
-            writer.close();
-            writer.open(fragMaker->newDiskFragment());
-        }
-
         RangeFragmentMap::range_t const & range = i->first;
         RangeFragmentMap::frag_list_t const & frags = i->second;
-
         log("compacting %d frags in range %s", frags.size(), range);
 
-        ScanPredicate rangePred("");
-        rangePred.clipRows(range);
-        FragmentMerge merge(frags, cache, rangePred, 0); 
+        // Open a new writer if we need one
+        if(!writer)
+            writer.reset(writerFactory->start(schema, groupIndex).release());
 
-        const size_t maxCells = 10000000;
-        const size_t maxSize= 10000000;
-        size_t outputSize = writer.getDataSize();
-        while(merge.copyMerged(maxCells, maxSize, writer));
-        outputSize = writer.getDataSize()-outputSize;
-            
-        if(outputSize > 0)
+        // Remember the number of cells output so far
+        size_t beforeCount = writer->getCellCount();
+
+        // Merge everything in this range
+        FragmentMerge merge(frags, cache, groupPred.clipRows(range), 0); 
+        while(merge.copyMerged(size_t(-1), size_t(-1), *writer))
+            ;
+
+        // See if we emitted any new cells for this range
+        size_t cellsInRange = writer->getCellCount() - beforeCount;
+        totCells += cellsInRange;
+
+        // XXX: This stuff is broken.  The outputSet takes
+        // FragmentCPtr, but we won't have one of those until we
+        // finish writing the fragment and load it.  We should
+        // remember the ranges need which fragments, then open them
+        // later.
+        if(cellsInRange)
         {
             // Put the new fragment in the replacement set
         }
@@ -99,11 +116,34 @@ void Compactor::compact(RangeFragmentMap const & compactionSet,
         {
             // Empty replacement set, this range has been compacted away
         }
+
+        // If we've written enough, roll to a new file.
+        size_t dataSz = writer->getDataSize();
+        if(dataSz >= OUTPUT_SPLIT_SIZE)
+        {
+            // XXX: keep track of this file somewhere
+            std::string fn = writer->finish();
+            log("Compactor: wrote %s (%sB)", fn, sizeString(dataSz));
+            writer.reset();
+
+            totSz += dataSz;
+        }
     }
 
-    log("compaction output, cells: %d, size: %d", writer.getCellCount(), writer.getDataSize());
+    // Close last output
+    if(writer)
+    {
+        size_t dataSz = writer->getDataSize();
 
-    writer.close();
+        // XXX: keep track of this file somewhere
+        std::string fn = writer->finish();
+        log("Compactor: wrote %s (%sB)", fn, sizeString(dataSz));
+        writer.reset();
+
+        totSz += dataSz;
+    }
+
+    log("compaction output, cells: %d, size: %d", totCells, totSz);
 }
 
 void Compactor::chooseCompactionSet(RangeFragmentMap const & fragMap,

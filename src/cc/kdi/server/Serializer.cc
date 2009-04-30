@@ -24,7 +24,6 @@
 #include <kdi/server/TabletEventListener.h>
 #include <kdi/server/DirectBlockCache.h>
 #include <kdi/server/TableSchema.h>
-#include <kdi/server/RestrictedFragment.h>
 #include <warp/call_or_die.h>
 #include <warp/fs.h>
 #include <warp/log.h>
@@ -59,8 +58,7 @@ void Serializer::operator()(vector<FragmentCPtr> frags, string const & fn,
     rows.clear();
     
     DirectBlockCache cache;
-    ScanPredicate pred;
-    pred.setColumnPredicate(getColumnSet(group.columns));
+    ScanPredicate pred = group.getPredicate();
     
     FragmentMerge merge(frags, &cache, pred, 0);
     const size_t maxCells = 10000;

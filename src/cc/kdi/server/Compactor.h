@@ -21,26 +21,33 @@
 #ifndef KDI_SERVER_COMPACTOR_H
 #define KDI_SERVER_COMPACTOR_H
 
-#include <kdi/server/CellBuffer.h>
-#include <kdi/server/DiskFragment.h>
-#include <kdi/server/DiskWriter.h>
-#include <kdi/server/FragmentEventListener.h>
+#include <kdi/server/Fragment.h>
 #include <kdi/strref.h>
-#include <boost/function.hpp>
+#include <warp/interval.h>
 #include <boost/noncopyable.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/thread.hpp>
+#include <string>
+#include <map>
+#include <vector>
 
 namespace kdi {
 namespace server {
 
-    class BlockCache;
     class RangeFragmentMap;
     class Compactor;
+
+    // Forward declarations
+    class FragmentWriterFactory;
+    class BlockCache;
+    class TableSchema;
 
 } // namespace server
 } // namespace kdi
 
+//----------------------------------------------------------------------------
+// RangeFragmentMap
+//----------------------------------------------------------------------------
 class kdi::server::RangeFragmentMap 
 {
 public:
@@ -68,11 +75,14 @@ public:
     void addFragment(range_t range, FragmentCPtr const & frag);
 };
 
-class kdi::server::Compactor :
-    public boost::noncopyable
+//----------------------------------------------------------------------------
+// Compactor
+//----------------------------------------------------------------------------
+class kdi::server::Compactor
+    : private boost::noncopyable
 {
-    BlockCache * cache;
-    DiskWriter writer;
+    FragmentWriterFactory * const writerFactory;
+    BlockCache * const cache;
     boost::scoped_ptr<boost::thread> thread;
 
 public:
@@ -91,8 +101,8 @@ public:
     /// the fragments given for that range in the compaction set.  If no
     /// fragment is specified for the output range, the fragments for that range
     /// had no output and can be removed from the ranges tablet set.
-    void compact(RangeFragmentMap const & compactionSet,
-                 DiskFragmentMaker * fragMaker,
+    void compact(TableSchema const & schema, int groupIndex,
+                 RangeFragmentMap const & compactionSet,
                  RangeFragmentMap & outputSet);
     
     /// Choose a more limited compaction set given a set of all the fragment
@@ -102,7 +112,7 @@ public:
 
     void compactLoop();
 
-    Compactor(BlockCache *cache);
+    Compactor(FragmentWriterFactory * writerFactory, BlockCache * cache);
     virtual ~Compactor() {}
 };
 #endif // KDI_SERVER_COMPACTOR_H

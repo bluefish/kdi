@@ -291,10 +291,10 @@ void Table::getPredicateGroups(ScanPredicate const & pred, std::vector<int> & ou
         for(size_t i = 0; i < schema.groups.size(); ++i)
         {
             TableSchema::Group const & g = schema.groups[i];
-            for(std::vector<std::string>::const_iterator j = g.columns.begin();
-                j != g.columns.end(); ++j)
+            for(std::vector<std::string>::const_iterator j = g.families.begin();
+                j != g.families.end(); ++j)
             {
-                if(cols->overlaps(warp::makePrefixInterval(*j)))
+                if(cols->overlaps(warp::makePrefixInterval(*j + ":")))
                 {
                     out.push_back(i);
                     continue;
@@ -331,7 +331,7 @@ void Table::addMemoryFragment(FragmentCPtr const & frag)
         i != fragGroups.end(); ++i)
     {
         groupMemFrags[*i].push_back(
-            frag->getRestricted(schema.groups[*i].columns));
+            frag->getRestricted(schema.groups[*i].families));
     }
 }
 
@@ -369,7 +369,7 @@ void Table::addLoadedFragments(warp::Interval<std::string> const & rows,
             i != fragGroups.end(); ++i)
         {
             tablet->addFragment(
-                (*fi)->getRestricted(schema.groups[*i].columns),
+                (*fi)->getRestricted(schema.groups[*i].families),
                 *i);
         }
     }
@@ -390,10 +390,10 @@ void Table::applySchema(TableSchema const & s)
     for(size_t i = 0; i < schema.groups.size(); ++i)
     {
         typedef std::vector<std::string> str_vec;
-        str_vec const & cols = schema.groups[i].columns;
+        str_vec const & families = schema.groups[i].families;
 
-        for(str_vec::const_iterator j = cols.begin();
-            j != cols.end(); ++j)
+        for(str_vec::const_iterator j = families.begin();
+            j != families.end(); ++j)
         {
             groupIndex.set(*j, i);
         }

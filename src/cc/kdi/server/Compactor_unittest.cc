@@ -20,21 +20,17 @@
 
 #include <unittest/main.h>
 #include <kdi/server/Compactor.h>
+#include <kdi/server/DiskWriterFactory.h>
+#include <kdi/server/DiskWriter.h>
 #include <kdi/server/DiskFragment.h>
-#include <kdi/server/CellBuilder.h>
 #include <kdi/server/DirectBlockCache.h>
-
-#include <warp/fs.h>
+#include <kdi/server/CellBuilder.h>
+#include <kdi/server/TableSchema.h>
 #include <string>
-#include <boost/format.hpp>
 
-
-using namespace kdi;
-using namespace kdi::local;
 using namespace kdi::server;
 using namespace warp;
 using namespace std;
-using boost::format;
 
 namespace {
 
@@ -57,30 +53,24 @@ void addFragment(RangeFragmentMap & rf,
     rf.addFragment(range, frag);
 }
 
-class TestFragMaker : public DiskFragmentMaker
-{
-public:
-    string newDiskFragment()
-    {
-        string rootDir = "memfs:/";
-        string tableName = "test";
-        string dir = warp::fs::resolve(rootDir, tableName);
-        return File::openUnique(warp::fs::resolve(dir, "$UNIQUE")).second;
-    }
-};
-
 }
 
 BOOST_AUTO_TEST_CASE(compact_test)
 {
+    DiskWriterFactory diskFactory("memfs:");
     DirectBlockCache blockCache;
-    Compactor compactor(&blockCache);
+    Compactor compactor(&diskFactory, &blockCache);
+
+    TableSchema schema;
+    schema.tableName = "test";
+    schema.groups.resize(1);
+    schema.groups[0].families.push_back("x");
 
     // Make some test fragments
     {
         DiskWriter out(128);
         out.open("memfs:orig_1");
-        out.emitCell("row1", "col", 0, "val");
+        out.emitCell("row1", "x:col", 0, "val");
         out.close();
     }
     
@@ -100,7 +90,6 @@ BOOST_AUTO_TEST_CASE(compact_test)
     addFragment(candidateSet, "b", "c", f4);
     addFragment(candidateSet, "b", "c", f5);
 
-    TestFragMaker fragMaker;
     compactor.chooseCompactionSet(candidateSet, compactionSet);
-    compactor.compact(compactionSet, &fragMaker, outputSet);
+    compactor.compact(schema, 0, compactionSet, outputSet);
 }

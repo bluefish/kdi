@@ -20,22 +20,10 @@
 
 #include <kdi/server/RestrictedFragment.h>
 #include <kdi/scan_predicate.h>
-#include <warp/string_interval.h>
+#include <kdi/server/misc_util.h>
 
 using namespace kdi;
 using namespace kdi::server;
-
-warp::IntervalSet<std::string>
-kdi::server::getColumnSet(std::vector<std::string> const & families)
-{
-    warp::IntervalSet<std::string> r;
-    for(std::vector<std::string>::const_iterator i = families.begin();
-        i != families.end(); ++i)
-    {
-        r.add(warp::makePrefixInterval(*i + ":"));
-    }
-    return r;
-}
 
 //----------------------------------------------------------------------------
 // RestrictedFragment
@@ -68,7 +56,7 @@ void RestrictedFragment::getColumnFamilies(
 FragmentCPtr RestrictedFragment::getRestricted(
     std::vector<std::string> const & families) const
 {
-    str_iset requested = getColumnSet(families);
+    str_iset requested = getFamilyColumnSet(families);
     requested.intersect(columns);
         
     //if(requested == columns)
@@ -109,8 +97,8 @@ FragmentCPtr kdi::server::makeRestrictedFragment(
 {
     std::vector<std::string> baseFamilies;
     base->getColumnFamilies(baseFamilies);
-    warp::IntervalSet<std::string> cols = getColumnSet(baseFamilies);
-    cols.intersect(getColumnSet(families));
+    warp::IntervalSet<std::string> cols = getFamilyColumnSet(baseFamilies);
+    cols.intersect(getFamilyColumnSet(families));
 
     FragmentCPtr p(new RestrictedFragment(base, cols));
     return p;
