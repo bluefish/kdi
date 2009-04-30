@@ -122,6 +122,7 @@ void Serializer::runLoop()
     
     while(!quit)
     {
+        //Tablet * t = server->getSerializeableTable();
     /*
         if(tablesForSerializer.empty()) 
         {

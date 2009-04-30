@@ -191,7 +191,7 @@ void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
         if(memFrags.size() < frags.size()) return;
         if(!std::equal(frags.begin(), frags.end(), memFrags.begin()))
             return;
-        
+
         // find affected tablets and insert new fragments
         warp::StringRange row;
         while(serialize.getNextRow(row)) 

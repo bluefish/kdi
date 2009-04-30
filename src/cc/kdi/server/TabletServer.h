@@ -166,10 +166,16 @@ public:
     /// loaded.
     Table * findTable(strref_t tableName) const;
 
+    /// Find a Table which is ready to be serialized
+    Table * getSerializableTable() const;
+
 private:
     Table * getTable(strref_t tableName) const;
 
     void logLoop();
+
+    boost::condition serializeCond;
+    bool serializeQuit;
     void serializeLoop();
 
     void applySchemas(std::vector<TableSchema> const & schemas);

@@ -225,6 +225,7 @@ public:
 // TabletServer
 //----------------------------------------------------------------------------
 TabletServer::TabletServer(Bits const & bits) :
+    serializeQuit(false),
     bits(bits)
 {
     threads.create_thread(
@@ -241,6 +242,14 @@ TabletServer::TabletServer(Bits const & bits) :
 TabletServer::~TabletServer()
 {
     logQueue.cancelWaits();
+
+    {
+        // Cancel serializeLoop
+        lock_t serverLock(serverMutex);
+        serializeQuit = true;
+        serializeCond.notify_one();
+    }
+
     threads.join_all();
 
     for(table_map::const_iterator i = tableMap.begin();
@@ -523,6 +532,9 @@ void TabletServer::apply_async(
             return;
         }
 
+        // Signal the serializeLoop
+        serializeCond.notify_one();
+
         serverLock.unlock();
 
         // Callback now
@@ -575,6 +587,14 @@ Table * TabletServer::getTable(strref_t tableName) const
     if(i == tableMap.end())
         throw TableNotLoadedError();
     return i->second;
+}
+
+Table * TabletServer::getSerializableTable() const
+{
+    if(tableMap.empty()) return 0;
+
+    // for now just return the first table
+    return tableMap.begin()->second;
 }
 
 Table * TabletServer::findTable(strref_t tableName) const
@@ -696,30 +716,29 @@ void TabletServer::logLoop()
 
 void TabletServer::serializeLoop()
 {
-    std::vector<Table*> tablesForSerializer;
     Serializer serializer;
 
-    for(;;)
+    // if there isn't any FragmentMaker, we can't very well serialize
+    // exiting silently sort of makes unit testing other parts easier
+    if(!bits.fragmentMaker) {
+        warp::log("serializeLoop: no fragmentMaker, nothing to do");
+        return;
+    }
+    
+    while(!serializeQuit)
     {
+        Table * table = 0;
+
         {
             lock_t serverLock(serverMutex);
-            if(tablesForSerializer.empty()) 
-            {
-                for(table_map::const_iterator i = tableMap.begin();
-                    i != tableMap.end(); ++i) 
-                {
-                    tablesForSerializer.push_back(i->second);
-                }
-            }
+            table = getSerializableTable();
+            if(!table) serializeCond.wait(serverLock);
         }
 
-        if(tablesForSerializer.empty()) continue;
-
-        Table * t = tablesForSerializer.back();
-        tablesForSerializer.pop_back();
-        t->serialize(serializer, bits.fragmentMaker);
+        if(table && !serializeQuit) table->serialize(serializer, bits.fragmentMaker);
     }
 }
+
 void TabletServer::applySchemas(std::vector<TableSchema> const & schemas) {
     // For each schema:
     //   if the referenced table doesn't already exist, create it
