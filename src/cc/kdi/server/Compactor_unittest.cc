@@ -20,9 +20,11 @@
 
 #include <unittest/main.h>
 #include <kdi/server/Compactor.h>
+#include <kdi/server/Serializer.h>
 #include <kdi/server/DiskFragment.h>
 #include <kdi/server/CellBuilder.h>
 #include <kdi/server/DirectBlockCache.h>
+#include <kdi/server/TableSchema.h>
 
 #include <warp/fs.h>
 #include <string>
@@ -103,4 +105,15 @@ BOOST_AUTO_TEST_CASE(compact_test)
     TestFragMaker fragMaker;
     compactor.chooseCompactionSet(candidateSet, compactionSet);
     compactor.compact(compactionSet, &fragMaker, outputSet);
+}
+
+BOOST_AUTO_TEST_CASE(serialize_test)
+{
+    FragmentCPtr f1(new DiskFragment("memfs:orig_1"));
+    vector<FragmentCPtr> frags;
+    frags.push_back(f1);
+
+    Serializer serialize;
+    TableSchema::Group group;
+    serialize(frags, "memfs:serialized_frag", group);
 }
