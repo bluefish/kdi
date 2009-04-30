@@ -47,6 +47,12 @@ class kdi::server::Serializer :
     typedef std::vector<warp::StringRange> frag_vec;
     frag_vec rows;
 
+    boost::mutex mutex;
+    boost::condition cond;
+    bool quit;
+
+    typedef boost::mutex::scoped_lock lock_t; 
+
     void addRow(strref_t row);
     
 public:
@@ -65,6 +71,12 @@ public:
     size_t getCellCount() const;
     size_t getDataSize() const;
 
+    /// Find the next emitted row after row, return false if no more
     bool getNextRow(warp::StringRange & row) const;
+
+    /// Serializer thread functions
+    void runLoop();
+    void stop();
+    void wake();
 };
 #endif // KDI_SERVER_SERIALIZER_H

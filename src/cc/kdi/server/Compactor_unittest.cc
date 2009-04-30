@@ -22,6 +22,7 @@
 #include <kdi/server/Compactor.h>
 #include <kdi/server/DiskWriterFactory.h>
 #include <kdi/server/DiskWriter.h>
+#include <kdi/server/Serializer.h>
 #include <kdi/server/DiskFragment.h>
 #include <kdi/server/DirectBlockCache.h>
 #include <kdi/server/CellBuilder.h>
@@ -92,4 +93,15 @@ BOOST_AUTO_TEST_CASE(compact_test)
 
     compactor.chooseCompactionSet(candidateSet, compactionSet);
     compactor.compact(schema, 0, compactionSet, outputSet);
+}
+
+BOOST_AUTO_TEST_CASE(serialize_test)
+{
+    FragmentCPtr f1(new DiskFragment("memfs:orig_1"));
+    vector<FragmentCPtr> frags;
+    frags.push_back(f1);
+
+    Serializer serialize;
+    TableSchema::Group group;
+    serialize(frags, "memfs:serialized_frag", group);
 }

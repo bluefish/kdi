@@ -40,7 +40,8 @@ using warp::log;
 using warp::File;
 
 Serializer::Serializer() :
-    output(64 << 10)
+    output(64 << 10),
+    quit(false)
 {
 }
 
@@ -111,4 +112,43 @@ bool Serializer::getNextRow(warp::StringRange & row) const
     }
 
     return false;
+}
+
+void Serializer::runLoop()
+{
+    lock_t lock(mutex);
+    
+    while(!quit)
+    {
+        //Tablet * t = server->getSerializeableTable();
+    /*
+        if(tablesForSerializer.empty()) 
+        {
+            for(table_map::const_iterator i = tableMap.begin();
+                i != tableMap.end(); ++i) 
+            {
+                tablesForSerializer.push_back(i->second);
+            }
+        }
+        }
+
+        if(tablesForSerializer.empty()) continue;
+
+        Table * t = tablesForSerializer.back();
+        t->serialize(this);
+    */
+
+        cond.wait(lock);
+    }
+}
+
+void Serializer::stop()
+{
+    quit = true;
+    wake();
+}
+
+void Serializer::wake()
+{
+    cond.notify_one();
 }

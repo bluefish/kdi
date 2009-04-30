@@ -41,6 +41,7 @@ Compactor::Compactor(FragmentWriterFactory * writerFactory,
     assert(writerFactory);
     assert(cache);
 
+/*
     thread.reset(
         new boost::thread(
             warp::callOrDie(
@@ -52,6 +53,7 @@ Compactor::Compactor(FragmentWriterFactory * writerFactory,
             )));
 
     log("Compactor %p: created", this);
+*/
 }
 
 class CompactorOutput
