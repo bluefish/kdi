@@ -29,7 +29,7 @@
 #include <boost/test/test_tools.hpp>
 #include <boost/test/output_test_stream.hpp>
 
-#include <kdi/server/DiskOutput.h>
+#include <kdi/server/DiskWriter.h>
 
 using namespace kdi;
 using namespace kdi::local;
@@ -40,7 +40,7 @@ using boost::format;
 
 BOOST_AUTO_TEST_CASE(output_test)
 {
-    DiskOutput out(128);
+    DiskWriter out(128);
     out.open("memfs:output");
     BOOST_CHECK_EQUAL(0, out.getCellCount());
     size_t startSize = out.getDataSize();
@@ -127,7 +127,7 @@ public:
 class TestFragmentBuilder
 {
     MemoryTablePtr memTable;
-    DiskOutput out;
+    DiskWriter out;
 
 public:
     
@@ -208,7 +208,7 @@ BOOST_AUTO_TEST_CASE(empty_test)
 {
     // Make empty table
     {
-        DiskOutput out(128);
+        DiskWriter out(128);
         out.open("memfs:empty");
         out.close();
     }
@@ -229,7 +229,7 @@ BOOST_AUTO_TEST_CASE(simple_test)
 {
     // Write some cells
     {
-        DiskOutput out(128);
+        DiskWriter out(128);
         out.open("memfs:simple");
         out.emitCell("row1", "col1", 42, "val1");
         out.emitCell("row1", "col2", 42, "val2");
@@ -259,7 +259,7 @@ BOOST_AUTO_TEST_CASE(pred_test)
 {
     // Write some cells
     {
-        DiskOutput out(128);
+        DiskWriter out(128);
         out.open("memfs:pred");
         out.emitCell("row1", "col1", 42, "val1");
         out.emitCell("row1", "col2", 42, "val2");
@@ -284,7 +284,7 @@ BOOST_AUTO_TEST_CASE(pred_test)
 
 BOOST_AUTO_TEST_CASE(rewrite_test)
 {
-    DiskOutput out(128);
+    DiskWriter out(128);
     
     // First fragment
     out.open("memfs:one");
@@ -324,7 +324,7 @@ BOOST_AUTO_UNIT_TEST(rowscan_test)
 
     // Need to test row scans on tiny tables as well
     // Single block tables can be a corner case
-    DiskOutput out(2056);
+    DiskWriter out(2056);
     out.open("memfs:rowscan_small");
     out.emitCell("row1", "col1", 42, "one1");
     out.emitCell("row2", "col2", 42, "one2");
@@ -397,7 +397,7 @@ BOOST_AUTO_UNIT_TEST(filtering_test)
     // Try to make verify that filtering blocks doesn't skip data it shouldn't
     
     // Column filtering of the last block of a row predicate with subsequent row predicate
-    DiskOutput out(1); // Force one cell per block
+    DiskWriter out(1); // Force one cell per block
     out.open("memfs:filtering");
     out.emitCell("row-A", "fam-1:col", 1, "val");
     out.emitCell("row-A", "fam-2:col", 1, "val");
@@ -416,7 +416,7 @@ BOOST_AUTO_UNIT_TEST(filtering_test)
 BOOST_AUTO_UNIT_TEST(advance_test)
 {
     // Column filtering of the last block of a row predicate with subsequent row predicate
-    DiskOutput out(4096);  // Make sure they are all in the same block
+    DiskWriter out(4096);  // Make sure they are all in the same block
     out.open("memfs:advance");
     out.emitCell("row-A", "col1", 1, "val");
     out.emitCell("row-A", "col2", 1, "val");

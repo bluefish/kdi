@@ -18,39 +18,42 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_DISKOUTPUT_H
-#define KDI_SERVER_DISKOUTPUT_H
+#ifndef KDI_SERVER_DISKWRITER_H
+#define KDI_SERVER_DISKWRITER_H
 
-#include <boost/scoped_ptr.hpp>
+#include <kdi/server/FragmentWriter.h>
 #include <kdi/strref.h>
-#include <kdi/server/CellOutput.h>
+#include <warp/file.h>
+#include <boost/scoped_ptr.hpp>
+#include <string>
 
 namespace kdi {
 namespace server {
 
-    class DiskOutput;
+    class DiskWriter;
     class DiskFragmentMaker;
 
 } // namespace server
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// DiskOutput
+// DiskWriter
 //----------------------------------------------------------------------------
-class kdi::server::DiskOutput : public kdi::server::CellOutput
+class kdi::server::DiskWriter
+    : public kdi::server::FragmentWriter
 {
-protected: 
-    class Impl;
-    boost::scoped_ptr<Impl> impl;
-    bool closed;
     
 public:
-    DiskOutput(size_t blockSize);
-    ~DiskOutput();
+    DiskWriter(warp::FilePtr const & out, std::string const & fn,
+               size_t blockSize);
+    ~DiskWriter();
 
-    void open(std::string const & fn);
-    void close();
+public:                         // Deprecated
+    DiskWriter(size_t blockSize)        __attribute__((__deprecated__));
+    void open(std::string const & fn)   __attribute__((__deprecated__));
+    void close()                        __attribute__((__deprecated__));
 
+public:                         // CellOutput API
     void emitCell(strref_t row, strref_t column, int64_t timestamp,
                   strref_t value);
     void emitErasure(strref_t row, strref_t column,
@@ -58,7 +61,16 @@ public:
 
     size_t getCellCount() const;
     size_t getDataSize() const;
-    std::string getFilename() const;
+
+public:                         // FragmentWriter API
+    std::string finish();
+
+private:
+    class Impl;
+    boost::scoped_ptr<Impl> impl;
+    std::string fn;
+
+    size_t blockSize_deprecated;
 };
 
 //----------------------------------------------------------------------------
@@ -69,4 +81,4 @@ class kdi::server::DiskFragmentMaker
 public:
     virtual std::string newDiskFragment() = 0;
 };
-#endif // KDI_SERVER_DISKOUTPUT_H
+#endif // KDI_SERVER_DISKWRITER_H
