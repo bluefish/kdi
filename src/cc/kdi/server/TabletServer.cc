@@ -591,10 +591,24 @@ Table * TabletServer::getTable(strref_t tableName) const
 
 Table * TabletServer::getSerializableTable() const
 {
-    if(tableMap.empty()) return 0;
+    size_t bestScore = 0;
+    Table * bestTable = 0;
 
-    // for now just return the first table
-    return tableMap.begin()->second;
+    for(table_map::const_iterator i = tableMap.begin();
+        i != tableMap.end(); ++i)
+    {
+        lock_t tableLock(i->second->tableMutex);
+
+        size_t tableScore = i->second->getSerializeScore().first;
+
+        if(tableScore > bestScore)
+        {
+            bestScore = tableScore;
+            bestTable = i->second;
+        }
+    }
+
+    return bestTable;
 }
 
 Table * TabletServer::findTable(strref_t tableName) const
