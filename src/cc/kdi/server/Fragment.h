@@ -59,6 +59,9 @@ public:
     /// Get the name of the file backing this Fragment.
     virtual std::string getFilename() const = 0;
 
+    /// Get the approximate size of the data stored in this fragment
+    virtual size_t getDataSize() const = 0;
+
     /// Get the list of column families contained in this Fragment.
     /// The returned families are in no particular order.
     virtual void getColumnFamilies(

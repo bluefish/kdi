@@ -593,6 +593,8 @@ Table * TabletServer::getSerializableTable() const
 {
     size_t bestScore = 0;
     Table * bestTable = 0;
+    
+    const size_t SERIALIZE_MIN_SZ = 128 << 20;
 
     for(table_map::const_iterator i = tableMap.begin();
         i != tableMap.end(); ++i)
@@ -601,7 +603,7 @@ Table * TabletServer::getSerializableTable() const
 
         size_t tableScore = i->second->getSerializeScore().first;
 
-        if(tableScore > bestScore)
+        if(tableScore > SERIALIZE_MIN_SZ && tableScore > bestScore)
         {
             bestScore = tableScore;
             bestTable = i->second;

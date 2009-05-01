@@ -68,6 +68,7 @@ public:
     explicit DiskFragment(std::string const & fn);
 
     virtual std::string getFilename() const;
+    virtual size_t getDataSize() const { return 0; /* NOT IMPLEMENTED YET */ };
 
     virtual void getColumnFamilies(
         std::vector<std::string> & families) const;
