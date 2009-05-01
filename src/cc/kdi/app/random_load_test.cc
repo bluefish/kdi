@@ -147,7 +147,7 @@ inline pair<size_t, size_t> parseRange(string const & s)
 //----------------------------------------------------------------------------
 void seedRand()
 {
-    FilePtr fp = File::input("/dev/random");
+    FilePtr fp = File::input("/dev/urandom");
     unsigned int seed = 0;
     fp->read(&seed, sizeof(seed));
     fp->close();
