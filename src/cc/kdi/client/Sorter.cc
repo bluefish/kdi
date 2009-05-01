@@ -63,14 +63,14 @@ void Sorter::writeSorted()
 
     // Sort the cells (use a stable sort since ordering between
     // duplicates is important)
-    std::stable_sort(idx.begin(), idx.end());
+    std::stable_sort(idx.begin(), idx.end(), CellRefLt());
 
     // Unique the cells.  We want the last cell of each duplicate
     // sequence instead of the first, so we'll unique using reverse
     // iterators.  The end returned by unique will be the first cell
     // to keep in the forward iterator world.
     std::vector<CellRef *>::iterator i =
-        std::unique(idx.rbegin(), idx.rend()).base();
+        std::unique(idx.rbegin(), idx.rend(), CellRefEq()).base();
 
     // Write cells to output
     for(; i != idx.end(); ++i)
