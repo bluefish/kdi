@@ -184,7 +184,7 @@ bool DiskBlockReader::advance(CellKey & nextKey)
     }
     else
     {
-        ++cellIt;
+        if(++cellIt == cellEnd && !getMoreCells()) return false; 
     }
 
     // skip cells that don't match the predicate
