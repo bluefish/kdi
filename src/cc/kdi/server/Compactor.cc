@@ -38,9 +38,6 @@ Compactor::Compactor(FragmentWriterFactory * writerFactory,
     writerFactory(writerFactory),
     cache(cache)
 {
-    assert(writerFactory);
-    assert(cache);
-
 /*
     thread.reset(
         new boost::thread(
