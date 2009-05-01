@@ -154,7 +154,14 @@ std::pair<size_t, unsigned> Table::getSerializeScore() const
     for(fragvec_vec::const_iterator i = groupMemFrags.begin();
         i != groupMemFrags.end(); ++i)
     {
-        size_t groupScore = i->size();
+        size_t groupScore = 0;
+
+        for(frag_vec::const_iterator j = i->begin();
+            j != i->end(); ++j)
+        {
+            groupScore += (*j)->getDataSize();
+        }
+
         if(groupScore > bestScore)
         {
             bestScore = groupScore;

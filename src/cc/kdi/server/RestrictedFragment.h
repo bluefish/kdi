@@ -53,6 +53,7 @@ public:
 
 public:
     virtual std::string getFilename() const;
+    virtual size_t getDataSize() const;
 
     virtual void getColumnFamilies(
         std::vector<std::string> & families) const;

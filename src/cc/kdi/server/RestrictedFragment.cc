@@ -41,6 +41,11 @@ std::string RestrictedFragment::getFilename() const
     return base->getFilename();
 }
 
+size_t RestrictedFragment::getDataSize() const
+{
+    return base->getDataSize();
+}
+
 void RestrictedFragment::getColumnFamilies(
     std::vector<std::string> & families) const
 {
