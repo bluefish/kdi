@@ -58,7 +58,7 @@ Compactor::Compactor(FragmentWriterFactory * writerFactory,
 
 void Compactor::compact(TableSchema const & schema, int groupIndex,
                         RangeFragmentMap const & compactionSet,
-                        RangeFragmentMap & outputSet) 
+                        RangeOutputMap & outputSet) 
 {
     assert(groupIndex >= 0 && (size_t)groupIndex < schema.groups.size());
     ScanPredicate groupPred = schema.groups[groupIndex].getPredicate();
@@ -73,6 +73,8 @@ void Compactor::compact(TableSchema const & schema, int groupIndex,
     size_t totCells = 0;
 
     boost::scoped_ptr<FragmentWriter> writer;
+    typedef std::vector<RangeFragmentMap::range_t> output_t;
+    output_t outputRanges;
 
     RangeFragmentMap::const_iterator i;
     for(i = compactionSet.begin(); i != compactionSet.end(); ++i)
@@ -97,18 +99,15 @@ void Compactor::compact(TableSchema const & schema, int groupIndex,
         size_t cellsInRange = writer->getCellCount() - beforeCount;
         totCells += cellsInRange;
 
-        // XXX: This stuff is broken.  The outputSet takes
-        // FragmentCPtr, but we won't have one of those until we
-        // finish writing the fragment and load it.  We should
-        // remember the ranges need which fragments, then open them
-        // later.
         if(cellsInRange)
         {
             // Put the new fragment in the replacement set
+            outputRanges.push_back(range);
         }
         else
         {
             // Empty replacement set, this range has been compacted away
+            outputSet[range] = "";
         }
 
         // If we've written enough, roll to a new file.
@@ -119,6 +118,13 @@ void Compactor::compact(TableSchema const & schema, int groupIndex,
             std::string fn = writer->finish();
             log("Compactor: wrote %s (%sB)", fn, sizeString(dataSz));
             writer.reset();
+
+            for(output_t::const_iterator i = outputRanges.begin();
+                i != outputRanges.end(); ++i)
+            {
+                outputSet[*i] = fn;
+            }
+            outputSet.clear();
 
             totSz += dataSz;
         }
@@ -133,6 +139,13 @@ void Compactor::compact(TableSchema const & schema, int groupIndex,
         std::string fn = writer->finish();
         log("Compactor: wrote %s (%sB)", fn, sizeString(dataSz));
         writer.reset();
+
+        for(output_t::const_iterator i = outputRanges.begin();
+            i != outputRanges.end(); ++i)
+        {
+            outputSet[*i] = fn;
+        }
+        outputSet.clear();
 
         totSz += dataSz;
     }

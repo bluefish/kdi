@@ -83,7 +83,7 @@ BOOST_AUTO_TEST_CASE(compact_test)
     
     RangeFragmentMap candidateSet;
     RangeFragmentMap compactionSet;
-    RangeFragmentMap outputSet;
+    RangeOutputMap outputSet;
 
     addFragment(candidateSet, "a", "b", f1);
     addFragment(candidateSet, "a", "b", f2);

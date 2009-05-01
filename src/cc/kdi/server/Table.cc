@@ -250,12 +250,13 @@ void Table::compact(Compactor & compactor)
         }
     }
 
-    RangeFragmentMap outputSet;
+    RangeOutputMap outputSet;
     compactor.compact(schema, 0, compactionSet, outputSet);
         
     {
         lock_t tableLock(tableMutex);
-        // replace fragments
+
+        
     }
 }
 

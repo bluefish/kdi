@@ -76,6 +76,16 @@ public:
     void addFragments(range_t range, frag_list_t const & frags);
 };
 
+namespace kdi {
+namespace server {
+
+typedef std::map<warp::Interval<std::string>, std::string, 
+                 kdi::server::RangeFragmentMap::RangeLt> 
+        RangeOutputMap;
+
+}
+}
+
 //----------------------------------------------------------------------------
 // Compactor
 //----------------------------------------------------------------------------
@@ -104,7 +114,7 @@ public:
     /// had no output and can be removed from the ranges tablet set.
     void compact(TableSchema const & schema, int groupIndex,
                  RangeFragmentMap const & compactionSet,
-                 RangeFragmentMap & outputSet);
+                 RangeOutputMap & outputSet);
     
     /// Choose a more limited compaction set given a set of all the fragment
     /// sequences from a single table.
