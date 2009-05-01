@@ -76,6 +76,7 @@ private:
     ::kdi::server::ScannerLocator * locator;
     boost::mutex mutex;
     size_t scanId;
+    int64_t scanSeq;
     bool inUse;
 };
 

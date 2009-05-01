@@ -48,6 +48,7 @@ public:
         strref_t cells = scanner->getPackedCells();
 
         ::kdi::rpc::ScanResult result;
+        result.scanSeq = scannerI->scanSeq;
         result.scanTxn = scanner->getScanTransaction();
         result.scanComplete = !scanner->scanContinues();
         result.scanClosed = (result.scanComplete || forceClose);
@@ -55,13 +56,16 @@ public:
         if(result.scanClosed)
             scannerI->doClose();
 
+        resetUseFlag();
+
+        //log("ScannerI %d seq %d: scanMore response",
+        //    scannerI->scanId, result.scanSeq);
         cb->ice_response(
             RpcPackedCells(
                 reinterpret_cast<Ice::Byte const *>(cells.begin()),
                 reinterpret_cast<Ice::Byte const *>(cells.end())),
             result);
 
-        resetUseFlag();
         delete this;
     }
 
@@ -77,6 +81,7 @@ private:
     {
         boost::mutex::scoped_lock lock(scannerI->mutex);
         scannerI->inUse = false;
+        scannerI->scanSeq += 1;
     }
 
 private:
@@ -95,6 +100,7 @@ ScannerI::ScannerI(::kdi::server::ScannerPtr const & scanner,
     scanner(scanner),
     locator(locator),
     scanId(scanId),
+    scanSeq(1),
     inUse(false)
 {
 }
@@ -103,11 +109,21 @@ void ScannerI::scanMore_async(RpcScanMoreCbPtr const & cb,
                               RpcScanParams const & params,
                               Ice::Current const & cur)
 {
-    //log("ScannerI %d: scanMore", scanId);
+    //log("ScannerI %d seq r=%d e=%d: scanMore",
+    //    scanId, params.scanSeq, scanSeq);
 
     boost::mutex::scoped_lock lock(mutex);
+    if(params.scanSeq != scanSeq)
+    {
+        log("ScannerI %d: seq mismatch, requested %d, expected %d",
+            scanId, params.scanSeq, scanSeq);
+        cb->ice_exception(::kdi::rpc::ScannerSequenceError());
+        return;
+    }
     if(inUse)
     {
+        log("ScannerI %d: seq %d, already in use",
+            scanId, scanSeq);
         cb->ice_exception(::kdi::rpc::ScannerBusyError());
         return;
     }
@@ -123,7 +139,7 @@ void ScannerI::scanMore_async(RpcScanMoreCbPtr const & cb,
 void ScannerI::close_async(RpcCloseCbPtr const & cb,
                            Ice::Current const & cur)
 {
-    log("ScannerI %d: close", scanId);
+    //log("ScannerI %d: close", scanId);
 
     boost::mutex::scoped_lock lock(mutex);
     if(inUse)
@@ -134,6 +150,7 @@ void ScannerI::close_async(RpcCloseCbPtr const & cb,
 
     doClose();
 
+    //log("ScannerI %d: close response", scanId);
     cb->ice_response();
 }
 

@@ -33,6 +33,7 @@ const long kMaxTxn = 9223372036854775807;
 
 struct ScanParams
 {
+    long scanSeq;
     int maxCells;    // optional, approx cell limit for next batch
     int maxSize;     // optional, approx byte limit for next batch
     bool close;      // close scanner after next batch
@@ -40,6 +41,7 @@ struct ScanParams
 
 struct ScanResult
 {
+    long scanSeq;
     long scanTxn;       // server txn as of this batch
     bool scanComplete;  // last batch in scan; implies scanClosed
     bool scanClosed;    // scanner was closed on server
@@ -56,6 +58,8 @@ exception ScanModeError {};
 exception InvalidPredicateError {};
 
 exception ScannerBusyError {};
+
+exception ScannerSequenceError {};
 
 
 exception InvalidCellsError {};
@@ -119,7 +123,8 @@ interface Scanner
                   out ScanResult result)
         throws TabletNotLoadedError,
                ScanConflictError,
-               ScannerBusyError;
+               ScannerBusyError,
+               ScannerSequenceError;
 
     /// Close an in-progress scan.  This will free up any server
     /// resources associated with the scanner.  This call isn't
@@ -184,7 +189,8 @@ interface TabletServer
               out Scanner * continuedScanner)
         throws TabletNotLoadedError,
                InvalidPredicateError,
-               ScanModeError;
+               ScanModeError,
+               ScannerSequenceError;
 };
 
 }; // module rpc

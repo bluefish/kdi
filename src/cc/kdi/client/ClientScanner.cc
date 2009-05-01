@@ -34,12 +34,14 @@ using warp::log;
 ClientScanner::ClientScanner(
     kdi::rpc::TabletServerPrx const & server,
     std::string const & tableName,
-    ScanPredicate const & pred)
+    ScanPredicate const & pred) :
+    scanSeq(0)
 {
     std::ostringstream oss;
     oss << pred;
 
     kdi::rpc::ScanParams params;
+    params.scanSeq = scanSeq;
     params.maxCells = 128<<10;
     params.maxSize = 128<<10;
     params.close = false;
@@ -77,6 +79,7 @@ bool ClientScanner::get(Cell & x)
             return false;
 
         kdi::rpc::ScanParams params;
+        params.scanSeq = ++scanSeq;
         params.maxCells = 128<<10;
         params.maxSize = 128<<10;
         params.close = false;
@@ -92,6 +95,14 @@ void ClientScanner::resetReader()
     //log("Got %d bytes, txn=%d, complete=%s, closed=%s",
     //    packed.size(), result.scanTxn, result.scanComplete,
     //    result.scanClosed);
+
+    if(result.scanSeq != scanSeq)
+    {
+        std::ostringstream oss;
+        oss << "got wrong scanSeq: want=" << scanSeq
+            << ", got=" << result.scanSeq;
+        throw std::runtime_error(oss.str());
+    }
 
     reader.reset(warp::binary_data(&packed[0], packed.size()));
     if(!reader.verifyMagic())

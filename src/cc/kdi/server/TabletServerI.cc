@@ -146,6 +146,7 @@ public:
     {
         strref_t cells = scanner->getPackedCells();
         ::kdi::rpc::ScanResult result;
+        result.scanSeq = 0;
         result.scanTxn = scanner->getScanTransaction();
         result.scanComplete = !scanner->scanContinues();
         result.scanClosed = true;
@@ -259,6 +260,13 @@ void TabletServerI::scan_async(
         default:
             cb->ice_exception(::kdi::rpc::ScanModeError());
             return;
+    }
+
+    // Validate scan sequence
+    if(params.scanSeq != 0)
+    {
+        cb->ice_exception(::kdi::rpc::ScannerSequenceError());
+        return;
     }
 
     // Parse the scan predicate

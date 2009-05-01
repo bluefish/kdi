@@ -61,6 +61,7 @@ private:
     kdi::rpc::PackedCells packed;
     kdi::rpc::PackedCellReader reader;
     kdi::rpc::ScanResult result;
+    int64_t scanSeq;
 };
 
 
