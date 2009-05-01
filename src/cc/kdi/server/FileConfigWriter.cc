@@ -101,10 +101,10 @@ void FileConfigWriter::writeConfig(TabletConfig const & cfg)
         x.set(str(format("frag.i%d.filename") % i),
               cfg.fragments[i].filename);
 
-        for(size_t j = 0; j < cfg.fragments[i].columns.size(); ++j)
+        for(size_t j = 0; j < cfg.fragments[i].families.size(); ++j)
         {
             x.set(str(format("frag.i%d.column.i%d") % i % j),
-                  cfg.fragments[i].columns[j]);
+                  cfg.fragments[i].families[j]);
         }
     }  
 

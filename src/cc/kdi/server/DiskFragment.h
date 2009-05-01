@@ -63,9 +63,11 @@ class kdi::server::DiskFragment
     warp::FilePtr fp;
     oort::FileInput::handle_t input;
     kdi::local::CacheRecord indexRec;
+    std::string filename;
 
 public:
     explicit DiskFragment(std::string const & fn);
+    DiskFragment(std::string const & loadPath, std::string const & filename);
 
     virtual std::string getFilename() const;
     virtual size_t getDataSize() const { return 0; /* NOT IMPLEMENTED YET */ };

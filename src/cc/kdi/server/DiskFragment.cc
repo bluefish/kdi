@@ -257,13 +257,23 @@ DiskBlock::makeReader(ScanPredicate const & pred) const
 DiskFragment::DiskFragment(std::string const & fn) :
     fp(File::input(fn)),
     input(FileInput::make(fp)),
-    indexRec(IndexCache::getGlobal(), fn)
+    indexRec(IndexCache::getGlobal(), fn),
+    filename(fn)
+{
+}
+
+DiskFragment::DiskFragment(std::string const & loadPath,
+                           std::string const & filename) :
+    fp(File::input(loadPath)),
+    input(FileInput::make(fp)),
+    indexRec(IndexCache::getGlobal(), loadPath),
+    filename(filename)
 {
 }
 
 std::string DiskFragment::getFilename() const
 {
-    return fp->getName();
+    return filename;
 }
 
 void DiskFragment::getColumnFamilies(

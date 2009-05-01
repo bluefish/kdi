@@ -43,6 +43,7 @@
 
 using namespace kdi;
 using namespace kdi::server;
+using warp::log;
 
 namespace {
     typedef boost::mutex::scoped_lock lock_t;
@@ -529,6 +530,9 @@ void TabletServer::apply_async(
 
         tableLock.unlock();
 
+        // Signal the serializeLoop
+        serializeCond.notify_one();
+
         // Push the cells to the log queue
         logPendingSz += commit.cells->getDataSize();
         logQueue.push(commit);
@@ -540,8 +544,6 @@ void TabletServer::apply_async(
             return;
         }
 
-        // Signal the serializeLoop
-        serializeCond.notify_one();
 
         serverLock.unlock();
 
@@ -746,12 +748,14 @@ void TabletServer::logLoop()
 
 void TabletServer::serializeLoop()
 {
+    //log("Serialize: begin");
+
     Serializer serializer;
 
     // if there isn't any FragmentMaker, we can't very well serialize
     // exiting silently sort of makes unit testing other parts easier
     if(!bits.createNewFrag) {
-        warp::log("serializeLoop: no fragmentMaker, nothing to do");
+        log("serializeLoop: no fragmentMaker, nothing to do");
         return;
     }
     
@@ -760,13 +764,27 @@ void TabletServer::serializeLoop()
         Table * table = 0;
 
         {
+            //log("Serialize: getTable");
             lock_t serverLock(serverMutex);
             table = getSerializableTable();
-            if(!table) serializeCond.wait(serverLock);
+            if(!table)
+            {
+                //log("Serialize: wait");
+                serializeCond.wait(serverLock);
+                //log("Serialize: awake");
+            }
         }
 
-        if(table && !serializeQuit) table->serialize(serializer, bits.createNewFrag);
+        if(table && !serializeQuit)
+        {
+            //log("Serialize: serialize");
+            table->serialize(serializer, bits.createNewFrag,
+                             bits.fragmentLoader);
+            //log("Serialize: done");
+        }
     }
+
+    //log("Serialize: end");
 }
 
 void TabletServer::compactLoop()
@@ -934,8 +952,8 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
             fvec const & frags = i->config->fragments;
             for(fvec::const_iterator f = frags.begin(); f != frags.end(); ++f)
             {
-                FragmentCPtr frag = bits.fragmentLoader->load(
-                    f->filename, f->columns);
+                FragmentCPtr frag = bits.fragmentLoader->load(f->filename);
+                frag = frag->getRestricted(f->families);
                 i->addLoadedFragment(frag);
             }
         }

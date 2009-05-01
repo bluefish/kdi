@@ -37,6 +37,8 @@
 #include <kdi/server/NullLogWriter.h>
 #include <kdi/server/NullConfigWriter.h>
 #include <kdi/server/DiskWriterFactory.h>
+#include <kdi/server/CachedFragmentLoader.h>
+#include <kdi/server/DiskLoader.h>
 
 using namespace kdi::server;
 using namespace kdi;
@@ -62,6 +64,9 @@ namespace {
         boost::scoped_ptr<TabletServer> server;
         boost::scoped_ptr<DirectBlockCache> cache;
         boost::scoped_ptr<DiskWriterFactory> fragMaker;
+
+        boost::scoped_ptr<DiskLoader> diskLoader;
+        boost::scoped_ptr<CachedFragmentLoader> cachedLoader;
 
         struct LoadCb : public TabletServer::LoadCb
         {
@@ -114,12 +119,16 @@ namespace {
             configWriter.reset(new NullConfigWriter);
             fragMaker.reset(new DiskWriterFactory(root));
 
+            diskLoader.reset(new DiskLoader(root));
+            cachedLoader.reset(new CachedFragmentLoader(diskLoader.get()));
+
             TabletServer::Bits bits;
             bits.createNewLog = &NullLogWriter::make;
             bits.configReader = configReader.get();
             bits.configWriter = configWriter.get();
             bits.workerPool = workerPool.get();
             bits.createNewFrag = fragMaker.get();
+            bits.fragmentLoader = cachedLoader.get();
             
             server.reset(new TabletServer(bits));
             cache.reset(new DirectBlockCache);
@@ -137,6 +146,8 @@ namespace {
         {
             cache.reset();
             server.reset();
+            cachedLoader.reset();
+            diskLoader.reset();
             configReader.reset();
             configWriter.reset();
             fragMaker.reset();

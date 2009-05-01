@@ -39,7 +39,7 @@ class kdi::server::DiskWriterFactory
     : public kdi::server::FragmentWriterFactory
 {
 public:
-    DiskWriterFactory(std::string const & dataRoot) :
+    explicit DiskWriterFactory(std::string const & dataRoot) :
         dataRoot(dataRoot) {}
 
     virtual std::auto_ptr<FragmentWriter>

@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-03-17
+// Created 2009-05-01
 //
 // This file is part of KDI.
 //
@@ -18,31 +18,17 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_FRAGMENTLOADER_H
-#define KDI_SERVER_FRAGMENTLOADER_H
+#include <kdi/server/DiskLoader.h>
+#include <kdi/server/DiskFragment.h>
+#include <warp/fs.h>
 
-#include <kdi/server/Fragment.h>
-#include <string>
+using namespace kdi::server;
+using namespace warp;
 
-namespace kdi {
-namespace server {
-
-    class FragmentLoader;
-
-} // namespace server
-} // namespace kdi
-
-//----------------------------------------------------------------------------
-// FragmentLoader
-//----------------------------------------------------------------------------
-class kdi::server::FragmentLoader
+FragmentCPtr DiskLoader::load(std::string const & filename)
 {
-public:
-    /// Load the fragment from the given file.
-    virtual FragmentCPtr load(std::string const & filename) = 0;
-
-protected:
-    ~FragmentLoader() {}
-};
-
-#endif // KDI_SERVER_FRAGMENTLOADER_H
+    FragmentCPtr p(
+        new DiskFragment(fs::resolve(dataRoot, filename), filename)
+        );
+    return p;
+}
