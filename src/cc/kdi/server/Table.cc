@@ -256,7 +256,25 @@ void Table::compact(Compactor & compactor)
     {
         lock_t tableLock(tableMutex);
 
-        
+        for(RangeFragmentMap::const_iterator i = compactionSet.begin();
+            i != compactionSet.end(); ++i)
+        {
+            RangeOutputMap::const_iterator j;
+            j = outputSet.find(i->first);
+            if(j != outputSet.end())
+            {
+                std::string const & newFragment = j->second;
+                if(newFragment == "")
+                {
+                    // No compation output, remove the fragments
+                }
+                else
+                {
+                    // Load the new fragment and insert it
+                    Fragment *f = new DiskFragment(newFragment);
+                }
+            }
+        }
     }
 }
 
