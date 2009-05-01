@@ -24,10 +24,32 @@
 #include <kdi/server/CellOutput.h>
 #include <kdi/CellKey.h>
 #include <warp/util.h>
+#include <warp/ticks.h>
 #include <boost/scoped_ptr.hpp>
 
 using namespace kdi;
 using namespace kdi::server;
+
+namespace {
+
+    struct TimeoutTicks
+    {
+        uint64_t nTicks;
+        TimeoutTicks()
+        {
+            // Timeout after 500ms
+            nTicks = warp::estimateTickRate() / 2;
+        }
+    };
+
+    inline uint64_t getTimeoutTicks()
+    {
+        static TimeoutTicks x;
+        return x.nTicks;
+    }
+
+}
+
 
 //----------------------------------------------------------------------------
 // FragmentMerge::Input
@@ -180,9 +202,7 @@ FragmentMerge::~FragmentMerge()
 bool FragmentMerge::copyMerged(size_t maxCells, size_t maxSize,
                                CellOutput & out)
 {
-    size_t const MAX_BLOCKS = 64;
-    size_t nBlocks = 0;
-
+    uint64_t endTicks = warp::getTicks() + getTimeoutTicks();
     while(!heap.empty())
     {
         Input * top = heap.top();
@@ -207,7 +227,7 @@ bool FragmentMerge::copyMerged(size_t maxCells, size_t maxSize,
            out.getDataSize() >= maxSize)
             break;
 
-        if(++nBlocks >= MAX_BLOCKS)
+        if(warp::getTicks() >= endTicks)
             break;
     }
 
