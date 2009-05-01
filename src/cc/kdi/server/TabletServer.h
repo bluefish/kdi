@@ -170,6 +170,9 @@ public:
     /// Find a Table which is ready to be serialized
     Table * getSerializableTable() const;
 
+    /// Find a Table which is ready to be compacted
+    Table * getCompactableTable() const;
+
 private:
     Table * getTable(strref_t tableName) const;
 
@@ -178,6 +181,10 @@ private:
     boost::condition serializeCond;
     bool serializeQuit;
     void serializeLoop();
+
+    boost::condition compactCond;
+    bool compactQuit;
+    void compactLoop();
 
     void applySchemas(std::vector<TableSchema> const & schemas);
     void loadTablets(std::vector<TabletConfig> const & configs);
