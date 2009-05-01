@@ -232,6 +232,36 @@ void Table::serialize(Serializer & serialize,
     }
 }
 
+void Table::compact(Compactor & compactor)
+{
+    RangeFragmentMap compactionSet;
+
+    {
+        lock_t tableLock(tableMutex);
+
+        int groupIndex = 0;
+
+        for(tablet_vec::const_iterator i = tablets.begin();
+            i != tablets.end(); ++i)
+        {
+            frag_vec frags;
+            (*i)->getFragments(frags, groupIndex);
+            if(frags.size() > 1)
+            {
+                compactionSet.addFragments((*i)->getRows(), frags);
+            }
+        }
+    }
+
+    RangeFragmentMap outputSet;
+    compactor.compact(schema, 0, compactionSet, outputSet);
+        
+    {
+        lock_t tableLock(tableMutex);
+        // replace fragments
+    }
+}
+
 Table::Table() :
     applySchemaCtr(0)
 {

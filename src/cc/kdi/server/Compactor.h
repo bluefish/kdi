@@ -73,6 +73,7 @@ public:
     const_iterator end() const { return rangeMap.end(); }
 
     void addFragment(range_t range, FragmentCPtr const & frag);
+    void addFragments(range_t range, frag_list_t const & frags);
 };
 
 //----------------------------------------------------------------------------

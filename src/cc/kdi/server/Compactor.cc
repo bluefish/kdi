@@ -172,3 +172,13 @@ void RangeFragmentMap::addFragment(range_t range, FragmentCPtr const & f)
         i->second.push_back(f);
     }
 }
+
+void RangeFragmentMap::addFragments(range_t range, frag_list_t const & frags) 
+{
+    for(frag_list_t::const_iterator i = frags.begin();
+        i != frags.end(); ++i)
+    {
+        addFragment(range, *i);   
+    }
+}
+

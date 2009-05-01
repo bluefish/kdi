@@ -24,7 +24,9 @@
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
 #include <kdi/server/Fragment.h>
+#include <kdi/server/DirectBlockCache.h>
 #include <kdi/server/Serializer.h>
+#include <kdi/server/Compactor.h>
 
 #include <kdi/server/FragmentLoader.h>
 #include <kdi/server/LogPlayer.h>
@@ -227,6 +229,7 @@ public:
 //----------------------------------------------------------------------------
 TabletServer::TabletServer(Bits const & bits) :
     serializeQuit(false),
+    compactQuit(false),
     bits(bits)
 {
     threads.create_thread(
@@ -238,6 +241,11 @@ TabletServer::TabletServer(Bits const & bits) :
         warp::callOrDie(
             boost::bind(&TabletServer::serializeLoop, this),
             "TabletServer::serializeLoop", true));
+
+    threads.create_thread(
+        warp::callOrDie(
+            boost::bind(&TabletServer::compactLoop, this),
+            "TabletServer::compactLoop", true));
 }
 
 TabletServer::~TabletServer()
@@ -615,6 +623,12 @@ Table * TabletServer::getSerializableTable() const
     return bestTable;
 }
 
+Table * TabletServer::getCompactableTable() const
+{
+    if(tableMap.empty()) return 0;
+    return tableMap.begin()->second;
+}
+
 Table * TabletServer::findTable(strref_t tableName) const
 {
     lock_t serverLock(serverMutex);
@@ -771,6 +785,30 @@ void TabletServer::serializeLoop()
     }
 
     //log("Serialize: end");
+}
+
+void TabletServer::compactLoop()
+{
+    DirectBlockCache blockCache;
+    Compactor compactor(bits.createNewFrag, &blockCache);
+
+    if(!bits.createNewFrag) {
+        warp::log("compactLoop: no fragmentMaker, nothing to do");
+        return;
+    }
+
+    while(!compactQuit)
+    {
+        Table * table = 0;
+
+        {
+            lock_t serverLock(serverMutex);
+            table = getCompactableTable();
+            if(!table) compactCond.wait(serverLock);
+        }
+
+        if(table && !compactQuit) table->compact(compactor);
+    }
 }
 
 void TabletServer::applySchemas(std::vector<TableSchema> const & schemas) {
