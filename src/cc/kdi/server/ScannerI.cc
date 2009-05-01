@@ -103,7 +103,7 @@ void ScannerI::scanMore_async(RpcScanMoreCbPtr const & cb,
                               RpcScanParams const & params,
                               Ice::Current const & cur)
 {
-    log("ScannerI %d: scanMore", scanId);
+    //log("ScannerI %d: scanMore", scanId);
 
     boost::mutex::scoped_lock lock(mutex);
     if(inUse)

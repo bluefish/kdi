@@ -212,8 +212,8 @@ void TabletServerI::apply_async(
     bool waitForSync,
     Ice::Current const & cur)
 {
-    log("TabletServerI: apply %s, %d bytes, maxTxn=%d, wait=%s",
-        table, (cells.second - cells.first), commitMaxTxn, waitForSync);
+    //log("TabletServerI: apply %s, %d bytes, maxTxn=%d, wait=%s",
+    //    table, (cells.second - cells.first), commitMaxTxn, waitForSync);
 
     server->apply_async(
         new ApplyCb(cb),

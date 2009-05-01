@@ -44,7 +44,7 @@ ClientScanner::ClientScanner(
     params.maxSize = 128<<10;
     params.close = false;
 
-    log("Scanning: %s", tableName);
+    //log("Scanning: %s", tableName);
     server->scan(tableName, oss.str(),
                  kdi::rpc::kScanAnyTxn, params,
                  packed, result, scanner);
@@ -81,7 +81,7 @@ bool ClientScanner::get(Cell & x)
         params.maxSize = 128<<10;
         params.close = false;
 
-        log("Scanning more");
+        //log("Scanning more");
         scanner->scanMore(params, packed, result);
         resetReader();
     }
@@ -89,9 +89,9 @@ bool ClientScanner::get(Cell & x)
 
 void ClientScanner::resetReader()
 {
-    log("Got %d bytes, txn=%d, complete=%s, closed=%s",
-        packed.size(), result.scanTxn, result.scanComplete,
-        result.scanClosed);
+    //log("Got %d bytes, txn=%d, complete=%s, closed=%s",
+    //    packed.size(), result.scanTxn, result.scanComplete,
+    //    result.scanClosed);
 
     reader.reset(warp::binary_data(&packed[0], packed.size()));
     if(!reader.verifyMagic())
