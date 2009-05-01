@@ -39,9 +39,7 @@ using warp::IntervalSet;
 using warp::log;
 using warp::File;
 
-Serializer::Serializer() :
-    output(64 << 10),
-    quit(false)
+Serializer::Serializer()
 {
 }
 
@@ -51,12 +49,11 @@ void Serializer::addRow(strref_t row)
         rows.push_back(row);
 }
 
-void Serializer::operator()(vector<FragmentCPtr> frags, string const & fn,
-                            TableSchema::Group const & group)
+void Serializer::operator()(TableSchema::Group const & group, vector<FragmentCPtr> frags, 
+                            FragmentWriter * writer)
 {
-    log("Serializing to %s", fn);
-    output.open(fn);
     rows.clear();
+    fragWriter = writer;
     
     DirectBlockCache cache;
     ScanPredicate pred = group.getPredicate();
@@ -65,31 +62,29 @@ void Serializer::operator()(vector<FragmentCPtr> frags, string const & fn,
     const size_t maxCells = 10000;
     const size_t maxSize = 10000;
     while(merge.copyMerged(maxCells, maxSize, *this));
-
-    output.close();
 }
 
 void Serializer::emitCell(strref_t row, strref_t column, int64_t timestamp,
                           strref_t value)
 {
     addRow(row);
-    output.emitCell(row, column, timestamp, value);
+    fragWriter->emitCell(row, column, timestamp, value);
 }
 
 void Serializer::emitErasure(strref_t row, strref_t column, int64_t timestamp)
 {
     addRow(row);
-    output.emitErasure(row, column, timestamp);
+    fragWriter->emitErasure(row, column, timestamp);
 }
 
 size_t Serializer::getCellCount() const 
 {
-    return output.getCellCount();
+    return fragWriter->getCellCount();
 }
 
 size_t Serializer::getDataSize() const 
 {
-    return output.getDataSize();
+    return fragWriter->getDataSize();
 }
 
 bool Serializer::getNextRow(warp::StringRange & row) const

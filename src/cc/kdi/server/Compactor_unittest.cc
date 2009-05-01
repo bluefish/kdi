@@ -101,7 +101,14 @@ BOOST_AUTO_TEST_CASE(serialize_test)
     vector<FragmentCPtr> frags;
     frags.push_back(f1);
 
+    TableSchema schema;
+    schema.tableName = "test";
+    schema.groups.resize(1);
+    schema.groups[0].families.push_back("x");
+
+    DiskWriterFactory diskFactory("memfs:");
+    boost::scoped_ptr<FragmentWriter> writer(diskFactory.start(schema, 0).release());
+
     Serializer serialize;
-    TableSchema::Group group;
-    serialize(frags, "memfs:serialized_frag", group);
+    serialize(schema.groups[0], frags, writer.get());
 }

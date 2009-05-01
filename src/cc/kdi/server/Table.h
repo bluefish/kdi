@@ -47,6 +47,7 @@ namespace server {
     class CellBuffer;
     class FragmentEventListener;
     class TabletEventListener;
+    class DiskWriterFactory;
     class Serializer;
 
 } // namespace server
@@ -142,7 +143,7 @@ private:
 
 public:
     void applySchema(TableSchema const & s);
-    void serialize(Serializer & serialize, FragmentMaker const * fragMaker);
+    void serialize(Serializer & serialize, FragmentWriterFactory * factory);
     void compact(Compactor & compactor);
 
 private:
