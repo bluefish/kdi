@@ -146,6 +146,8 @@ public:
     void serialize(Serializer & serialize, FragmentWriterFactory * factory);
     void compact(Compactor & compactor);
 
+    size_t getSerializeScore() const;
+
 private:
     class TabletLt;
 

@@ -146,6 +146,23 @@ Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
 
 typedef boost::mutex::scoped_lock lock_t; 
 
+size_t Table::getSerializeScore() const
+{
+    size_t bestScore = 0;
+    
+    for(fragvec_vec::const_iterator i = groupMemFrags.begin();
+        i != groupMemFrags.end(); ++i)
+    {
+        size_t groupScore = i->size();
+        if(groupScore > bestScore)
+        {
+            bestScore = groupScore;
+        }
+    }
+
+    return bestScore;
+}
+
 void Table::serialize(Serializer & serialize, FragmentWriterFactory * factory)
 {
     frag_vec frags;
