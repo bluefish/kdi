@@ -59,9 +59,7 @@ void Serializer::operator()(TableSchema::Group const & group, vector<FragmentCPt
     ScanPredicate pred = group.getPredicate();
     
     FragmentMerge merge(frags, &cache, pred, 0);
-    const size_t maxCells = 10000;
-    const size_t maxSize = 10000;
-    while(merge.copyMerged(maxCells, maxSize, *this));
+    while(merge.copyMerged(size_t(-1), size_t(-1), *this));
 }
 
 void Serializer::emitCell(strref_t row, strref_t column, int64_t timestamp,
