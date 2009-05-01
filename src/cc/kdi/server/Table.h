@@ -22,10 +22,8 @@
 #define KDI_SERVER_TABLE_H
 
 #include <kdi/server/Fragment.h>
-#include <kdi/server/FragmentMaker.h>
 #include <kdi/server/TableSchema.h>
 #include <kdi/server/CommitRing.h>
-#include <kdi/server/Compactor.h>
 #include <warp/interval.h>
 #include <warp/hashmap.h>
 #include <warp/strhash.h>
@@ -47,8 +45,10 @@ namespace server {
     class CellBuffer;
     class FragmentEventListener;
     class TabletEventListener;
-    class DiskWriterFactory;
     class Serializer;
+    class Compactor;
+    class FragmentLoader;
+    class FragmentWriterFactory;
 
 } // namespace server
 
@@ -143,7 +143,9 @@ private:
 
 public:
     void applySchema(TableSchema const & s);
-    void serialize(Serializer & serialize, FragmentWriterFactory * factory);
+    void serialize(Serializer & serialize,
+                   FragmentWriterFactory * factory,
+                   FragmentLoader * loader);
     void compact(Compactor & compactor);
 
     std::pair<size_t, unsigned> getSerializeScore() const;

@@ -764,7 +764,8 @@ void TabletServer::serializeLoop()
         if(table && !serializeQuit)
         {
             //log("Serialize: serialize");
-            table->serialize(serializer, bits.createNewFrag);
+            table->serialize(serializer, bits.createNewFrag,
+                             bits.fragmentLoader);
             //log("Serialize: done");
         }
     }

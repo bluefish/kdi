@@ -21,7 +21,8 @@
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
 #include <kdi/server/Serializer.h>
-#include <kdi/server/DiskWriterFactory.h>
+#include <kdi/server/FragmentWriterFactory.h>
+#include <kdi/server/FragmentLoader.h>
 #include <kdi/server/errors.h>
 #include <kdi/scan_predicate.h>
 #include <warp/fs.h>
@@ -172,7 +173,9 @@ std::pair<size_t, unsigned> Table::getSerializeScore() const
     return std::pair<size_t, unsigned>(bestScore, bestGroup);
 }
 
-void Table::serialize(Serializer & serialize, FragmentWriterFactory * factory)
+void Table::serialize(Serializer & serialize,
+                      FragmentWriterFactory * factory,
+                      FragmentLoader * loader)
 {
     frag_vec frags;
     unsigned groupIndex = 0;
@@ -198,8 +201,8 @@ void Table::serialize(Serializer & serialize, FragmentWriterFactory * factory)
 
     // write out the new disk fragment and load it
     serialize(group, frags, writer.get()); 
-    FragmentCPtr newFrag(new DiskFragment(writer->finish()));
-
+    
+    FragmentCPtr newFrag = loader->load(writer->finish());
     {
         lock_t tableLock(tableMutex);
 
