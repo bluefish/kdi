@@ -97,14 +97,17 @@ class CellGenerator
     StringGenerator rowGen;
     StringGenerator colGen;
     StringGenerator valGen;
+    string family;
 
 public:
     CellGenerator(pair<size_t, size_t> const & rowLen,
                   pair<size_t, size_t> const & colLen,
-                  pair<size_t, size_t> const & valLen) :
+                  pair<size_t, size_t> const & valLen,
+                  string const & family) :
         rowGen(rowLen.first, rowLen.second, ALNUM_SET),
         colGen(colLen.first, colLen.second, ALNUM_SET),
-        valGen(valLen.first, valLen.second, ALNUM_SET)
+        valGen(valLen.first, valLen.second, ALNUM_SET),
+        family(family)
     {
     }
 
@@ -116,7 +119,7 @@ public:
         colGen.generate(dumbRand(seed), c);
         valGen.generate(dumbRand(seed), v);
 
-        x = makeCell(r,c,0,v);
+        x = makeCell(r,family+c,0,v);
     }
 };
 
@@ -182,6 +185,8 @@ int main(int ac, char ** av)
                      "Length or range of lengths for generated column keys");
         op.addOption("valueLen,v", value<string>()->default_value("10"),
                      "Length or range of lengths for generated values");
+        op.addOption("family,f", value<string>(),
+                     "Generate cells in this column family");
         op.addOption("verbose,V", "Be verbose");
         op.addOption("number,n", value<string>()->default_value("1"),
                      "Number of cells to load");
@@ -205,6 +210,10 @@ int main(int ac, char ** av)
     opt.get("number", arg);
     size_t number = parseSize(arg);
 
+    string family;
+    if(opt.get("family", family))
+        family += ":";
+
     unsigned int seed;
     if(opt.get("seed", seed))
         srand(seed);
@@ -219,7 +228,7 @@ int main(int ac, char ** av)
         TablePtr table = Table::open(*ai);
 
 
-        CellGenerator gen(rowLen, colLen, valLen);
+        CellGenerator gen(rowLen, colLen, valLen, family);
         Cell x;
 
         size_t nCells = 0;
