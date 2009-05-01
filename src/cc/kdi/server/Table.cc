@@ -146,9 +146,10 @@ Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
 
 typedef boost::mutex::scoped_lock lock_t; 
 
-size_t Table::getSerializeScore() const
+std::pair<size_t, unsigned> Table::getSerializeScore() const
 {
     size_t bestScore = 0;
+    unsigned bestGroup = 0;
     
     for(fragvec_vec::const_iterator i = groupMemFrags.begin();
         i != groupMemFrags.end(); ++i)
@@ -157,10 +158,11 @@ size_t Table::getSerializeScore() const
         if(groupScore > bestScore)
         {
             bestScore = groupScore;
+            bestGroup = i-groupMemFrags.begin();
         }
     }
 
-    return bestScore;
+    return std::pair<size_t, unsigned>(bestScore, bestGroup);
 }
 
 void Table::serialize(Serializer & serialize, FragmentWriterFactory * factory)
@@ -174,19 +176,11 @@ void Table::serialize(Serializer & serialize, FragmentWriterFactory * factory)
     {
         lock_t tableLock(tableMutex);
 
-        // Choose the longest mem fragment chain and serialize it
-        frag_vec & longestChain = groupMemFrags.front();
-        for(fragvec_vec::iterator i = groupMemFrags.begin();
-            i != groupMemFrags.end(); ++i)
-        {
-            if(i->size() >= longestChain.size())
-            {
-                longestChain = *i;
-                groupIndex = i-groupMemFrags.begin();
-            }
-        }
+        // find best group to serialize
+        groupIndex = getSerializeScore().second;
 
-        frags = longestChain;
+        // copy info about this group and make a writer 
+        frags = groupMemFrags[groupIndex];
         curSchemaCtr = applySchemaCtr;
         writer.reset(factory->start(schema, groupIndex).release());
         group = schema.groups[groupIndex];

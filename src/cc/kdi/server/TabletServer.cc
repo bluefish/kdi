@@ -599,7 +599,8 @@ Table * TabletServer::getSerializableTable() const
     {
         lock_t tableLock(i->second->tableMutex);
 
-        size_t tableScore = i->second->getSerializeScore();
+        size_t tableScore = i->second->getSerializeScore().first;
+
         if(tableScore > bestScore)
         {
             bestScore = tableScore;

@@ -146,7 +146,7 @@ public:
     void serialize(Serializer & serialize, FragmentWriterFactory * factory);
     void compact(Compactor & compactor);
 
-    size_t getSerializeScore() const;
+    std::pair<size_t, unsigned> getSerializeScore() const;
 
 private:
     class TabletLt;
