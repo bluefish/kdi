@@ -56,14 +56,6 @@ Compactor::Compactor(FragmentWriterFactory * writerFactory,
 */
 }
 
-class CompactorOutput
-{
-public:
-    
-
-};
-    
-
 void Compactor::compact(TableSchema const & schema, int groupIndex,
                         RangeFragmentMap const & compactionSet,
                         RangeFragmentMap & outputSet) 
