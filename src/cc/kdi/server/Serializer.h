@@ -43,15 +43,9 @@ namespace server {
 class kdi::server::Serializer :
     public server::CellOutput
 {
-    DiskWriter output;
     typedef std::vector<warp::StringRange> frag_vec;
+    FragmentWriter * fragWriter;
     frag_vec rows;
-
-    boost::mutex mutex;
-    boost::condition cond;
-    bool quit;
-
-    typedef boost::mutex::scoped_lock lock_t; 
 
     void addRow(strref_t row);
     
@@ -59,8 +53,8 @@ public:
     Serializer();
     ~Serializer() {};
 
-    void operator()(std::vector<FragmentCPtr> frags, std::string const & fn, 
-                    TableSchema::Group const & group);
+    void operator()(TableSchema::Group const & group,
+                    std::vector<FragmentCPtr> frags, FragmentWriter * writer);
 
     void emitCell(strref_t row, strref_t column, int64_t timestamp,
                   strref_t value);
@@ -74,9 +68,5 @@ public:
     /// Find the next emitted row after row, return false if no more
     bool getNextRow(warp::StringRange & row) const;
 
-    /// Serializer thread functions
-    void runLoop();
-    void stop();
-    void wake();
 };
 #endif // KDI_SERVER_SERIALIZER_H

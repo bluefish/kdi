@@ -36,7 +36,7 @@
 #include <kdi/server/DirectBlockCache.h>
 #include <kdi/server/NullLogWriter.h>
 #include <kdi/server/NullConfigWriter.h>
-#include <kdi/server/FragmentMaker.h>
+#include <kdi/server/DiskWriterFactory.h>
 
 using namespace kdi::server;
 using namespace kdi;
@@ -52,22 +52,6 @@ namespace {
         delete p;
         p = 0;
     }
-
-    class RootFragmentMaker : public FragmentMaker
-    {
-        string root;
-
-    public:
-        RootFragmentMaker(string const & root) : root(root) {}
-        ~RootFragmentMaker() {}
-        
-        string make(string const & table) const
-        {
-            string dir = fs::resolve(root, table);
-            return File::openUnique(fs::resolve(dir, "$UNIQUE")).second;
-        }
-
-    };
         
     class MainServerAssembly
         : private boost::noncopyable
@@ -77,7 +61,7 @@ namespace {
         boost::scoped_ptr<warp::WorkerPool> workerPool;
         boost::scoped_ptr<TabletServer> server;
         boost::scoped_ptr<DirectBlockCache> cache;
-        boost::scoped_ptr<RootFragmentMaker> fragMaker;
+        boost::scoped_ptr<DiskWriterFactory> fragMaker;
 
         struct LoadCb : public TabletServer::LoadCb
         {
@@ -128,14 +112,14 @@ namespace {
             char const *groups[] = { "group", 0, 0 };
             configReader.reset(new TestConfigReader(groups));
             configWriter.reset(new NullConfigWriter);
-            fragMaker.reset(new RootFragmentMaker(root));
+            fragMaker.reset(new DiskWriterFactory(root));
 
             TabletServer::Bits bits;
             bits.createNewLog = &NullLogWriter::make;
             bits.configReader = configReader.get();
             bits.configWriter = configWriter.get();
             bits.workerPool = workerPool.get();
-            bits.fragmentMaker = fragMaker.get();
+            bits.createNewFrag = fragMaker.get();
             
             server.reset(new TabletServer(bits));
             cache.reset(new DirectBlockCache);

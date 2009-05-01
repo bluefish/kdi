@@ -720,7 +720,7 @@ void TabletServer::serializeLoop()
 
     // if there isn't any FragmentMaker, we can't very well serialize
     // exiting silently sort of makes unit testing other parts easier
-    if(!bits.fragmentMaker) {
+    if(!bits.createNewFrag) {
         warp::log("serializeLoop: no fragmentMaker, nothing to do");
         return;
     }
@@ -735,7 +735,7 @@ void TabletServer::serializeLoop()
             if(!table) serializeCond.wait(serverLock);
         }
 
-        if(table && !serializeQuit) table->serialize(serializer, bits.fragmentMaker);
+        if(table && !serializeQuit) table->serialize(serializer, bits.createNewFrag);
     }
 }
 

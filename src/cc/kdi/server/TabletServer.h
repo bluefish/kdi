@@ -51,6 +51,7 @@ namespace server {
     class FragmentMaker;
     class TableSchema;
     class TabletConfig;
+    class FragmentWriterFactory;
     typedef boost::shared_ptr<Fragment const> FragmentCPtr;
 
     class CellBuffer;
@@ -110,21 +111,21 @@ public:
 
     struct Bits
     {
-        LogWriterFactory     createNewLog;
-        warp::WorkerPool   * workerPool;
-        ConfigReader       * configReader;
-        FragmentLoader     * fragmentLoader;
-        FragmentMaker      * fragmentMaker; 
-        ConfigWriter       * configWriter;
-        LogPlayer          * logPlayer;
-        std::string          serverLogDir;
-        std::string          serverLocation;
+        LogWriterFactory        createNewLog;
+        warp::WorkerPool      * workerPool;
+        ConfigReader          * configReader;
+        FragmentLoader        * fragmentLoader;
+        FragmentWriterFactory * createNewFrag; 
+        ConfigWriter          * configWriter;
+        LogPlayer             * logPlayer;
+        std::string             serverLogDir;
+        std::string             serverLocation;
 
         Bits() :
             workerPool(0),
             configReader(0),
             fragmentLoader(0),
-            fragmentMaker(0),
+            createNewFrag(0),
             configWriter(0),
             logPlayer(0)
         {}

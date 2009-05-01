@@ -21,6 +21,7 @@
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
 #include <kdi/server/Serializer.h>
+#include <kdi/server/DiskWriterFactory.h>
 #include <kdi/server/errors.h>
 #include <kdi/scan_predicate.h>
 #include <warp/fs.h>
@@ -145,13 +146,14 @@ Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
 
 typedef boost::mutex::scoped_lock lock_t; 
 
-void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
+void Table::serialize(Serializer & serialize, FragmentWriterFactory * factory)
 {
     frag_vec frags;
     unsigned groupIndex = 0;
-    size_t curSchema = 0;
+    size_t curSchemaCtr = 0;
+    boost::scoped_ptr<FragmentWriter> writer;
     TableSchema::Group group;
-
+    
     {
         lock_t tableLock(tableMutex);
 
@@ -168,23 +170,23 @@ void Table::serialize(Serializer & serialize, FragmentMaker const * fragMaker)
         }
 
         frags = longestChain;
+        curSchemaCtr = applySchemaCtr;
+        writer.reset(factory->start(schema, groupIndex).release());
         group = schema.groups[groupIndex];
-        curSchema = applySchemaCtr;
     }
 
     // nothing to serialize?
     if(frags.empty()) return;
 
     // write out the new disk fragment and load it
-    std::string fn = fragMaker->make(schema.tableName);
-    serialize(frags, fn, group); 
-    FragmentCPtr newFrag(new DiskFragment(fn));
+    serialize(group, frags, writer.get()); 
+    FragmentCPtr newFrag(new DiskFragment(writer->finish()));
 
     {
         lock_t tableLock(tableMutex);
 
         // did the schema change?
-        if(curSchema != applySchemaCtr) return;
+        if(curSchemaCtr != applySchemaCtr) return;
 
         // is the set of fragments to replace what we are expecting?
         frag_vec & memFrags = groupMemFrags[groupIndex];
