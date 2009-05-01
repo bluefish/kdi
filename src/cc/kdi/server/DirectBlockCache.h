@@ -22,6 +22,7 @@
 #define KDI_SERVER_DIRECTBLOCKCACHE_H
 
 #include <kdi/server/BlockCache.h>
+#include <kdi/server/Fragment.h>
 
 namespace kdi {
 namespace server {
