@@ -21,6 +21,7 @@
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
 #include <kdi/server/Serializer.h>
+#include <kdi/server/Compactor.h>
 #include <kdi/server/FragmentWriterFactory.h>
 #include <kdi/server/FragmentLoader.h>
 #include <kdi/server/errors.h>
