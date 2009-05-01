@@ -22,7 +22,6 @@
 #define KDI_SERVER_FRAGMENTLOADER_H
 
 #include <kdi/server/Fragment.h>
-#include <vector>
 #include <string>
 
 namespace kdi {
@@ -39,11 +38,8 @@ namespace server {
 class kdi::server::FragmentLoader
 {
 public:
-    /// Load the fragment from the given file, restricted to columns
-    /// from the given column families.
-    virtual FragmentCPtr load(
-        std::string const & filename,
-        std::vector<std::string> const & families) const;
+    /// Load the fragment from the given file.
+    virtual FragmentCPtr load(std::string const & filename) = 0;
 
 protected:
     ~FragmentLoader() {}

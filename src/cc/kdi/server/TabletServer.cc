@@ -913,8 +913,8 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
             fvec const & frags = i->config->fragments;
             for(fvec::const_iterator f = frags.begin(); f != frags.end(); ++f)
             {
-                FragmentCPtr frag = bits.fragmentLoader->load(
-                    f->filename, f->columns);
+                FragmentCPtr frag = bits.fragmentLoader->load(f->filename);
+                frag = frag->getRestricted(f->families);
                 i->addLoadedFragment(frag);
             }
         }

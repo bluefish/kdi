@@ -101,7 +101,7 @@ void Tablet::getConfigFragments(TabletConfig & cfg) const
             j != i->end(); ++j, ++oi)
         {
             oi->filename = (*j)->getFilename();
-            (*j)->getColumnFamilies(oi->columns);
+            (*j)->getColumnFamilies(oi->families);
         }
     }
 }

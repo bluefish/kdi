@@ -35,7 +35,7 @@ namespace server {
             // Location of fragment, relative to data root
             std::string filename;
             // Column families to use from the fragment
-            std::vector<std::string> columns;
+            std::vector<std::string> families;
         };
 
         std::string tableName;
