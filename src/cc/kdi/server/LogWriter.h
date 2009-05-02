@@ -23,7 +23,6 @@
 
 #include <kdi/server/CellBuffer.h>
 #include <kdi/strref.h>
-#include <boost/function.hpp>
 
 namespace kdi {
 namespace server {
@@ -47,8 +46,6 @@ namespace server {
         /// Close the log
         virtual void close() = 0;
     };
-
-    typedef boost::function<LogWriter * ()> LogWriterFactory;
 
 } // namespace server
 } // namespace kdi

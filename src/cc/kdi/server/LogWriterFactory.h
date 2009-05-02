@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-04-07
+// Created 2009-05-01
 //
 // This file is part of KDI.
 //
@@ -18,34 +18,33 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_NULLLOGWRITER_H
-#define KDI_SERVER_NULLLOGWRITER_H
+#ifndef KDI_SERVER_LOGWRITERFACTORY_H
+#define KDI_SERVER_LOGWRITERFACTORY_H
 
-#include <kdi/server/LogWriter.h>
+#include <memory>
 
 namespace kdi {
 namespace server {
 
-    class NullLogWriter;
+    class LogWriterFactory;
+
+    // Forward declarations
+    class LogWriter;
 
 } // namespace server
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// NullLogWriter
+// LogWriterFactory
 //----------------------------------------------------------------------------
-struct kdi::server::NullLogWriter
-    : public LogWriter
+class kdi::server::LogWriterFactory
 {
-    void writeCells(strref_t tableName, CellBufferCPtr const & cells) {}
-    size_t getDiskSize() const { return 0; }
-    void sync() {}
-    void close() {}
+public:
+    /// Create a new LogWriter.
+    virtual std::auto_ptr<LogWriter> start() = 0;
 
-    static LogWriter * make()
-    {
-        return new NullLogWriter;
-    }
+protected:
+    ~LogWriterFactory() {}
 };
 
-#endif // KDI_SERVER_NULLLOGWRITER_H
+#endif // KDI_SERVER_LOGWRITERFACTORY_H

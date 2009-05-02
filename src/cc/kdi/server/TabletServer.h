@@ -22,7 +22,6 @@
 #define KDI_SERVER_TABLETSERVER_H
 
 #include <kdi/server/TransactionCounter.h>
-#include <kdi/server/LogWriter.h>
 #include <warp/syncqueue.h>
 #include <warp/WorkerPool.h>
 #include <warp/util.h>
@@ -52,6 +51,7 @@ namespace server {
     class TableSchema;
     class TabletConfig;
     class FragmentWriterFactory;
+    class LogWriterFactory;
     typedef boost::shared_ptr<Fragment const> FragmentCPtr;
 
     class CellBuffer;
@@ -111,23 +111,28 @@ public:
 
     struct Bits
     {
-        LogWriterFactory        createNewLog;
-        warp::WorkerPool      * workerPool;
-        ConfigReader          * configReader;
-        FragmentLoader        * fragmentLoader;
-        FragmentWriterFactory * createNewFrag; 
+        LogWriterFactory      * logFactory;
+        FragmentWriterFactory * fragmentFactory; 
         ConfigWriter          * configWriter;
+
+        ConfigReader          * configReader;
         LogPlayer             * logPlayer;
+        FragmentLoader        * fragmentLoader;
+
+        warp::WorkerPool      * workerPool;
         std::string             serverLogDir;
         std::string             serverLocation;
 
         Bits() :
-            workerPool(0),
-            configReader(0),
-            fragmentLoader(0),
-            createNewFrag(0),
+            logFactory(0),
+            fragmentFactory(0),
             configWriter(0),
-            logPlayer(0)
+
+            configReader(0),
+            logPlayer(0),
+            fragmentLoader(0),
+
+            workerPool(0)
         {}
     };
 

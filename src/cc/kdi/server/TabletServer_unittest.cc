@@ -27,7 +27,6 @@
 
 #include <kdi/server/TestConfigReader.h>
 #include <kdi/server/DirectBlockCache.h>
-#include <kdi/server/NullLogWriter.h>
 #include <kdi/server/NullConfigWriter.h>
 
 #include <kdi/rpc/PackedCellWriter.h>
@@ -203,7 +202,6 @@ BOOST_AUTO_UNIT_TEST(simple_test)
 
     // Set up the TabletServer bits
     TabletServer::Bits bits;
-    bits.createNewLog = &NullLogWriter::make;
     bits.workerPool = &pool;
     bits.configReader = &cfgReader;
     bits.configWriter = &cfgWriter;

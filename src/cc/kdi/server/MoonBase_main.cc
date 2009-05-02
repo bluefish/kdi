@@ -34,7 +34,6 @@
 #include <warp/WorkerPool.h>
 #include <kdi/server/TestConfigReader.h>
 #include <kdi/server/DirectBlockCache.h>
-#include <kdi/server/NullLogWriter.h>
 #include <kdi/server/NullConfigWriter.h>
 #include <kdi/server/DiskWriterFactory.h>
 #include <kdi/server/CachedFragmentLoader.h>
@@ -123,11 +122,10 @@ namespace {
             cachedLoader.reset(new CachedFragmentLoader(diskLoader.get()));
 
             TabletServer::Bits bits;
-            bits.createNewLog = &NullLogWriter::make;
             bits.configReader = configReader.get();
             bits.configWriter = configWriter.get();
             bits.workerPool = workerPool.get();
-            bits.createNewFrag = fragMaker.get();
+            bits.fragmentFactory = fragMaker.get();
             bits.fragmentLoader = cachedLoader.get();
             
             server.reset(new TabletServer(bits));

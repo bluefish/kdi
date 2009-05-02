@@ -27,6 +27,8 @@
 #include <kdi/server/DirectBlockCache.h>
 #include <kdi/server/Serializer.h>
 #include <kdi/server/Compactor.h>
+#include <kdi/server/LogWriterFactory.h>
+#include <kdi/server/LogWriter.h>
 
 #include <kdi/server/FragmentLoader.h>
 #include <kdi/server/LogPlayer.h>
@@ -665,57 +667,26 @@ void TabletServer::logLoop()
         }
 
         // Start a new log if necessary
-        if(!log)
-            log.reset(bits.createNewLog());
+        if(!log && bits.logFactory)
+            log.reset(bits.logFactory->start().release());
 
-#if 0
-
-        //- organize commit(s) by table, then by commit
+        // Get the last commit in the log group
         int64_t maxTxn = commits.back().txn;
-        std::sort(commits.begin(), commits.end());
 
-        // Process commits grouped by table
-        for(commit_vec::const_iterator i = commits.begin();
-            i != commits.end(); )
+        // Commit the group to disk
+        if(log)
         {
-            // Get range of commits for this table
-            commit_vec::const_iterator i2 = std::find_if<commit_vec::const_iterator>(
-                i+1, commits.end(), Commit::TableNeq(i->tableName));
+            // Log the commits in the order we received them
+            for(commit_vec::const_iterator i = commits.begin();
+                i != commits.end(); ++i)
+            {
+                log->writeCells(i->tableName, i->cells);
+            }
 
-            // Get the last transaction for the commit range
-            int64_t txn = (i2-1)->txn;
-
-            // If the range is more than one commit, merge all the
-            // cell buffers into a single buffer
-            CellBufferCPtr cells;
-            if(i+1 == i2)
-                cells = i->cells;
-            else
-                cells = mergeCommits(i, i2);
-
-            // Write cells to log file with checksum
-            log->writeCells(i->tableName, cells);
-
-            // Move iterator to next table
-            i = i2;
+            // Sync log to disk.  After this, commits up to maxTxn are
+            // durable.
+            log->sync();
         }
-
-#else
-
-        // Feeling lazy: don't bother reordering or merging, just log
-        // the commits in the order we received them
-        int64_t maxTxn = commits.back().txn;
-        for(commit_vec::const_iterator i = commits.begin();
-            i != commits.end(); ++i)
-        {
-            log->writeCells(i->tableName, i->cells);
-        }
-
-#endif
-
-        // Sync log to disk.  After this, commits up to maxTxn are
-        // durable.
-        log->sync();
 
         lock_t serverLock(serverMutex);
 
@@ -733,7 +704,7 @@ void TabletServer::logLoop()
 
         // Roll log if it's big enough
         size_t LOG_SIZE_LIMIT = 128u << 20;
-        if(log->getDiskSize() >= LOG_SIZE_LIMIT)
+        if(log && log->getDiskSize() >= LOG_SIZE_LIMIT)
         {
             log->close();
             log.reset();
@@ -754,8 +725,8 @@ void TabletServer::serializeLoop()
 
     // if there isn't any FragmentMaker, we can't very well serialize
     // exiting silently sort of makes unit testing other parts easier
-    if(!bits.createNewFrag) {
-        log("serializeLoop: no fragmentMaker, nothing to do");
+    if(!bits.fragmentFactory) {
+        log("Serialize: no fragmentFactory -- exiting");
         return;
     }
     
@@ -778,7 +749,8 @@ void TabletServer::serializeLoop()
         if(table && !serializeQuit)
         {
             //log("Serialize: serialize");
-            table->serialize(serializer, bits.createNewFrag,
+            table->serialize(serializer,
+                             bits.fragmentFactory,
                              bits.fragmentLoader);
             //log("Serialize: done");
         }
@@ -790,10 +762,10 @@ void TabletServer::serializeLoop()
 void TabletServer::compactLoop()
 {
     DirectBlockCache blockCache;
-    Compactor compactor(bits.createNewFrag, &blockCache);
+    Compactor compactor(bits.fragmentFactory, &blockCache);
 
-    if(!bits.createNewFrag) {
-        warp::log("compactLoop: no fragmentMaker, nothing to do");
+    if(!bits.fragmentFactory) {
+        warp::log("Compact: no fragmentFactory -- exiting");
         return;
     }
 
