@@ -118,7 +118,7 @@ public:
     {
         finishLastCell(0);
         uint32_t magic = WARP_PACK4('C','P','k','0');
-        uint32_t checksum = warp::adler(buf.addr(8), buf.size() - 8);
+        uint32_t checksum = warp::adler32(buf.addr(8), buf.size() - 8);
         memcpy(buf.addr(0), &magic, 4);
         memcpy(buf.addr(4), &checksum, 4);
     }

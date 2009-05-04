@@ -82,7 +82,7 @@ public:
         if(buf.size() < 8)
             return false;
 
-        uint32_t checksum = warp::adler(buf.begin() + 8, buf.size() - 8);
+        uint32_t checksum = warp::adler32(buf.begin() + 8, buf.size() - 8);
         return 0 == memcmp(&checksum, buf.begin() + 4, 4);
     }
 

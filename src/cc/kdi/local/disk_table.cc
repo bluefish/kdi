@@ -143,7 +143,7 @@ namespace
             if(input->get(blockRec) && blockRec.tryAs<CellBlock>())
             {
                 // Verify the checksum
-                uint32_t checksum = adler((uint8_t*)blockRec.getData(), blockRec.getLength());
+                uint32_t checksum = adler32((uint8_t*)blockRec.getData(), blockRec.getLength());
                 if(indexIt->blockChecksum != checksum) {
                     log("BAD CHECKSUM: skipping block");
                     goto nextBlock;

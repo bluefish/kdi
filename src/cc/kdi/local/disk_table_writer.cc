@@ -167,7 +167,7 @@ void DiskTableWriterV1::ImplV1::addIndexEntry(Record const & cbRec)
     size_t         r = index.pool.getStringOffset(lastRow);
 
     // Calculate Adler-32 checksum for the cell block, written in index 
-    uint32_t cbChecksum = adler((uint8_t*)cbRec.getData(), cbRec.getLength());
+    uint32_t cbChecksum = adler32((uint8_t*)cbRec.getData(), cbRec.getLength());
 
     // Append IndexEntry to array
     index.arr->append(cbChecksum);   // checkSum
