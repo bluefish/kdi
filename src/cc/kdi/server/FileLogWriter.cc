@@ -48,6 +48,8 @@ void FileLogWriter::writeCells(
         raise<ValueError>("table name is too long");
 
     strref_t packed = cells->getPacked();
+    if(packed.size() > FileLogEntryHeaderV0::MAX_DATA_LEN)
+        raise<ValueError>("cell data is too large");
 
     FileLogEntryHeaderV0 hdr;
     hdr.magic = FileLogEntryHeaderV0::MAGIC;

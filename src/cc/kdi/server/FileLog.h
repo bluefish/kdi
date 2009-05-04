@@ -38,6 +38,7 @@ namespace server {
         enum {
             MAGIC = WARP_PACK4('f','e','h','0'),
             MAX_NAME_LEN = 2048,
+            MAX_DATA_LEN = 32 << 20,
         };
 
         uint32_t magic;         // equals FileLogEntryHeaderV0::MAGIC
