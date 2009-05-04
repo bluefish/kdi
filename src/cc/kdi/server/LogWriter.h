@@ -43,8 +43,9 @@ namespace server {
         /// permanent storage
         virtual void sync() = 0;
 
-        /// Close the log
-        virtual void close() = 0;
+        /// Close the log and return the path to the finished log
+        /// file
+        virtual std::string finish() = 0;
     };
 
 } // namespace server

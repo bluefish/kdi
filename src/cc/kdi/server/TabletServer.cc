@@ -706,8 +706,13 @@ void TabletServer::logLoop()
         size_t LOG_SIZE_LIMIT = 128u << 20;
         if(log && log->getDiskSize() >= LOG_SIZE_LIMIT)
         {
-            log->close();
+            std::string logFn = log->finish();
             log.reset();
+
+            /// XXX track the new log file so we can clean it up when
+            /// it is no longer needed
+            //if(bits.logTracker)
+            //    bits.logTracker->addLogFile(logFn, maxTxn);
         }
 
         // Clean up before next loop
