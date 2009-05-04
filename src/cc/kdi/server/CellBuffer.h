@@ -58,6 +58,9 @@ public:
     /// Get the approximate amount of memory used by this buffer.
     size_t getDataSize() const { return data.size(); }
 
+    /// Get the packed cell buffer.
+    warp::StringRange getPacked() const { return data; }
+
 public:  // Fragment interface
 
     std::string getFilename() const;
