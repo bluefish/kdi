@@ -38,6 +38,7 @@
 #include <kdi/server/DiskWriterFactory.h>
 #include <kdi/server/CachedFragmentLoader.h>
 #include <kdi/server/DiskLoader.h>
+#include <kdi/server/FileLogWriterFactory.h>
 
 using namespace kdi::server;
 using namespace kdi;
@@ -62,10 +63,12 @@ namespace {
         boost::scoped_ptr<warp::WorkerPool> workerPool;
         boost::scoped_ptr<TabletServer> server;
         boost::scoped_ptr<DirectBlockCache> cache;
-        boost::scoped_ptr<DiskWriterFactory> fragMaker;
+        boost::scoped_ptr<DiskWriterFactory> fragmentFactory;
 
         boost::scoped_ptr<DiskLoader> diskLoader;
         boost::scoped_ptr<CachedFragmentLoader> cachedLoader;
+
+        boost::scoped_ptr<FileLogWriterFactory> logFactory;
 
         struct LoadCb : public TabletServer::LoadCb
         {
@@ -110,23 +113,27 @@ namespace {
         TabletServer * getServer() const { return server.get(); }
         BlockCache * getBlockCache() const { return cache.get(); }
 
-        void init(string const & root)
+        void init(string const & dataRoot, string const & logDir)
         {
             workerPool.reset(new WorkerPool(4, "Pool", true));
             char const *groups[] = { "group", 0, 0 };
             configReader.reset(new TestConfigReader(groups));
             configWriter.reset(new NullConfigWriter);
-            fragMaker.reset(new DiskWriterFactory(root));
+            fragmentFactory.reset(new DiskWriterFactory(dataRoot));
 
-            diskLoader.reset(new DiskLoader(root));
+            diskLoader.reset(new DiskLoader(dataRoot));
             cachedLoader.reset(new CachedFragmentLoader(diskLoader.get()));
+
+            logFactory.reset(new FileLogWriterFactory(logDir));
 
             TabletServer::Bits bits;
             bits.configReader = configReader.get();
             bits.configWriter = configWriter.get();
             bits.workerPool = workerPool.get();
-            bits.fragmentFactory = fragMaker.get();
+            bits.fragmentFactory = fragmentFactory.get();
             bits.fragmentLoader = cachedLoader.get();
+            bits.logFactory = logFactory.get();
+            bits.serverLogDir = logDir;
             
             server.reset(new TabletServer(bits));
             cache.reset(new DirectBlockCache);
@@ -148,7 +155,7 @@ namespace {
             diskLoader.reset();
             configReader.reset();
             configWriter.reset();
-            fragMaker.reset();
+            fragmentFactory.reset();
             workerPool.reset();
         }
     };
@@ -164,8 +171,10 @@ namespace {
             OptionParser op("%prog [ICE-parameters] [options]");
             {
                 using namespace boost::program_options;
-                op.addOption("root,r", value<string>(),
+                op.addOption("dataRoot,d", value<string>(),
                              "Root directory for tablet data");
+                op.addOption("logDir,l", value<string>(),
+                             "Private directory for logging tablet data");
                 op.addOption("pidfile,p", value<string>(),
                              "Write PID to file");
                 op.addOption("nodaemon", "Don't fork and run as daemon");
@@ -177,9 +186,16 @@ namespace {
             op.parse(ac, av, opt, args);
 
             // Get table root directory
-            string root;
-            if(!opt.get("root", root))
-                op.error("need --root");
+            string dataRoot;
+            if(!opt.get("dataRoot", dataRoot))
+                op.error("need --dataRoot");
+
+            // Get log directory
+            string logDir;
+            if(!opt.get("logDir", logDir) || !fs::isRooted(logDir))
+                op.error("need absolute --logDir");
+            if(fs::exists(logDir) && (!fs::isDirectory(logDir) || !fs::isEmpty(logDir)))
+                op.error("--logDir already exists and is not empty");
 
             // Write PID file
             string pidfile;
@@ -203,7 +219,7 @@ namespace {
 
             // Make our TabletServer
             MainServerAssembly serverAssembly;
-            serverAssembly.init(root);
+            serverAssembly.init(dataRoot, logDir);
 
             // Create TableManagerI object
             Ice::ObjectPtr obj = new TabletServerI(serverAssembly.getServer(),
