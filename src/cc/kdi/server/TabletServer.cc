@@ -680,7 +680,7 @@ void TabletServer::logLoop()
             for(commit_vec::const_iterator i = commits.begin();
                 i != commits.end(); ++i)
             {
-                log->writeCells(i->tableName, i->cells);
+                log->writeCells(i->tableName, i->cells->getPacked());
             }
 
             // Sync log to disk.  After this, commits up to maxTxn are

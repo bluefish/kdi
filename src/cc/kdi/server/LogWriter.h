@@ -33,8 +33,7 @@ namespace server {
         virtual ~LogWriter() {}
 
         /// Record a block of cells for the named table in the log
-        virtual void writeCells(strref_t tableName,
-                                CellBufferCPtr const & cells) = 0;
+        virtual void writeCells(strref_t tableName, strref_t packedCells) = 0;
 
         /// Get the approximate size of the log on disk
         virtual size_t getDiskSize() const = 0;

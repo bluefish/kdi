@@ -41,13 +41,11 @@ FileLogWriter::FileLogWriter(warp::FilePtr const & fp) :
         raise<IOError>("failed to write log header");
 }
 
-void FileLogWriter::writeCells(
-    strref_t tableName, CellBufferCPtr const & cells)
+void FileLogWriter::writeCells(strref_t tableName, strref_t packed)
 {
     if(tableName.size() > FileLogEntryHeaderV0::MAX_NAME_LEN)
         raise<ValueError>("table name is too long");
 
-    strref_t packed = cells->getPacked();
     if(packed.size() > FileLogEntryHeaderV0::MAX_DATA_LEN)
         raise<ValueError>("cell data is too large");
 

@@ -42,8 +42,7 @@ public:
     explicit FileLogWriter(warp::FilePtr const & fp);
 
     /// Record a block of cells for the named table in the log
-    virtual void writeCells(strref_t tableName,
-                            CellBufferCPtr const & cells);
+    virtual void writeCells(strref_t tableName, strref_t packedCells);
 
     /// Get the approximate size of the log on disk
     virtual size_t getDiskSize() const;
