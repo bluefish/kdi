@@ -125,8 +125,7 @@ namespace
         // Return the TabletConfig
         return TabletConfig(
             Interval<string>(minRow, tabletName.getLastRow()),
-            uris,
-            state.get("server", "")
+            uris
             );
     }
 
@@ -164,9 +163,6 @@ namespace
             default:
                 raise<ValueError>("config has invalid lower bound");
         }
-
-        // Set the server
-        state.set("server", config.getServer());
 
         // Serialize the config
         ostringstream oss;
@@ -214,7 +210,6 @@ class MetaConfigManager::FixedAdapter
     : public ConfigManager
 {
     std::string rootDir;
-    std::string serverName;
 
     string getStatePath(std::string const & tabletName) const
     {
@@ -226,8 +221,7 @@ class MetaConfigManager::FixedAdapter
 public:
     explicit FixedAdapter(MetaConfigManager const & base) :
         ConfigManager(base),    // Share CachedLogLoader
-        rootDir(base.rootDir),
-        serverName(base.serverName)
+        rootDir(base.rootDir)
     {}
 
     std::list<TabletConfig> loadTabletConfigs(std::string const & tableName)
@@ -247,8 +241,7 @@ public:
             cfgs.push_back(
                 TabletConfig(
                     Interval<string>().setInfinite(),
-                    vector<string>(),
-                    serverName
+                    vector<string>()
                     )
                 );
             return cfgs;
@@ -325,16 +318,11 @@ public:
 //----------------------------------------------------------------------------
 // MetaConfigManager
 //----------------------------------------------------------------------------
-MetaConfigManager::MetaConfigManager(std::string const & rootDir,
-                                     std::string const & serverName) :
-    rootDir(rootDir),
-    serverName(serverName)
+MetaConfigManager::MetaConfigManager(std::string const & rootDir) :
+    rootDir(rootDir)
 {
-    log("MetaConfigManager %p: created root=%s, server=%s",
-        this, rootDir, serverName);
-
-    if(serverName.empty())
-        raise<ValueError>("empty server name");
+    log("MetaConfigManager %p: created root=%s",
+        this, rootDir);
 }
 
 MetaConfigManager::~MetaConfigManager()
@@ -349,7 +337,7 @@ MetaConfigManager::loadTabletConfigs(std::string const & tableName)
 
     // Scan all tablet rows for this table in the META table.  Correct
     // inconsistent rows that may have been the result of a mid-split
-    // crash.  Load the configs that are assigned to this server.
+    // crash.
 
     // Scan all config cells in the META table that start with the our
     // table name
@@ -412,24 +400,18 @@ MetaConfigManager::loadTabletConfigs(std::string const & tableName)
             // fill the gap.
             cfg = TabletConfig(
                 Interval<string>(lowerBound, cfgRows.getUpperBound()),
-                cfg.getTableUris(),
-                cfg.getServer()
+                cfg.getTableUris()
                 );
             metaTable->set(x.getRow(), x.getColumn(), x.getTimestamp(),
                            getConfigCellValue(cfg, rootDir));
             changedMeta = true;
         }
 
-        if(cfg.getServer() == serverName)
-        {
-            log("Found config: %s", reprString(x.getRow()));
+        log("Found config: %s", reprString(x.getRow()));
 
-            // We found a tablet assigned to us
-            cfgs.push_back(cfg);
-            loadedPrev = true;
-        }
-        else
-            loadedPrev = false;
+        // We found a tablet assigned to us
+        cfgs.push_back(cfg);
+        loadedPrev = true;
 
         // Update prev
         prevRows = cfgRows;
@@ -449,13 +431,6 @@ void MetaConfigManager::setTabletConfig(std::string const & tableName,
                                         TabletConfig const & cfg)
 {
     log("Save META config: %s", makePrettyName(tableName, cfg));
-
-    // Sanity checking
-    if(cfg.getServer() != serverName)
-    {
-        raise<ValueError>("config server is not this server: %s != %s",
-                          cfg.getServer(), serverName);
-    }
 
     // Build tablet name
     TabletName tabletName(tableName, cfg.getTabletRows().getUpperBound());

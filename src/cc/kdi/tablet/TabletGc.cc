@@ -189,12 +189,10 @@ kdi::ScanPredicate makeMetaScanPredicate(
 }
 
 /// Scan the META table for the configs of the named tables.  For each
-/// config (that matches the serverRestriction, if any), add all
-/// referenced files to the active set.
+/// config, add all referenced files to the active set.
 void buildActiveSetFromMeta(
     kdi::TablePtr const & metaTable,
     std::string const & dataDir,
-    std::string const & serverRestriction,
     std::vector<std::string> const & tableSet,
     std::vector<std::string> & activeSet)
 {
@@ -206,11 +204,7 @@ void buildActiveSetFromMeta(
         FilePtr fp(new MemFile(val.begin(), val.size()));
         Config cfg(fp);
 
-        if(serverRestriction.empty() ||
-           cfg.get("server") == serverRestriction)
-        {
-            buildActiveSetFromConfig(cfg, dataDir, activeSet);
-        }
+        buildActiveSetFromConfig(cfg, dataDir, activeSet);
     }
 }
 
@@ -265,7 +259,6 @@ void TabletGc::findTabletGarbage(
     std::string const & dataDir,
     kdi::TablePtr const & metaTable,
     warp::Timestamp const & beforeTime,
-    std::string const & serverRestriction,
     std::vector<std::string> & garbageFiles)
 {
     vector<string> candidateSet;
@@ -282,8 +275,7 @@ void TabletGc::findTabletGarbage(
 
     // Augment the active set with files referenced in the META table
     // for each table
-    buildActiveSetFromMeta(metaTable, dataDir, serverRestriction,
-                           tableSet, activeSet);
+    buildActiveSetFromMeta(metaTable, dataDir, tableSet, activeSet);
 
     // Make the "sets" into sets
     sortAndUnique(candidateSet);
@@ -298,12 +290,10 @@ void TabletGc::findTabletGarbage(
 
 TabletGc::TabletGc(std::string const & dataDir,
                    kdi::TablePtr const & metaTable,
-                   warp::Timestamp const & beforeTime,
-                   std::string const & serverRestriction) :
+                   warp::Timestamp const & beforeTime) :
     dataDir(dataDir),
     metaTable(metaTable),
-    beforeTime(beforeTime),
-    serverRestriction(serverRestriction)
+    beforeTime(beforeTime)
 {
 }
 
@@ -312,8 +302,7 @@ void TabletGc::run() const
     log("Tablet GC: computing garbage set");
 
     vector<string> garbageFiles;
-    findTabletGarbage(dataDir, metaTable, beforeTime,
-                      serverRestriction, garbageFiles);
+    findTabletGarbage(dataDir, metaTable, beforeTime, garbageFiles);
     
     log("Tablet GC: found %d garbage file(s)", garbageFiles.size());
     

@@ -195,7 +195,6 @@ namespace {
         tablet::SharedCompactorPtr compactor;
         tablet::WorkQueuePtr workQueue;
         TablePtr metaTable;
-        std::string server;
         ScannerLocator * locator;
 
         boost::scoped_ptr<tablet::TabletGc> gc;
@@ -236,11 +235,10 @@ namespace {
 
     public:
         SuperTabletServer(std::string const & root,
-                          std::string const & server,
                           ScannerLocator * locator,
                           MyTracker * myTracker) :
             myTracker(myTracker),
-            metaConfigMgr(new tablet::MetaConfigManager(root, server)),
+            metaConfigMgr(new tablet::MetaConfigManager(root)),
             tracker(new tablet::FileTracker),
             loader(new LoaderAssembly(myTracker, metaConfigMgr)),
             loggerWriter(new DiskFragmentWriter(metaConfigMgr)),
@@ -257,7 +255,6 @@ namespace {
                     compactorWriter.get(),
                     myTracker)),
             workQueue(new tablet::WorkQueue(1)),
-            server(server),
             locator(locator),
             maintExit(false)
         {
@@ -287,7 +284,7 @@ namespace {
 
             gc.reset(
                 new tablet::TabletGc(
-                    root, metaTable, Timestamp::now(), server));
+                    root, metaTable, Timestamp::now()));
             maintThread.reset(
                 new boost::thread(
                     callOrDie(
@@ -334,7 +331,7 @@ namespace {
                         encodeTuple(make_tuple(name, "\x02", "")),
                         "config",
                         0,
-                        "server = " + server + "\n");
+                        "");
                     metaTable->sync();
 
                     log("Load table again: %s", name);
@@ -364,21 +361,6 @@ namespace {
             maintThread->join();
         }
     };
-
-    std::string getHostName()
-    {
-        if(char * env = getenv("KDI_SERVER_HOST"))
-        {
-            log("Using server name override: %s", env);
-            return std::string(env);
-        }
-
-        char buf[256];
-        if(0 == gethostname(buf, sizeof(buf)) && strcmp(buf, "localhost"))
-            return std::string(buf);
-        else
-            return std::string();
-    }
 
     class ServerApp
         : public virtual Ice::Application
@@ -432,8 +414,7 @@ namespace {
             //   -- the Tablet GC.  It doesn't really belong here.
             boost::shared_ptr<SuperTabletServer> server(
                 new SuperTabletServer(
-                    tableRoot, getHostName(), scannerLocator,
-                    myTracker));
+                    tableRoot, scannerLocator, myTracker));
 
             // Create adapter
             Ice::CommunicatorPtr ic = communicator();

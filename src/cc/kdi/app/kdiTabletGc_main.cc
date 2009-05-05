@@ -39,7 +39,6 @@ int main(int ac, char ** av)
         using namespace boost::program_options;
         op.addOption("meta,m", value<string>(), "location of META table");
         op.addOption("data,d", value<string>(), "location of data directory");
-        op.addOption("server,s", value<string>(), "restrict to server");
         op.addOption("before,b", value<string>(), "consider only files before "
                      "(argument can be a timestamp or another file)");
         op.addOption("dryrun,n", "don't delete anything, just print");
@@ -65,10 +64,6 @@ int main(int ac, char ** av)
     else if(verbose)
         cerr << "Using data directory: " << dataDir << endl;
     
-    string serverRestriction;
-    if(opt.get("server", serverRestriction) && verbose)
-        cerr << "Using server restriction: " << serverRestriction << endl;
-
     string beforeStr;
     Timestamp beforeTime;
     if(opt.get("before", beforeStr))
@@ -98,7 +93,7 @@ int main(int ac, char ** av)
     vector<string> garbageFiles;
     using kdi::tablet::TabletGc;
     TabletGc::findTabletGarbage(dataDir, Table::open(metaTable), beforeTime,
-                                serverRestriction, garbageFiles);
+                                garbageFiles);
 
     if(verbose)
         cerr << "Found " << garbageFiles.size() << " file(s):" << endl;

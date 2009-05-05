@@ -42,7 +42,6 @@ class kdi::tablet::TabletGc
     std::string dataDir;
     kdi::TablePtr metaTable;
     warp::Timestamp beforeTime;
-    std::string serverRestriction;
 
 public:
     /// Scan a tablet server data directory looking for garbage data
@@ -65,14 +64,12 @@ public:
         std::string const & dataDir,
         kdi::TablePtr const & metaTable,
         warp::Timestamp const & beforeTime,
-        std::string const & serverRestriction,
         std::vector<std::string> & garbageFiles);
 
 public:
     TabletGc(std::string const & dataDir,
              kdi::TablePtr const & metaTable,
-             warp::Timestamp const & beforeTime,
-             std::string const & serverRestriction);
+             warp::Timestamp const & beforeTime);
 
     /// Run Tablet GC
     void run() const;
