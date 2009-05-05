@@ -503,25 +503,21 @@ namespace warp
     /// strings are ordered before non-numeric strings.
     struct PseudoNumericLt
     {
-        bool operator()(std::string const & a, std::string const & b) const
+        bool operator()(strref_t a, strref_t b) const
         {
-            char const * a0 = a.c_str();
-            char const * a1 = a0 + a.size();
-            char const * b0 = b.c_str();
-            char const * b1 = b0 + b.size();
-            int aVal, bVal;
-
-            if(parseInt(aVal, a0, a1))
+            int x;
+            if(parseInt(x, a))
             {
                 // A is a numeric string
-                if(parseInt(bVal, b0, b1))
+                int y;
+                if(parseInt(y, b))
                     // So is B, order by value
-                    return aVal < bVal;
+                    return x < y;
                 else
                     // B is not, A goes first
                     return true;
             }
-            else if(parseInt(bVal, b0, b1))
+            else if(parseInt(x, b))
                 // A is not numeric but B is, B goes first
                 return false;
             else
