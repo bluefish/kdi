@@ -222,7 +222,7 @@ void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
         if(stopKey)
         {
             CellData const * nextIt = cellIt+1;
-            if(!(*nextIt < *stopKey)) break;
+            if(nextIt != cellEnd && !(*nextIt < *stopKey)) break;
         }
 
         ++cellIt;
