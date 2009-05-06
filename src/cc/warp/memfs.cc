@@ -1,19 +1,19 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2007 Josh Taylor (Kosmix Corporation)
 // Created 2007-06-11
-// 
+//
 // This file is part of the warp library.
-// 
+//
 // The warp library is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by the
 // Free Software Foundation; either version 2 of the License, or any later
 // version.
-// 
+//
 // The warp library is distributed in the hope that it will be useful, but
 // WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
 // Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -48,7 +48,7 @@ namespace
     inline string normpath(string const & uri)
     {
         // Get path component
-        string p(fs::path(uri));
+        string p = fs::resolve("/", fs::path(uri));
 
         // Trim trailing slash, but not root slash
         size_t sz = p.size();
@@ -77,7 +77,6 @@ shared_ptr<MemoryFilesystem> const & MemoryFilesystem::get()
 //----------------------------------------------------------------------------
 class MemoryFilesystem::Item
 {
-
 public:
     double mtime;
     double atime;
@@ -86,7 +85,7 @@ public:
 public:
     Item() { mtime = atime = ctime = now(); }
     virtual ~Item() {}
-        
+
     void touchRead() { atime = now(); }
     void touchWrite() { mtime = atime = now(); }
 
@@ -94,6 +93,7 @@ public:
     virtual bool isFile() const { return false; }
     virtual bool isDirectory() const { return false; }
 };
+
 
 
 //----------------------------------------------------------------------------
@@ -130,7 +130,7 @@ public:
 
         if(end > buf.size())
             end = buf.size();
-            
+
         len = end - pos;
         memcpy(data, &buf[pos], len);
         touchRead();
@@ -150,7 +150,10 @@ public:
 class MemoryFilesystem::DirItem : public MemoryFilesystem::Item
 {
 public:
-    size_t size() const { return 1; }
+    map_t entries;
+
+public:
+    size_t size() const { return entries.size(); }
     bool isDirectory() const { return true; }
 };
 
@@ -265,17 +268,103 @@ public:
 //----------------------------------------------------------------------------
 // MemoryFilesystem
 //----------------------------------------------------------------------------
+MemoryFilesystem::MemoryFilesystem() :
+    root(new DirItem)
+{
+}
+
 MemoryFilesystem::~MemoryFilesystem()
 {
 }
 
+MemoryFilesystem::itemptr_t & MemoryFilesystem::insert(string const & uri)
+{
+    std::string path = normpath(uri);
+    if(path == "/")
+        return root;
+
+    dirptr_t p = findParent(path);
+    if(!p)
+        raise<IOError>("parent dir doesn't exist: %s [ %s ]", uri, path);
+
+    return p->entries[fs::basename(path)];
+}
+
 MemoryFilesystem::itemptr_t MemoryFilesystem::find(string const & uri) const
 {
-    map_t::const_iterator it = fsMap.find(normpath(uri));
-    if(it != fsMap.end())
+    std::string path = normpath(uri);
+    if(path == "/")
+        return root;
+
+    dirptr_t p = findParent(path);
+    if(!p)
+        return itemptr_t();
+
+    map_t::const_iterator it = p->entries.find(fs::basename(path));
+    if(it != p->entries.end())
         return it->second;
     else
         return itemptr_t();
+}
+
+//#include <iostream>
+//#include <warp/strutil.h>
+
+MemoryFilesystem::dirptr_t MemoryFilesystem::findParent(string const & uri) const
+{
+    //cout << "findParent: " << reprString(uri) << endl;
+
+    string path = normpath(uri);
+    if(path == "/")
+    {
+        //cout << "  root  -->  NULL" << endl;
+        return dirptr_t();
+    }
+
+    std::string parent = normpath(fs::resolve(uri, ".."));
+    //cout << "  parent : " << reprString(parent) << endl;
+
+    char const * p = parent.c_str();
+    char const * end = p + parent.size();
+    ++p;
+
+    dirptr_t n = static_pointer_cast<DirItem>(root);
+
+    if(p == end)
+    {
+        //cout << "  root  -->  ROOT" << endl;
+        return n;
+    }
+
+    for(;;)
+    {
+        char const * pp = std::find(p, end, '/');
+        //cout << "  seg : " << reprString(p, pp) << endl;
+
+        map_t::const_iterator i = n->entries.find(string(p, pp));
+        if(i == n->entries.end())
+        {
+            //cout << "  not found  -->  NULL" << endl;
+            return dirptr_t();
+        }
+
+        if(!i->second->isDirectory())
+        {
+            //cout << "  found file  -->  NULL" << endl;
+            return dirptr_t();
+        }
+
+        n = static_pointer_cast<DirItem>(i->second);
+
+        if(pp == end)
+            break;
+
+        p = pp + 1;
+    }
+
+    //cout << "  end  -->  DIR" << endl;
+
+    return n;
 }
 
 MemoryFilesystem::fileptr_t
@@ -297,7 +386,7 @@ MemoryFilesystem::openFileItem(string const & uri, int mode)
     fileptr_t fp;
     if(tryCreate)
     {
-        itemptr_t & ip = fsMap[normpath(uri)];
+        itemptr_t & ip = insert(uri);
 
         if(!ip)
             ip.reset(new FileItem);
@@ -321,13 +410,13 @@ MemoryFilesystem::openFileItem(string const & uri, int mode)
 
     if(doTrunc)
         fp->truncate();
-    
+
     return fp;
 }
 
 bool MemoryFilesystem::mkdir(string const & uri)
 {
-    itemptr_t & ip = fsMap[normpath(uri)];
+    itemptr_t & ip = insert(uri);
     if(!ip)
     {
         ip.reset(new DirItem);
@@ -341,14 +430,23 @@ bool MemoryFilesystem::mkdir(string const & uri)
 
 bool MemoryFilesystem::remove(string const & uri)
 {
-    map_t::iterator it = fsMap.find(normpath(uri));
-    if(it == fsMap.end())
+    string path = normpath(uri);
+    if(path == "/")
+        raise<IOError>("cannot remove root");
+
+    dirptr_t p = findParent(path);
+    if(!p)
         return false;
 
-    if(!it->second->isFile())
-        raise<NotImplementedError>("MemoryFilesystem can only remove files");
-    
-    fsMap.erase(it);
+    string base = fs::basename(path);
+    map_t::iterator it = p->entries.find(base);
+    if(it == p->entries.end())
+        return false;
+
+    if(it->second->isDirectory() && it->second->size())
+        raise<IOError>("directory not empty: %s", uri);
+
+    p->entries.erase(it);
     return true;
 }
 
@@ -361,15 +459,17 @@ void MemoryFilesystem::rename(string const & sourceUri,
         raise<RuntimeError>("cannot rename across filesystems: '%s' to '%s'",
                             sourceUri, targetUri);
 
-    // Get the source entry
-    map_t::iterator src = fsMap.find(normpath(sourceUri));
-    if(src == fsMap.end())
+    itemptr_t src = find(sourceUri);
+    if(!src)
         raise<IOError>("cannot rename '%s' to '%s': source does not exist",
                        sourceUri, targetUri);
 
-    // Get the target entry
-    map_t::iterator dst = fsMap.find(normpath(targetUri));
-    if(dst != fsMap.end())
+    if(src == root)
+        raise<IOError>("cannot rename '%s' to '%s': source is root",
+                       sourceUri, targetUri);
+
+    itemptr_t dst = find(targetUri);
+    if(dst)
     {
         // Target already exists - bail unless we want to overwrite
         if(!overwrite)
@@ -377,12 +477,12 @@ void MemoryFilesystem::rename(string const & sourceUri,
                            sourceUri, targetUri);
 
         // Can never overwrite a directory
-        if(dst->second->isDirectory())
+        if(dst->isDirectory())
             raise<IOError>("cannot rename '%s' to '%s': cannot overwrite a directory",
                            sourceUri, targetUri);
 
         // Can't overwrite a file with a directory
-        if(src->second->isDirectory())
+        if(src->isDirectory())
             raise<IOError>("cannot rename '%s' to '%s': cannot overwrite a file with a directory",
                            sourceUri, targetUri);
 
@@ -390,18 +490,13 @@ void MemoryFilesystem::rename(string const & sourceUri,
         if(src == dst)
             raise<IOError>("cannot rename '%s' to '%s': they are the same file",
                            sourceUri, targetUri);
+    }
 
-        // Overwrite target
-        dst->second = src->second;
-    }
-    else
-    {
-        // Target doesn't exist -- insert it
-        fsMap[normpath(targetUri)] = src->second;
-    }
+    // Overwrite target
+    insert(targetUri) = src;
 
     // Remove source
-    fsMap.erase(src);
+    findParent(sourceUri)->entries.erase(fs::basename(sourceUri));
 }
 
 size_t MemoryFilesystem::filesize(string const & uri)
@@ -410,7 +505,7 @@ size_t MemoryFilesystem::filesize(string const & uri)
 
     if(!it || !it->isFile())
         raise<IOError>("filesize on non-file: %s", uri);
-    
+
     return it->size();
 }
 
@@ -465,7 +560,7 @@ double MemoryFilesystem::creationTime(string const & uri)
 
 void MemoryFilesystem::clear()
 {
-    fsMap.clear();
+    root.reset(new DirItem);
 }
 
 

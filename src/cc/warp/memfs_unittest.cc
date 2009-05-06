@@ -179,9 +179,23 @@ BOOST_AUTO_TEST_CASE(dir_test)
 
     // We shouldn't be able to make a file named the same thing
     BOOST_CHECK_THROW(File::output(fn), IOError);
+
+    // Should be empty to start
+    BOOST_CHECK_EQUAL(fs::isEmpty(fn), true);
     
-    // Remove is unimplemented for directories
-    BOOST_CHECK_THROW(fs::remove(fn), NotImplementedError);
+    // Make a file in our new directory
+    File::output(fn + "/blah");
+
+    // No longer empty
+    BOOST_CHECK_EQUAL(fs::isEmpty(fn), false);
+    
+    // Cannot remove directory with stuff
+    BOOST_CHECK_THROW(fs::remove(fn), IOError);
+
+    // Remove file and try again
+    BOOST_CHECK_EQUAL(fs::remove(fn + "/blah"), true);
+    BOOST_CHECK_EQUAL(fs::remove(fn), true);
+    BOOST_CHECK_EQUAL(fs::remove(fn), false);
 }
 
 BOOST_AUTO_TEST_CASE(multidir_test)
