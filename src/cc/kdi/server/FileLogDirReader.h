@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-03-11
+// Created 2009-05-05
 //
 // This file is part of KDI.
 //
@@ -18,36 +18,26 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_LOGWRITER_H
-#define KDI_SERVER_LOGWRITER_H
+#ifndef KDI_SERVER_FILELOGDIRREADER_H
+#define KDI_SERVER_FILELOGDIRREADER_H
 
-#include <kdi/server/CellBuffer.h>
-#include <kdi/strref.h>
+#include <kdi/server/LogDirReader.h>
 
 namespace kdi {
 namespace server {
 
-    class LogWriter
+    class FileLogDirReader
+        : public LogDirReader
     {
     public:
-        virtual ~LogWriter() {}
-
-        /// Record a block of cells for the named table in the log
-        virtual void writeCells(strref_t tableName, strref_t packedCells) = 0;
-
-        /// Get the approximate size of the log on disk
-        virtual size_t getDiskSize() const = 0;
-
-        /// Make sure all cells written so far are durable on
-        /// permanent storage
-        virtual void sync() = 0;
-
-        /// Close the log and return the path to the finished log
-        /// file
-        virtual std::string finish() = 0;
+        /// Read a log directory and return an iterator over
+        /// LogReaders for logs in the directory.  The logs will be
+        /// presented in order from oldest to newest.
+        virtual std::auto_ptr<Iterator>
+        readLogDir(std::string const & logDir) const;
     };
 
 } // namespace server
 } // namespace kdi
 
-#endif // KDI_SERVER_LOGWRITER_H
+#endif // KDI_SERVER_FILELOGDIRREADER_H

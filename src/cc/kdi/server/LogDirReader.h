@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-05-01
+// Created 2009-05-05
 //
 // This file is part of KDI.
 //
@@ -18,46 +18,48 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_FILELOGWRITER_H
-#define KDI_SERVER_FILELOGWRITER_H
+#ifndef KDI_SERVER_LOGDIRREADER_H
+#define KDI_SERVER_LOGDIRREADER_H
 
-#include <kdi/server/LogWriter.h>
-#include <warp/file.h>
+#include <string>
+#include <memory>
 
 namespace kdi {
 namespace server {
 
-    class FileLogWriter;
+    class LogDirReader;
+
+    // Forward declarations
+    class LogReader;
 
 } // namespace server
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// FileLogWriter
+// LogDirReader
 //----------------------------------------------------------------------------
-class kdi::server::FileLogWriter
-    : public LogWriter
+class kdi::server::LogDirReader
 {
 public:
-    explicit FileLogWriter(warp::FilePtr const & fp);
+    class Iterator
+    {
+    public:
+        virtual ~Iterator() {}
 
-    /// Record a block of cells for the named table in the log
-    virtual void writeCells(strref_t tableName, strref_t packedCells);
+        /// Get a LogReader for the next log in the directory.  If
+        /// there is nothing left to read, return null.
+        virtual std::auto_ptr<LogReader> next() = 0;
+    };
 
-    /// Get the approximate size of the log on disk
-    virtual size_t getDiskSize() const;
+public:
+    /// Read a log directory and return an iterator over
+    /// LogReaders for logs in the directory.  The logs will be
+    /// presented in order from oldest to newest.
+    virtual std::auto_ptr<Iterator>
+    readLogDir(std::string const & logDir) const = 0;
 
-    /// Make sure all cells written so far are durable on
-    /// permanent storage
-    virtual void sync();
-
-    /// Close the log and return the path to the finished log
-    /// file
-    virtual std::string finish();
-
-private:
-    warp::FilePtr fp;
+protected:
+    ~LogDirReader() {}
 };
 
-
-#endif // KDI_SERVER_FILELOGWRITER_H
+#endif // KDI_SERVER_LOGDIRREADER_H

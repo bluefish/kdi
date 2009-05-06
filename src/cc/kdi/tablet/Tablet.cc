@@ -114,7 +114,6 @@ Tablet::Tablet(std::string const & tableName,
     workQueue(workQueue),
     superTablet(superTablet),
     tableName(tableName),
-    server(cfg.getServer()),
     prettyName(makePrettyName(tableName, cfg.getTabletRows().getUpperBound())),
     minRow(cfg.getTabletRows().getLowerBound()),
     maxRow(cfg.getTabletRows().getUpperBound()),
@@ -396,7 +395,6 @@ Tablet::Tablet(Tablet const & o, Interval<string> const & rows) :
     workQueue(o.workQueue),
     superTablet(o.superTablet),
     tableName(o.tableName),
-    server(o.server),
     prettyName(makePrettyName(tableName, rows.getUpperBound())),
     minRow(rows.getLowerBound()),
     maxRow(rows.getUpperBound()),
@@ -462,7 +460,7 @@ void Tablet::saveConfig(lock_t & lock)
         lock.unlock();
 
         // Save our config
-        configMgr->setTabletConfig(tableName, TabletConfig(rows, uris, server));
+        configMgr->setTabletConfig(tableName, TabletConfig(rows, uris));
 
         lock.lock();
 

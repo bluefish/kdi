@@ -41,21 +41,17 @@ class kdi::tablet::TabletConfig
 private:
     warp::Interval<std::string> rows;
     std::vector<std::string> uris;
-    std::string server;
 
 public:
     /// Create a TabletConfig object.  The rows parameter indicates
     /// the row span covered by the Tablet.  The uris parameter should
     /// contain the ordered list of table URIs that make up the
     /// Tablet.  Each table URI should be suitable for passing to
-    /// ConfigManager::openTable().  The server parameter is the name
-    /// of the server responsible for the Tablet.
+    /// ConfigManager::openTable().
     TabletConfig(warp::Interval<std::string> const & rows,
-                 std::vector<std::string> const & uris,
-                 std::string const & server) :
+                 std::vector<std::string> const & uris) :
         rows(rows),
-        uris(uris),
-        server(server)
+        uris(uris)
     {
     }
 
@@ -71,13 +67,6 @@ public:
     warp::Interval<std::string> const & getTabletRows() const
     {
         return rows;
-    }
-
-    /// Get the assigned server for the Tablet.  This may be empty if
-    /// the tablet is unassigned.
-    std::string const & getServer() const
-    {
-        return server;
     }
 };
 

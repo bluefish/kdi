@@ -246,7 +246,7 @@ private:
             CellBlock const * block =
                 reinterpret_cast<CellBlock const *>(&buffer[0]);
 
-            assert(firstIdx >= 0 && size_t(firstIdx) < block->cells.size());
+            assert(firstIdx >= 0 && (size_t)firstIdx < block->cells.size());
 
             next = block->cells.begin() + firstIdx;
             end = block->cells.end();
