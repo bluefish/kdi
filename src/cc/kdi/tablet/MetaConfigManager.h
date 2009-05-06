@@ -49,12 +49,10 @@ class kdi::tablet::MetaConfigManager
       private boost::noncopyable
 {
     std::string rootDir;
-    std::string serverName;
     TablePtr _metaTable;
 
 public:
-    MetaConfigManager(std::string const & rootDir,
-                      std::string const & serverName);
+    explicit MetaConfigManager(std::string const & rootDir);
     ~MetaConfigManager();
 
     // ConfigManager API

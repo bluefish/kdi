@@ -72,7 +72,6 @@ private:
     WorkQueuePtr           const workQueue;
     SuperTablet *          const superTablet;
     std::string            const tableName;
-    std::string            const server;
     std::string            const prettyName;
 
     warp::IntervalPoint<std::string>       minRow;
