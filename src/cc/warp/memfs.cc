@@ -21,6 +21,7 @@
 
 #include <warp/memfs.h>
 #include <warp/file.h>
+#include <warp/dir.h>
 #include <warp/shared.h>
 #include <ex/exception.h>
 #include <sys/time.h>
@@ -262,6 +263,56 @@ public:
     {
         return uri;
     }
+};
+
+//----------------------------------------------------------------------------
+// MemoryFilesystem::DirHandle
+//----------------------------------------------------------------------------
+class MemoryFilesystem::DirHandle : public Directory
+{
+public:
+    explicit DirHandle(std::string const & uri) :
+        base(uri), idx(0)
+    {
+        MemoryFilesystem::itemptr_t p = MemoryFilesystem::get()->find(uri);
+        if(!p)
+            raise<IOError>("directory does not exist: %s", uri);
+        if(!p->isDirectory())
+            raise<IOError>("not a directory: %s", uri);
+
+        MemoryFilesystem::dirptr_t d =
+            static_pointer_cast<MemoryFilesystem::DirItem>(p);
+        for(map_t::const_iterator i = d->entries.begin();
+            i != d->entries.end(); ++i)
+        {
+            files.push_back(i->first);
+        }
+    }
+
+    virtual void close()
+    {
+        files.clear();
+    }
+
+    virtual bool read(std::string & dst)
+    {
+        if(idx >= files.size())
+            return false;
+
+        dst = files[idx];
+        ++idx;
+        return true;
+    }
+
+    virtual std::string getPath() const
+    {
+        return base;
+    }
+
+public:
+    std::string base;
+    size_t idx;
+    std::vector<string> files;
 };
 
 
@@ -574,6 +625,11 @@ namespace
         return newShared<MemoryFilesystem::FileHandle>(uri, mode);
     }
 
+    DirPtr openDir(string const & uri)
+    {
+        return newShared<MemoryFilesystem::DirHandle>(uri);
+    }
+
     FsPtr getFs(string const & uri)
     {
         return MemoryFilesystem::get();
@@ -585,4 +641,5 @@ WARP_DEFINE_INIT(warp_memfs)
 {
     Filesystem::registerScheme("memfs", &getFs);
     File::registerScheme("memfs", &openFile);
+    Directory::registerScheme("memfs", &openDir);
 }

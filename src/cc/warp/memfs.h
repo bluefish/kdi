@@ -48,6 +48,7 @@ public:
     class FileItem;
     class DirItem;
     class FileHandle;
+    class DirHandle;
     typedef boost::shared_ptr<Item> itemptr_t;
     typedef boost::shared_ptr<FileItem> fileptr_t;
     typedef boost::shared_ptr<DirItem> dirptr_t;
