@@ -23,6 +23,7 @@
 #include <ex/exception.h>
 #include <warp/config.h>
 #include <warp/file.h>
+#include <warp/fs.h>
 
 #include <boost/test/output_test_stream.hpp>
 
@@ -127,6 +128,7 @@ namespace
                     "k : embedded \\x00 null\n"
                 );
 
+            fs::makedirs("memfs:/nested/path");
             setFile("memfs:/nested/path/foo.cfg",
                     "some.file = foo.txt\n"
                     "this.dir = .\n"

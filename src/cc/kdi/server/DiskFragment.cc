@@ -240,6 +240,9 @@ copyMore:
                 out.emitErasure(*cellIt->key.row, *cellIt->key.column,
                                 cellIt->key.timestamp);
             }
+
+            CellData const * nextIt = cellIt+1;
+            if(nextIt != cellEnd && !(*nextIt < *stopKey)) break;
         }
 
         if(cellIt != stopIt) ++cellIt;

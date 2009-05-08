@@ -26,6 +26,7 @@
 #include <map>
 #include <string>
 #include <boost/shared_ptr.hpp>
+#include <boost/noncopyable.hpp>
 
 namespace warp
 {
@@ -38,27 +39,34 @@ namespace warp
 //----------------------------------------------------------------------------
 // MemoryFilesystem
 //----------------------------------------------------------------------------
-class warp::MemoryFilesystem : public warp::Filesystem
+class warp::MemoryFilesystem
+    : public warp::Filesystem,
+      private boost::noncopyable
 {
 public:
     class Item;
     class FileItem;
     class DirItem;
     class FileHandle;
+    class DirHandle;
     typedef boost::shared_ptr<Item> itemptr_t;
     typedef boost::shared_ptr<FileItem> fileptr_t;
+    typedef boost::shared_ptr<DirItem> dirptr_t;
     typedef std::map<std::string, itemptr_t> map_t;
 
 private:
-    map_t fsMap;
+    itemptr_t root;
+    //map_t fsMap;
 
+    itemptr_t & insert(std::string const & uri);
     itemptr_t find(std::string const & uri) const;
+
+    dirptr_t findParent(std::string const & uri) const;
+
     fileptr_t openFileItem(std::string const & uri, int mode);
 
-    // Singleton, no copy
-    MemoryFilesystem() {}
-    MemoryFilesystem(MemoryFilesystem const & o);
-    MemoryFilesystem const & operator=(MemoryFilesystem const & o);
+    // Singleton
+    MemoryFilesystem();
 
 public:
     virtual ~MemoryFilesystem();
