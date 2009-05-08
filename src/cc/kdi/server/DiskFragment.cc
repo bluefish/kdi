@@ -81,7 +81,20 @@ namespace
         }
     };
 
-    bool operator<(CellData const & a, kdi::CellKey const & b)
+    struct KeyLt
+    {
+        bool operator()(CellData const & a, CellKey const & b)
+        {
+            return warp::order(
+                static_cast<strref_t>(*a.key.row), 
+                static_cast<strref_t>(b.getRow()),
+                static_cast<strref_t>(*a.key.column), 
+                static_cast<strref_t>(b.getColumn()),
+                a.key.timestamp, b.getTimestamp());
+        }
+    };
+
+    bool operator<(kdi::marshal::CellData const & a, kdi::CellKey const & b)
     {
         return warp::order(
             static_cast<strref_t>(*a.key.row), static_cast<strref_t>(b.getRow()),
@@ -202,10 +215,18 @@ bool DiskBlockReader::advance(CellKey & nextKey)
 
 void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
 {
+copyMore:
+
     if(stopKey && cellIt != cellEnd && !(*cellIt < *stopKey)) return;
 
-    while((cellIt != cellEnd || getMoreCells()) &&
-          (!stopKey || *cellIt < *stopKey)) 
+    CellData const * stopIt = cellEnd;
+
+    if(stopKey)
+    {
+        stopIt = std::lower_bound(cellIt, cellEnd, *stopKey, KeyLt())-1; 
+    }
+
+    do
     {
         // Filter cells not matching the predicate
         if((!times || times->contains(cellIt->key.timestamp)) &&
@@ -221,14 +242,11 @@ void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
             }
         }
 
-        if(stopKey)
-        {
-            CellData const * nextIt = cellIt+1;
-            if(nextIt != cellEnd && !(*nextIt < *stopKey)) break;
-        }
-
-        ++cellIt;
+        if(cellIt != stopIt) ++cellIt;
     }
+    while(cellIt != stopIt);
+
+    if(getMoreCells()) goto copyMore;
 }
 
 //----------------------------------------------------------------------------
