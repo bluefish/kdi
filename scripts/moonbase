@@ -1,0 +1,135 @@
+#!/bin/bash -e
+
+#----------------------------------------------------------------------------
+# Setup
+#----------------------------------------------------------------------------
+DEFAULT_BASE=$HOME/kdi
+DEFAULT_PORT=34177
+
+#----------------------------------------------------------------------------
+# Usage function
+#----------------------------------------------------------------------------
+function usage()
+{
+    echo "usage: $(basename $0) [options] start|stop|watch|unwatch|patch <tarball>"
+    [[ -n $1 ]] || exit 2
+
+    echo
+    echo "Control a MoonBase instance"
+    echo
+    echo "Options:"
+    echo
+    echo "   -h             Print this help message"
+    echo "   -d DIR         Instance directory (default=$DEFAULT_BASE)"
+    echo "   -p PORT        Server port (default=$DEFAULT_PORT)"
+    #echo "   -m META        Meta table host"
+    
+    exit 2
+}
+
+#----------------------------------------------------------------------------
+# Parse args
+#----------------------------------------------------------------------------
+args=$(getopt "hd:p:" $*) || usage
+set -- $args
+
+BASE=$DEFAULT_BASE
+PORT=$DEFAULT_PORT
+META=
+
+while (( $# > 0 ))
+do
+    case "$1" in
+	-h) usage 1 ;;
+	-d) BASE=$2; shift 2 ;;
+	-p) PORT=$2; shift 2 ;;
+	#-m) META=$2; shift 2 ;;
+	--) shift; break ;;
+	*)
+	    echo "Unexpected option: $1"
+	    usage
+	    ;;
+    esac
+done
+
+#----------------------------------------------------------------------------
+# Go time
+#----------------------------------------------------------------------------
+case $1 in
+    patch)
+	TARBALL=$2
+	if [[ ! -r "$TARBALL" ]] ; then
+	    TMP_TARBALL=$(mktemp)
+	    trap "{ rm -f '$TMP_TARBALL' ; }" EXIT
+	    if scp "$TARBALL" "$TMP_TARBALL"; then
+		TARBALL=$TMP_TARBALL
+	    else
+		echo "Couldn't read tarball: $TARBALL"
+		exit 1
+	    fi
+	fi
+	rm -rf $BASE/bin
+	mkdir -p $BASE/bin
+	tar -xzf "$TARBALL" -C $BASE/bin
+	;;
+	
+    start)
+	if [[ ! -x $BASE/bin/MoonBase ]]; then
+	    echo "Couldn't find or execute server: $BASE/bin/MoonBase"
+	    exit 1
+	fi
+
+	cat >$BASE/ice.cfg <<EOF
+ReadWriteAdapter.Endpoints=tcp -p $PORT
+Ice.MessageSizeMax=32768
+Ice.ThreadPool.Server.Size=4
+Ice.ThreadPool.Server.SizeWarn=0
+EOF
+	export LD_LIBRARY_PATH=$BASE/bin:$LD_LIBRARY_PATH
+	export PATH=$BASE/bin:$PATH
+
+	if [[ $(ulimit -v) == "unlimited" ]]; then
+	    MEM_LIMIT=$(free | grep Mem | awk '{print int($2 * 0.60)}')
+	    echo "Setting VM limit to: $MEM_LIMIT KB" >> $BASE/kdi.log
+	    ulimit -v $MEM_LIMIT
+	fi
+
+	#MoonBase --root $BASE/data --pidfile $BASE/kdi.pid --Ice.Config=$BASE/ice.cfg \
+    #       >> $BASE/kdi.log 2>&1 </dev/null &
+
+    MoonBase --dataRoot $BASE/data --logDir $BASE/data/LOGS --pidfile $BASE/kdi.pid --Ice.Config=$BASE/ice.cfg \
+            >> $BASE/kdi.log 2>&1 </dev/null &
+    ;;
+
+    stop)
+	if [[ -r $BASE/kdi.pid ]]; then
+            kill $(<$BASE/kdi.pid)
+            rm -f $BASE/kdi.pid
+	fi
+	;;
+    
+    watch)
+	if [[ ! -x $BASE/bin/kdiWatchdog ]]; then
+	    echo "Couldn't find or execute watchdog: $BASE/bin/kdiWatchdog"
+	    exit 1
+	fi
+
+	export LD_LIBRARY_PATH=$BASE/bin:$LD_LIBRARY_PATH
+	export PATH=$BASE/bin:$PATH
+
+	kdiWatchdog --port $PORT --pidfile $BASE/kdi.pid \
+	    >> $BASE/watchdog.log 2>&1 </dev/null &
+	echo $! > $BASE/watchdog.pid
+	;;
+
+    unwatch)
+	if [[ -r $BASE/watchdog.pid ]]; then
+            kill $(<$BASE/watchdog.pid)
+            rm -f $BASE/watchdog.pid
+	fi
+	;;
+
+    *)
+	usage
+	;;
+esac

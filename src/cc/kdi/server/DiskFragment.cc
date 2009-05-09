@@ -215,41 +215,40 @@ bool DiskBlockReader::advance(CellKey & nextKey)
 
 void DiskBlockReader::copyUntil(CellKey const * stopKey, CellOutput & out)
 {
-copyMore:
-
     if(stopKey && cellIt != cellEnd && !(*cellIt < *stopKey)) return;
 
-    CellData const * stopIt = cellEnd;
+    CellData const * stopIt = block->cells.end();
 
     if(stopKey)
     {
-        stopIt = std::lower_bound(cellIt, cellEnd, *stopKey, KeyLt())-1; 
+        stopIt = std::lower_bound(cellIt, block->cells.end(), *stopKey, KeyLt()); 
     }
 
-    do
+    while(cellIt < stopIt)
     {
-        // Filter cells not matching the predicate
-        if((!times || times->contains(cellIt->key.timestamp)) &&
-           (!cols || cols->contains(*cellIt->key.column))) 
+        while(cellIt != stopIt && cellIt != cellEnd)
         {
-            if(cellIt->value) 
+            // Filter cells not matching the predicate
+            if((!times || times->contains(cellIt->key.timestamp)) &&
+               (!cols || cols->contains(*cellIt->key.column))) 
             {
-                out.emitCell(*cellIt->key.row, *cellIt->key.column,
-                             cellIt->key.timestamp, *cellIt->value);
-            } else {
-                out.emitErasure(*cellIt->key.row, *cellIt->key.column,
-                                cellIt->key.timestamp);
+                if(cellIt->value) 
+                {
+                    out.emitCell(*cellIt->key.row, *cellIt->key.column,
+                                 cellIt->key.timestamp, *cellIt->value);
+                } else {
+                    out.emitErasure(*cellIt->key.row, *cellIt->key.column,
+                                    cellIt->key.timestamp);
+                }
             }
 
-            CellData const * nextIt = cellIt+1;
-            if(nextIt != cellEnd && !(*nextIt < *stopKey)) break;
+            ++cellIt;
         }
 
-        if(cellIt != stopIt) ++cellIt;
+        if(cellIt == cellEnd && !getMoreCells()) return;
     }
-    while(cellIt != stopIt);
 
-    if(getMoreCells()) goto copyMore;
+    --cellIt;
 }
 
 //----------------------------------------------------------------------------

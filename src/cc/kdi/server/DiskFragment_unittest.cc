@@ -415,7 +415,9 @@ BOOST_AUTO_UNIT_TEST(filtering_test)
 
 BOOST_AUTO_UNIT_TEST(advance_test)
 {
-    // Column filtering of the last block of a row predicate with subsequent row predicate
+    // Column filtering of the last block of a row predicate with subsequent 
+    // row predicate
+    
     DiskWriter out(4096);  // Make sure they are all in the same block
     out.open("memfs:advance");
     out.emitCell("row-A", "col1", 1, "val");
