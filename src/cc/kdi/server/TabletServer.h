@@ -24,11 +24,12 @@
 #include <kdi/server/TransactionCounter.h>
 #include <warp/syncqueue.h>
 #include <warp/WorkerPool.h>
+#include <warp/PersistentWorker.h>
 #include <warp/util.h>
 #include <kdi/strref.h>
 #include <boost/shared_ptr.hpp>
+#include <boost/scoped_ptr.hpp>
 #include <boost/noncopyable.hpp>
-#include <boost/function.hpp>
 #include <boost/thread.hpp>
 #include <string>
 #include <vector>
@@ -216,6 +217,7 @@ private:
     class ConfigsLoadedCb;
     class SchemasLoadedCb;
 
+    class Workers;
     class SWork;
     class SInput;
 
@@ -231,6 +233,7 @@ private:
     size_t logPendingSz;
 
     boost::thread_group threads;
+    boost::scoped_ptr<Workers> workers;
 };
 
 #endif // KDI_SERVER_TABLETSERVER_H

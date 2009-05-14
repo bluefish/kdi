@@ -496,3 +496,19 @@ void Table::applySchema(TableSchema const & s)
         (*i)->applySchema(schema);
     }
 }
+
+std::vector<FragmentCPtr> const & Table::getMemFragments(int groupIndex) const
+{
+    return groupMemFrags[groupIndex];
+}
+
+size_t Table::getMemSize(int groupIndex) const
+{
+    size_t sum = 0;
+    frag_vec const & f = groupMemFrags[groupIndex];
+    for(frag_vec::const_iterator i = f.begin(); i != f.end(); ++i)
+    {
+        sum += (*i)->getDataSize();
+    }
+    return sum;
+}

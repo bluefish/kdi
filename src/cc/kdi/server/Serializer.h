@@ -65,7 +65,7 @@ public:
     public:
         virtual std::auto_ptr<Work> getWork() = 0;
     protected:
-        ~Input();
+        ~Input() {}
     };
 
 public:
