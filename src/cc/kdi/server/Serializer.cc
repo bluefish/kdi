@@ -24,18 +24,33 @@
 #include <kdi/server/FragmentWriter.h>
 #include <kdi/server/DirectBlockCache.h>
 #include <kdi/scan_predicate.h>
+#include <warp/timer.h>
+#include <warp/log.h>
+#include <warp/strutil.h>
 #include <boost/scoped_ptr.hpp>
 
 using namespace kdi::server;
+using warp::log;
+using warp::sizeString;
 
 //----------------------------------------------------------------------------
 // Serializer
 //----------------------------------------------------------------------------
 bool Serializer::doWork()
 {
+    //log("Serializer: doWork()");
+
     boost::scoped_ptr<Work> work(input->getWork().release());
     if(!work)
+    {
+        //log("Serializer: no work");
         return false;
+    }
+
+    log("Serializer: merging %d fragment(s) %s",
+        work->fragments.size(), work->predicate);
+
+    warp::WallTimer timer;
 
     DirectBlockCache cache;
     FragmentMerge merge(work->fragments, &cache, work->predicate, 0);
@@ -49,8 +64,18 @@ bool Serializer::doWork()
             return false;
     }
 
+    size_t outSz = work->output->getDataSize();
+    float dt = timer.getElapsed();
+
     std::string outputFn = work->output->finish();
+
+    log("Serializer: done, output %s, %d row(s), %sB, %.3f sec, %sB/s",
+        outputFn, rows.size(), sizeString(outSz), dt,
+        sizeString(size_t(outSz/dt)));
+
     work->done(rows, outputFn);
+
+    //log("Serializer: complete");
 
     return true;
 }
