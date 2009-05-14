@@ -91,7 +91,7 @@ void PersistentWorker::wait() const
 
 void PersistentWorker::wake()
 {
-    log("%s worker: wake", name);
+    //log("%s worker: wake", name);
 
     lock_t lock(mutex);
     workCond.notify_all();
