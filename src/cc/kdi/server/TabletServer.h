@@ -172,9 +172,6 @@ public:
     /// loaded.
     Table * findTable(strref_t tableName) const;
 
-    /// Find a Table which is ready to be serialized
-    Table * getSerializableTable() const;
-
     /// Find a Table which is ready to be compacted
     Table * getCompactableTable() const;
 
@@ -182,10 +179,6 @@ private:
     Table * getTable(strref_t tableName) const;
 
     void logLoop();
-
-    boost::condition serializeCond;
-    bool serializeQuit;
-    void serializeLoop();
 
     boost::condition compactCond;
     bool compactQuit;
@@ -222,6 +215,9 @@ private:
 
     class ConfigsLoadedCb;
     class SchemasLoadedCb;
+
+    class SWork;
+    class SInput;
 
     typedef std::tr1::unordered_map<std::string, Table *> table_map;
 

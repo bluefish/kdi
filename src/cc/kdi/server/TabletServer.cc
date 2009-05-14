@@ -31,6 +31,7 @@
 #include <kdi/server/LogWriter.h>
 
 #include <kdi/server/FragmentLoader.h>
+#include <kdi/server/FragmentWriterFactory.h>
 #include <kdi/server/LogPlayer.h>
 #include <kdi/server/ConfigWriter.h>
 
@@ -230,7 +231,6 @@ public:
 // TabletServer
 //----------------------------------------------------------------------------
 TabletServer::TabletServer(Bits const & bits) :
-    serializeQuit(false),
     compactQuit(false),
     bits(bits)
 {
@@ -241,11 +241,6 @@ TabletServer::TabletServer(Bits const & bits) :
 
     threads.create_thread(
         warp::callOrDie(
-            boost::bind(&TabletServer::serializeLoop, this),
-            "TabletServer::serializeLoop", true));
-
-    threads.create_thread(
-        warp::callOrDie(
             boost::bind(&TabletServer::compactLoop, this),
             "TabletServer::compactLoop", true));
 }
@@ -253,13 +248,6 @@ TabletServer::TabletServer(Bits const & bits) :
 TabletServer::~TabletServer()
 {
     logQueue.cancelWaits();
-
-    {
-        // Cancel serializeLoop
-        lock_t serverLock(serverMutex);
-        serializeQuit = true;
-        serializeCond.notify_one();
-    }
 
     threads.join_all();
 
@@ -533,7 +521,7 @@ void TabletServer::apply_async(
         tableLock.unlock();
 
         // Signal the serializeLoop
-        serializeCond.notify_one();
+        //xxx serializeCond.notify_one();
 
         // Push the cells to the log queue
         logPendingSz += commit.cells->getDataSize();
@@ -599,30 +587,6 @@ Table * TabletServer::getTable(strref_t tableName) const
     if(i == tableMap.end())
         throw TableNotLoadedError();
     return i->second;
-}
-
-Table * TabletServer::getSerializableTable() const
-{
-    size_t bestScore = 0;
-    Table * bestTable = 0;
-    
-    const size_t SERIALIZE_MIN_SZ = 128 << 20;
-
-    for(table_map::const_iterator i = tableMap.begin();
-        i != tableMap.end(); ++i)
-    {
-        lock_t tableLock(i->second->tableMutex);
-
-        size_t tableScore = i->second->getSerializeScore().first;
-
-        if(tableScore > SERIALIZE_MIN_SZ && tableScore > bestScore)
-        {
-            bestScore = tableScore;
-            bestTable = i->second;
-        }
-    }
-
-    return bestTable;
 }
 
 Table * TabletServer::getCompactableTable() const
@@ -722,50 +686,12 @@ void TabletServer::logLoop()
     }
 }
 
-void TabletServer::serializeLoop()
-{
-    //log("Serialize: begin");
-
-    Serializer serializer;
-
-    // if there isn't any FragmentMaker, we can't very well serialize
-    // exiting silently sort of makes unit testing other parts easier
-    if(!bits.fragmentFactory) {
-        log("Serialize: no fragmentFactory -- exiting");
-        return;
-    }
-    
-    while(!serializeQuit)
-    {
-        Table * table = 0;
-
-        {
-            //log("Serialize: getTable");
-            lock_t serverLock(serverMutex);
-            table = getSerializableTable();
-            if(!table)
-            {
-                //log("Serialize: wait");
-                serializeCond.wait(serverLock);
-                //log("Serialize: awake");
-            }
-        }
-
-        if(table && !serializeQuit)
-        {
-            //log("Serialize: serialize");
-            table->serialize(serializer,
-                             bits.fragmentFactory,
-                             bits.fragmentLoader);
-            //log("Serialize: done");
-        }
-    }
-
-    //log("Serialize: end");
-}
-
 void TabletServer::compactLoop()
 {
+    log("Compactor is bust -- exiting");
+    return;
+
+
     DirectBlockCache blockCache;
     Compactor compactor(bits.fragmentFactory, &blockCache);
 
@@ -1016,3 +942,126 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
 
     loadCompleteCb.wait();
 }
+
+//----------------------------------------------------------------------------
+// TabletServer::SWork
+//----------------------------------------------------------------------------
+class TabletServer::SWork
+    : public Serializer::Work
+{
+public:
+    SWork(TabletServer * server, std::string const & tableName,
+          size_t schemaVersion, int groupIndex) :
+        server(server),
+        tableName(tableName),
+        schemaVersion(schemaVersion),
+        groupIndex(groupIndex)
+    {
+    }
+
+    virtual void done(std::vector<std::string> const & rowCoverage,
+                      std::string const & outFn)
+    {
+        // Open new fragment
+        FragmentCPtr newFrag = server->bits.fragmentLoader->load(outFn);
+
+        // Make sure the table still exists
+        // XXX: make sure it doesn't disappear during this call
+        Table * table = server->findTable(tableName);
+        if(!table)
+            return;
+
+        lock_t tableLock(table->tableMutex);
+
+        // Make sure table schema hasn't changed
+        if(table->getSchemaVersion() != schemaVersion)
+            return;
+
+        // Replace fragments
+        table->replaceMemFragments(
+            this->fragments,
+            newFrag,
+            groupIndex,
+            rowCoverage);
+    }
+
+private:
+    TabletServer * server;
+    std::string tableName;
+    size_t schemaVersion;
+    int groupIndex;
+};
+
+//----------------------------------------------------------------------------
+// TabletServer::SInput
+//----------------------------------------------------------------------------
+class TabletServer::SInput
+    : public Serializer::Input
+{
+public:
+    explicit SInput(TabletServer * server) : server(server) {}
+
+    virtual std::auto_ptr<Serializer::Work> getWork()
+    {
+        std::auto_ptr<Serializer::Work> ptr;
+
+        if(!server->bits.fragmentFactory ||
+           !server->bits.fragmentLoader)
+        {
+            return ptr;
+        }
+
+        lock_t serverLock(server->serverMutex);
+
+        // Find max mem-fragment group
+        bool haveMax = false;
+        table_map::const_iterator maxIt;
+        int maxGroup;
+        float maxScore;
+        for(table_map::const_iterator i = server->tableMap.begin();
+            i != server->tableMap.end(); ++i)
+        {
+            Table * table = i->second;
+            lock_t tableLock(table->tableMutex);
+
+            int nGroups = table->getSchema().groups.size();
+            for(int j = 0; j < nGroups; ++j)
+            {
+                size_t memSize = table->getMemSize(j);
+                int64_t txn = table->getEarliestMemCommit(j);
+                size_t logSize = 0; // xxx: server->getLogSize(txn);
+            
+                float score = memSize + logSize * 0.1f;
+            
+                if(!haveMax || score > maxScore)
+                {
+                    haveMax = true;
+                    maxIt = i;
+                    maxGroup = j;
+                    maxScore = score;
+                }
+            }
+        }
+
+        // Reject if the max is too small
+        if(!haveMax || maxScore < 128e6f)
+            return ptr;
+
+        // Build new work unit
+        Table * table = maxIt->second;
+        lock_t tableLock(table->tableMutex);
+        TableSchema const & schema = table->getSchema();
+    
+        ptr.reset(new SWork(server, maxIt->first, table->getSchemaVersion(), maxGroup));
+        ptr->fragments = table->getMemFragments(maxGroup);
+        ptr->predicate = schema.groups[maxGroup].getPredicate();
+        ptr->output.reset(
+            server->bits.fragmentFactory->start(
+                schema, maxGroup).release());
+
+        return ptr;
+    }
+
+private:    
+    TabletServer * server;
+};

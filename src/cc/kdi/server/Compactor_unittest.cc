@@ -95,6 +95,8 @@ BOOST_AUTO_TEST_CASE(compact_test)
     compactor.compact(schema, 0, compactionSet, outputSet);
 }
 
+#warning disabled test
+#if 0
 BOOST_AUTO_TEST_CASE(serialize_test)
 {
     FragmentCPtr f1(new DiskFragment("memfs:orig_1"));
@@ -112,3 +114,4 @@ BOOST_AUTO_TEST_CASE(serialize_test)
     Serializer serialize;
     serialize(schema.groups[0], frags, writer.get());
 }
+#endif

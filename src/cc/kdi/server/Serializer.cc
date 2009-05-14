@@ -18,93 +18,39 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include <boost/bind.hpp>
 #include <kdi/server/Serializer.h>
+#include <kdi/server/RowCollector.h>
 #include <kdi/server/FragmentMerge.h>
-#include <kdi/server/TabletEventListener.h>
+#include <kdi/server/FragmentWriter.h>
 #include <kdi/server/DirectBlockCache.h>
-#include <kdi/server/TableSchema.h>
-#include <warp/call_or_die.h>
-#include <warp/fs.h>
-#include <warp/log.h>
+#include <kdi/scan_predicate.h>
+#include <boost/scoped_ptr.hpp>
 
-using namespace kdi;
 using namespace kdi::server;
-using std::string;
-using std::vector;
-using std::map;
-using std::search;
-using warp::Interval;
-using warp::IntervalSet;
-using warp::log;
-using warp::File;
 
-Serializer::Serializer()
+//----------------------------------------------------------------------------
+// Serializer
+//----------------------------------------------------------------------------
+bool Serializer::doWork()
 {
-}
+    boost::scoped_ptr<Work> work(input->getWork().release());
+    if(!work)
+        return false;
 
-void Serializer::addRow(strref_t row)
-{
-    if(rows.empty() || row != rows.back())
-        rows.push_back(row);
-}
-
-void Serializer::operator()(TableSchema::Group const & group, vector<FragmentCPtr> frags, 
-                            FragmentWriter * writer)
-{
-    rows.clear();
-    fragWriter = writer;
-    
     DirectBlockCache cache;
-    ScanPredicate pred = group.getPredicate();
-    
-    FragmentMerge merge(frags, &cache, pred, 0);
-    while(merge.copyMerged(size_t(-1), size_t(-1), *this));
-}
+    FragmentMerge merge(work->fragments, &cache, work->predicate, 0);
 
-void Serializer::emitCell(strref_t row, strref_t column, int64_t timestamp,
-                          strref_t value)
-{
-    addRow(row);
-    fragWriter->emitCell(row, column, timestamp, value);
-}
+    std::vector<std::string> rows;
+    RowCollector collector(rows, *work->output);
 
-void Serializer::emitErasure(strref_t row, strref_t column, int64_t timestamp)
-{
-    addRow(row);
-    fragWriter->emitErasure(row, column, timestamp);
-}
-
-size_t Serializer::getCellCount() const 
-{
-    return fragWriter->getCellCount();
-}
-
-size_t Serializer::getDataSize() const 
-{
-    return fragWriter->getDataSize();
-}
-
-bool Serializer::getNextRow(warp::StringRange & row) const
-{
-    if(rows.empty()) return false;
-
-    if(!row)
+    while(merge.copyMerged(size_t(-1), size_t(-1), collector))
     {
-        row = rows.front();
-        return true;
+        if(isCancelled())
+            return false;
     }
 
-    frag_vec::const_iterator i = std::upper_bound(
-        rows.begin(), rows.end(), row, warp::less());
+    std::string outputFn = work->output->finish();
+    work->done(rows, outputFn);
 
-    if(i != rows.end())
-    {
-        row = *i;
-        return true;
-    }
-
-    return false;
+    return true;
 }
-
-

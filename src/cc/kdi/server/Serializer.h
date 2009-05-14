@@ -21,52 +21,65 @@
 #ifndef KDI_SERVER_SERIALIZER_H
 #define KDI_SERVER_SERIALIZER_H
 
-#include <kdi/server/CellBuffer.h>
-#include <kdi/server/DiskFragment.h>
-#include <kdi/server/DiskWriter.h>
-#include <kdi/server/FragmentEventListener.h>
-#include <kdi/server/TableSchema.h>
-#include <kdi/strref.h>
-#include <boost/function.hpp>
-#include <boost/noncopyable.hpp>
+#include <warp/PersistentWorker.h>
+#include <kdi/scan_predicate.h>
+#include <kdi/server/FragmentWriter.h>
 #include <boost/scoped_ptr.hpp>
-#include <boost/thread.hpp>
+#include <boost/shared_ptr.hpp>
+#include <vector>
+#include <string>
+#include <memory>
 
 namespace kdi {
 namespace server {
 
     class Serializer;
 
+    // Forward declarations
+    class Fragment;
+    typedef boost::shared_ptr<Fragment const> FragmentCPtr;
+
 } // namespace server
 } // namespace kdi
 
+//----------------------------------------------------------------------------
+// Serializer
+//----------------------------------------------------------------------------
 class kdi::server::Serializer :
-    public server::CellOutput
+    public warp::PersistentWorker
 {
-    typedef std::vector<warp::StringRange> frag_vec;
-    FragmentWriter * fragWriter;
-    frag_vec rows;
-
-    void addRow(strref_t row);
-    
 public:
-    Serializer();
-    ~Serializer() {};
+    struct Work
+    {
+        std::vector<FragmentCPtr> fragments;
+        ScanPredicate predicate;
+        boost::scoped_ptr<FragmentWriter> output;
 
-    void operator()(TableSchema::Group const & group,
-                    std::vector<FragmentCPtr> frags, FragmentWriter * writer);
+        virtual ~Work() {}
+        virtual void done(std::vector<std::string> const & rowCoverage,
+                          std::string const & outFn) = 0;
+    };
 
-    void emitCell(strref_t row, strref_t column, int64_t timestamp,
-                  strref_t value);
+    class Input
+    {
+    public:
+        virtual std::auto_ptr<Work> getWork() = 0;
+    protected:
+        ~Input();
+    };
 
-    void emitErasure(strref_t row, strref_t column,
-                     int64_t timestamp);
+public:
+    explicit Serializer(Input * input) :
+        PersistentWorker("Serialize"),
+        input(input)
+    {
+    }
 
-    size_t getCellCount() const;
-    size_t getDataSize() const;
+protected:
+    virtual bool doWork();
 
-    /// Find the next emitted row after row, return false if no more
-    bool getNextRow(warp::StringRange & row) const;
-
+private:
+    Input * const input;
 };
+
 #endif // KDI_SERVER_SERIALIZER_H

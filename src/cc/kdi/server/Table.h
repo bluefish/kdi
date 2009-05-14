@@ -143,9 +143,20 @@ private:
 
 public:
     void applySchema(TableSchema const & s);
-    void serialize(Serializer & serialize,
-                   FragmentWriterFactory * factory,
-                   FragmentLoader * loader);
+
+    TableSchema const & getSchema() const { return schema; }
+    size_t getSchemaVersion() const { return schemaVersion; }
+
+    std::vector<FragmentCPtr> const & getMemFragments(int groupIndex) const;
+    size_t getMemSize(int groupIndex) const;
+    int64_t getEarliestMemCommit(int groupIndex) const;
+
+    void replaceMemFragments(
+        std::vector<FragmentCPtr> const & oldFragments,
+        FragmentCPtr const & newFragment,
+        int groupIndex,
+        std::vector<std::string> const & rowCoverage);
+
     void compact(Compactor & compactor);
 
     std::pair<size_t, unsigned> getSerializeScore() const;
@@ -167,7 +178,7 @@ private:
 
 private:
     TableSchema schema;
-    size_t applySchemaCtr;
+    size_t schemaVersion;
     CommitRing rowCommits;
 
     fragvec_vec groupMemFrags;

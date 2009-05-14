@@ -174,62 +174,58 @@ std::pair<size_t, unsigned> Table::getSerializeScore() const
     return std::pair<size_t, unsigned>(bestScore, bestGroup);
 }
 
-void Table::serialize(Serializer & serialize,
-                      FragmentWriterFactory * factory,
-                      FragmentLoader * loader)
+void Table::replaceMemFragments(
+    std::vector<FragmentCPtr> const & oldFragments,
+    FragmentCPtr const & newFragment,
+    int groupIndex,
+    std::vector<std::string> const & rowCoverage)
 {
-    frag_vec frags;
-    unsigned groupIndex = 0;
-    size_t curSchemaCtr = 0;
-    boost::scoped_ptr<FragmentWriter> writer;
-    TableSchema::Group group;
-    
+    // Make sure the oldFragment list is at the head of the memory
+    // chain
+    frag_vec & memFrags = groupMemFrags[groupIndex];
+    if(memFrags.size() < oldFragments.size())
+        return;
+    if(!std::equal(oldFragments.begin(), oldFragments.end(),
+                   memFrags.begin()))
+        return;
+
+    // Remove the old memory fragments
+    memFrags.erase(memFrags.begin(),
+                   memFrags.begin() + oldFragments.size());
+
+    // Add the new fragment to all covered tablets
+    warp::IntervalPointOrder<warp::less> lt;
+    std::vector<std::string>::const_iterator ri = rowCoverage.begin();
+    while(ri != rowCoverage.end())
     {
-        lock_t tableLock(tableMutex);
+        tablet_vec::const_iterator ti = std::lower_bound(
+            tablets.begin(), tablets.end(), *ri, TabletLt());
 
-        // find best group to serialize
-        groupIndex = getSerializeScore().second;
-
-        // copy info about this group and make a writer 
-        frags = groupMemFrags[groupIndex];
-        curSchemaCtr = applySchemaCtr;
-        writer.reset(factory->start(schema, groupIndex).release());
-        group = schema.groups[groupIndex];
-    }
-
-    // nothing to serialize?
-    if(frags.empty()) return;
-
-    // write out the new disk fragment and load it
-    serialize(group, frags, writer.get()); 
-    
-    FragmentCPtr newFrag = loader->load(writer->finish());
-    {
-        lock_t tableLock(tableMutex);
-
-        // did the schema change?
-        if(curSchemaCtr != applySchemaCtr) return;
-
-        // is the set of fragments to replace what we are expecting?
-        frag_vec & memFrags = groupMemFrags[groupIndex];
-        if(memFrags.size() < frags.size()) return;
-        if(!std::equal(frags.begin(), frags.end(), memFrags.begin()))
-            return;
-
-        // find affected tablets and insert new fragments
-        warp::StringRange row;
-        while(serialize.getNextRow(row)) 
+        if(ti == tablets.end())
         {
-            Tablet * t = findContainingTablet(row);
-            t->addFragment(newFrag, groupIndex);
-
-            warp::IntervalPoint<std::string> const & p = t->getRows().getUpperBound();
-            if(p.isInfinite()) break; // at the last tablet
-            row = p.getValue();
+            // We have no tablets that could contain this or any later
+            // rows.
+            break;
         }
-
-        // remove the existing mem fragments
-        memFrags.erase(memFrags.begin(), memFrags.begin()+frags.size());
+        else if(lt((*ti)->getRows().getLowerBound(), *ri))
+        {
+            // Found tablet containing row.  Add the new fragment to
+            // it.
+            (*ti)->addFragment(newFragment, groupIndex);
+            
+            // Move row pointer past end of this tablet
+            ri = std::lower_bound(ri, rowCoverage.end(),
+                                  (*ti)->getRows().getUpperBound(),
+                                  lt);
+        }
+        else
+        {
+            // The found tablet does not contain this row.  Move the
+            // row pointer past the beginning of the tablet.
+            ri = std::lower_bound(ri, rowCoverage.end(),
+                                  (*ti)->getRows().getLowerBound(),
+                                  lt);
+        }
     }
 }
 
@@ -275,7 +271,7 @@ void Table::compact(Compactor & compactor)
                 else
                 {
                     // Load the new fragment and insert it
-                    Fragment *f = new DiskFragment(newFragment);
+                    //Fragment *f = new DiskFragment(newFragment);
                 }
             }
         }
@@ -283,7 +279,7 @@ void Table::compact(Compactor & compactor)
 }
 
 Table::Table() :
-    applySchemaCtr(0)
+    schemaVersion(0)
 {
 }
 
@@ -453,7 +449,8 @@ void Table::applySchema(TableSchema const & s)
     typedef std::vector<std::string> str_vec;
     typedef std::vector<FragmentCPtr> frag_vec;
 
-    ++applySchemaCtr;
+    // Bump schema version
+    ++schemaVersion;
 
     // Copy new schema
     schema = s;
