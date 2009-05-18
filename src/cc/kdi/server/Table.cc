@@ -146,34 +146,6 @@ Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
     return t;
 }
 
-typedef boost::mutex::scoped_lock lock_t; 
-
-std::pair<size_t, unsigned> Table::getSerializeScore() const
-{
-    size_t bestScore = 0;
-    unsigned bestGroup = 0;
-    
-    for(fragvec_vec::const_iterator i = groupMemFrags.begin();
-        i != groupMemFrags.end(); ++i)
-    {
-        size_t groupScore = 0;
-
-        for(frag_vec::const_iterator j = i->begin();
-            j != i->end(); ++j)
-        {
-            groupScore += (*j)->getDataSize();
-        }
-
-        if(groupScore > bestScore)
-        {
-            bestScore = groupScore;
-            bestGroup = i-groupMemFrags.begin();
-        }
-    }
-
-    return std::pair<size_t, unsigned>(bestScore, bestGroup);
-}
-
 size_t Table::getMaxDiskChainLength(int groupIndex) const
 {
     size_t maxLen = 0;

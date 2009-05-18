@@ -161,8 +161,6 @@ public:
         int groupIndex,
         std::vector<std::string> const & rowCoverage);
 
-    std::pair<size_t, unsigned> getSerializeScore() const;
-
 private:
     class TabletLt;
 
