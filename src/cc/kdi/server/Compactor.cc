@@ -26,31 +26,52 @@
 #include <warp/call_or_die.h>
 #include <warp/log.h>
 #include <warp/strutil.h>
-#include <boost/bind.hpp>
+#include <boost/scoped_ptr.hpp>
 #include <cassert>
 
 using namespace kdi::server;
 using warp::log;
 using warp::sizeString;
 
-Compactor::Compactor(FragmentWriterFactory * writerFactory,
+//----------------------------------------------------------------------------
+// Compactor
+//----------------------------------------------------------------------------
+Compactor::Compactor(Input * input,
+                     FragmentWriterFactory * writerFactory,
                      BlockCache * cache) :
+    PersistentWorker("Compactor"),
+    input(input),
     writerFactory(writerFactory),
     cache(cache)
 {
-/*
-    thread.reset(
-        new boost::thread(
-            warp::callOrDie(
-                boost::bind(
-                    &Compactor::compactLoop,
-                    this
-                ),
-                "Compact thread", true
-            )));
+}
 
-    log("Compactor %p: created", this);
-*/
+bool Compactor::doWork()
+{
+    //log("Compactor: doWork()");
+
+    boost::scoped_ptr<Work> work(input->getWork().release());
+    if(!work)
+    {
+        //log("Compactor: no work");
+        return false;
+    }
+
+    log("Compactor: compact");
+
+    RangeOutputMap output;
+    compact(work->schema,
+            work->groupIndex,
+            work->compactionSet,
+            output);
+
+    log("Compactor: done");
+
+    work->done(output);
+
+    //log("Compactor: complete");
+
+    return true;
 }
 
 void Compactor::compact(TableSchema const & schema, int groupIndex,
@@ -150,18 +171,9 @@ void Compactor::compact(TableSchema const & schema, int groupIndex,
     log("compaction output, cells: %d, size: %d", totCells, totSz);
 }
 
-void Compactor::chooseCompactionSet(RangeFragmentMap const & fragMap,
-                                    RangeFragmentMap & compactionSet)
-{
-    compactionSet.clear();
-    compactionSet = fragMap;
-}
-
-void Compactor::compactLoop() 
-{
-    log("Compactor: starting");
-}
-
+//----------------------------------------------------------------------------
+// RangeFragmentMap
+//----------------------------------------------------------------------------
 RangeFragmentMap & RangeFragmentMap::operator=(RangeFragmentMap const  & x)
 {
     rangeMap = x.rangeMap;

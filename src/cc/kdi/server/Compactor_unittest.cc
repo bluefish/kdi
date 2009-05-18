@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(compact_test)
 {
     DiskWriterFactory diskFactory("memfs:");
     DirectBlockCache blockCache;
-    Compactor compactor(&diskFactory, &blockCache);
+    Compactor compactor(0, &diskFactory, &blockCache);
 
     TableSchema schema;
     schema.tableName = "test";
@@ -81,17 +81,15 @@ BOOST_AUTO_TEST_CASE(compact_test)
     FragmentCPtr f4(new DiskFragment("memfs:orig_1"));
     FragmentCPtr f5(new DiskFragment("memfs:orig_1"));
     
-    RangeFragmentMap candidateSet;
     RangeFragmentMap compactionSet;
     RangeOutputMap outputSet;
 
-    addFragment(candidateSet, "a", "b", f1);
-    addFragment(candidateSet, "a", "b", f2);
-    addFragment(candidateSet, "b", "c", f3);
-    addFragment(candidateSet, "b", "c", f4);
-    addFragment(candidateSet, "b", "c", f5);
+    addFragment(compactionSet, "a", "b", f1);
+    addFragment(compactionSet, "a", "b", f2);
+    addFragment(compactionSet, "b", "c", f3);
+    addFragment(compactionSet, "b", "c", f4);
+    addFragment(compactionSet, "b", "c", f5);
 
-    compactor.chooseCompactionSet(candidateSet, compactionSet);
     compactor.compact(schema, 0, compactionSet, outputSet);
 }
 

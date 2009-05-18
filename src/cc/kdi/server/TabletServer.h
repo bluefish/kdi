@@ -181,10 +181,6 @@ private:
 
     void logLoop();
 
-    boost::condition compactCond;
-    bool compactQuit;
-    void compactLoop();
-
     void applySchemas(std::vector<TableSchema> const & schemas);
     void loadTablets(std::vector<TabletConfig> const & configs);
 
@@ -220,6 +216,7 @@ private:
     class Workers;
     class SWork;
     class SInput;
+    class CInput;
 
     typedef std::tr1::unordered_map<std::string, Table *> table_map;
 

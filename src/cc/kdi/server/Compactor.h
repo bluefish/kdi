@@ -21,15 +21,16 @@
 #ifndef KDI_SERVER_COMPACTOR_H
 #define KDI_SERVER_COMPACTOR_H
 
+#include <warp/PersistentWorker.h>
+#include <kdi/server/TableSchema.h>
+#include <warp/interval.h>
+
 #include <kdi/server/Fragment.h>
 #include <kdi/strref.h>
-#include <warp/interval.h>
-#include <boost/noncopyable.hpp>
-#include <boost/scoped_ptr.hpp>
-#include <boost/thread.hpp>
 #include <string>
 #include <map>
 #include <vector>
+#include <memory>
 
 namespace kdi {
 namespace server {
@@ -90,14 +91,35 @@ typedef std::map<warp::Interval<std::string>, std::string,
 // Compactor
 //----------------------------------------------------------------------------
 class kdi::server::Compactor
-    : private boost::noncopyable
+    : public warp::PersistentWorker
 {
-    FragmentWriterFactory * const writerFactory;
-    BlockCache * const cache;
-    boost::scoped_ptr<boost::thread> thread;
+public:
+    struct Work
+    {
+        TableSchema schema;
+        int groupIndex;
+        RangeFragmentMap compactionSet;
+
+        virtual ~Work() {}
+        virtual void done(RangeOutputMap const & output) = 0;
+    };
+
+    class Input
+    {
+    public:
+        virtual std::auto_ptr<Work> getWork() = 0;
+    protected:
+        ~Input() {}
+    };
 
 public:
+    Compactor(Input * input, FragmentWriterFactory * writerFactory,
+              BlockCache * cache);
 
+protected:
+    virtual bool doWork();
+
+public:
     /// Compact some ranges.  
     ///
     /// Input: The compaction set specifies a set of ranges
@@ -115,15 +137,11 @@ public:
     void compact(TableSchema const & schema, int groupIndex,
                  RangeFragmentMap const & compactionSet,
                  RangeOutputMap & outputSet);
-    
-    /// Choose a more limited compaction set given a set of all the fragment
-    /// sequences from a single table.
-    void chooseCompactionSet(RangeFragmentMap const & fragMap,
-                             RangeFragmentMap & compactionSet);
 
-    void compactLoop();
-
-    Compactor(FragmentWriterFactory * writerFactory, BlockCache * cache);
-    virtual ~Compactor() {}
+private:
+    Input * const input;
+    FragmentWriterFactory * const writerFactory;
+    BlockCache * const cache;
 };
+
 #endif // KDI_SERVER_COMPACTOR_H

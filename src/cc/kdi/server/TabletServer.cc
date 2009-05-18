@@ -346,8 +346,57 @@ public:
     }
 
 private:    
-    TabletServer * server;
+    TabletServer * const server;
 };
+
+
+//----------------------------------------------------------------------------
+// TabletServer::CInput
+//----------------------------------------------------------------------------
+class TabletServer::CInput
+    : public Compactor::Input
+{
+public:
+    explicit CInput(TabletServer * server) : server(server) {}
+
+    virtual std::auto_ptr<Compactor::Work> getWork()
+    {
+        std::auto_ptr<Compactor::Work> ptr;
+
+/*
+    log("Compactor is bust -- exiting");
+    return;
+
+
+    DirectBlockCache blockCache;
+    Compactor compactor(bits.fragmentFactory, &blockCache);
+
+    if(!bits.fragmentFactory) {
+        warp::log("Compact: no fragmentFactory -- exiting");
+        return;
+    }
+
+    while(!compactQuit)
+    {
+        Table * table = 0;
+
+        {
+            lock_t serverLock(serverMutex);
+            table = getCompactableTable();
+            if(!table) compactCond.wait(serverLock);
+        }
+
+        if(table && !compactQuit) table->compact(compactor);
+    }
+*/
+
+        return ptr;
+    }
+
+private:
+    TabletServer * const server;
+};
+
 
 //----------------------------------------------------------------------------
 // TabletServer::Workers
@@ -356,21 +405,30 @@ class TabletServer::Workers
 {
 public:
     SInput serializerInput;
+    CInput compactorInput;
+    DirectBlockCache compactorCache;
     Serializer serializer;
+    Compactor compactor;
 
     Workers(TabletServer * server) :
         serializerInput(server),
-        serializer(&serializerInput)
+        compactorInput(server),
+        serializer(&serializerInput),
+        compactor(&compactorInput,
+                  server->bits.fragmentFactory,
+                  &compactorCache)
     {
     }
 
     void start()
     {
         serializer.start();
+        compactor.start();
     }
 
     void stop()
     {
+        compactor.stop();
         serializer.stop();
     }
 };
@@ -379,7 +437,6 @@ public:
 // TabletServer
 //----------------------------------------------------------------------------
 TabletServer::TabletServer(Bits const & bits) :
-    compactQuit(false),
     bits(bits),
     workers(new Workers(this))
 {
@@ -387,11 +444,6 @@ TabletServer::TabletServer(Bits const & bits) :
         warp::callOrDie(
             boost::bind(&TabletServer::logLoop, this),
             "TabletServer::logLoop", true));
-
-    threads.create_thread(
-        warp::callOrDie(
-            boost::bind(&TabletServer::compactLoop, this),
-            "TabletServer::compactLoop", true));
 
     workers->start();
 }
@@ -836,34 +888,6 @@ void TabletServer::logLoop()
         commits.clear();
         frags.clear();
         commit = Commit();
-    }
-}
-
-void TabletServer::compactLoop()
-{
-    log("Compactor is bust -- exiting");
-    return;
-
-
-    DirectBlockCache blockCache;
-    Compactor compactor(bits.fragmentFactory, &blockCache);
-
-    if(!bits.fragmentFactory) {
-        warp::log("Compact: no fragmentFactory -- exiting");
-        return;
-    }
-
-    while(!compactQuit)
-    {
-        Table * table = 0;
-
-        {
-            lock_t serverLock(serverMutex);
-            table = getCompactableTable();
-            if(!table) compactCond.wait(serverLock);
-        }
-
-        if(table && !compactQuit) table->compact(compactor);
     }
 }
 
