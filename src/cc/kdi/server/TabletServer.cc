@@ -349,6 +349,17 @@ private:
     TabletServer * const server;
 };
 
+//----------------------------------------------------------------------------
+// TabletServer::CWork
+//----------------------------------------------------------------------------
+class TabletServer::CWork
+    : public Compactor::Work
+{
+public:
+    virtual void done(RangeOutputMap const & output)
+    {
+    }
+};
 
 //----------------------------------------------------------------------------
 // TabletServer::CInput
@@ -363,32 +374,44 @@ public:
     {
         std::auto_ptr<Compactor::Work> ptr;
 
-/*
-    log("Compactor is bust -- exiting");
-    return;
+        lock_t serverLock(server->serverMutex);
 
-
-    DirectBlockCache blockCache;
-    Compactor compactor(bits.fragmentFactory, &blockCache);
-
-    if(!bits.fragmentFactory) {
-        warp::log("Compact: no fragmentFactory -- exiting");
-        return;
-    }
-
-    while(!compactQuit)
-    {
-        Table * table = 0;
-
+        // Find longest disk-fragment chain
+        size_t maxLen = 0;
+        table_map::const_iterator maxIt;
+        int maxGroup;
+        for(table_map::const_iterator i = server->tableMap.begin();
+            i != server->tableMap.end(); ++i)
         {
-            lock_t serverLock(serverMutex);
-            table = getCompactableTable();
-            if(!table) compactCond.wait(serverLock);
+            Table * table = i->second;
+            lock_t tableLock(table->tableMutex);
+
+            int nGroups = table->getSchema().groups.size();
+            for(int j = 0; j < nGroups; ++j)
+            {
+                size_t len = table->getMaxDiskChainLength(j);
+                if(len > maxLen)
+                {
+                    maxLen = len;
+                    maxIt = i;
+                    maxGroup = j;
+                }
+            }
         }
 
-        if(table && !compactQuit) table->compact(compactor);
-    }
-*/
+        // Don't bother?
+        if(maxLen < 5)
+            return ptr;
+
+        // Build a work unit
+        ptr.reset(new CWork);
+
+        Table * table = maxIt->second;
+        lock_t tableLock(table->tableMutex);
+        
+        ptr->schema = table->getSchema();
+        ptr->groupIndex = maxGroup;
+        table->getCompactionSet(maxGroup, ptr->compactionSet);
 
         return ptr;
     }
@@ -792,12 +815,6 @@ Table * TabletServer::getTable(strref_t tableName) const
     if(i == tableMap.end())
         throw TableNotLoadedError();
     return i->second;
-}
-
-Table * TabletServer::getCompactableTable() const
-{
-    if(tableMap.empty()) return 0;
-    return tableMap.begin()->second;
 }
 
 Table * TabletServer::findTable(strref_t tableName) const

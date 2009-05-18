@@ -174,6 +174,33 @@ std::pair<size_t, unsigned> Table::getSerializeScore() const
     return std::pair<size_t, unsigned>(bestScore, bestGroup);
 }
 
+size_t Table::getMaxDiskChainLength(int groupIndex) const
+{
+    size_t maxLen = 0;
+    for(tablet_vec::const_iterator i = tablets.begin();
+        i != tablets.end(); ++i)
+    {
+        size_t len = (*i)->getChainLength(groupIndex);
+        if(len > maxLen)
+            maxLen = len;
+    }
+    return maxLen;
+}
+
+void Table::getCompactionSet(int groupIndex, RangeFragmentMap & compactionSet) const
+{
+    frag_vec frags;
+    for(tablet_vec::const_iterator i = tablets.begin();
+        i != tablets.end(); ++i)
+    {
+        frags.clear();
+        (*i)->getFragments(frags, groupIndex);
+
+        if(frags.size() > 1)
+            compactionSet.addFragments((*i)->getRows(), frags);
+    }
+}
+
 void Table::replaceMemFragments(
     std::vector<FragmentCPtr> const & oldFragments,
     FragmentCPtr const & newFragment,
@@ -225,55 +252,6 @@ void Table::replaceMemFragments(
             ri = std::lower_bound(ri, rowCoverage.end(),
                                   (*ti)->getRows().getLowerBound(),
                                   lt);
-        }
-    }
-}
-
-void Table::compact(Compactor & compactor)
-{
-    RangeFragmentMap compactionSet;
-
-    {
-        lock_t tableLock(tableMutex);
-
-        int groupIndex = 0;
-
-        for(tablet_vec::const_iterator i = tablets.begin();
-            i != tablets.end(); ++i)
-        {
-            frag_vec frags;
-            (*i)->getFragments(frags, groupIndex);
-            if(frags.size() > 1)
-            {
-                compactionSet.addFragments((*i)->getRows(), frags);
-            }
-        }
-    }
-
-    RangeOutputMap outputSet;
-    compactor.compact(schema, 0, compactionSet, outputSet);
-        
-    {
-        lock_t tableLock(tableMutex);
-
-        for(RangeFragmentMap::const_iterator i = compactionSet.begin();
-            i != compactionSet.end(); ++i)
-        {
-            RangeOutputMap::const_iterator j;
-            j = outputSet.find(i->first);
-            if(j != outputSet.end())
-            {
-                std::string const & newFragment = j->second;
-                if(newFragment == "")
-                {
-                    // No compation output, remove the fragments
-                }
-                else
-                {
-                    // Load the new fragment and insert it
-                    //Fragment *f = new DiskFragment(newFragment);
-                }
-            }
         }
     }
 }

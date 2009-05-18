@@ -173,9 +173,6 @@ public:
     /// loaded.
     Table * findTable(strref_t tableName) const;
 
-    /// Find a Table which is ready to be compacted
-    Table * getCompactableTable() const;
-
 private:
     Table * getTable(strref_t tableName) const;
 
@@ -216,6 +213,7 @@ private:
     class Workers;
     class SWork;
     class SInput;
+    class CWork;
     class CInput;
 
     typedef std::tr1::unordered_map<std::string, Table *> table_map;

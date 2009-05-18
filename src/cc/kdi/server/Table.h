@@ -49,6 +49,7 @@ namespace server {
     class Compactor;
     class FragmentLoader;
     class FragmentWriterFactory;
+    class RangeFragmentMap;
 
 } // namespace server
 
@@ -151,13 +152,14 @@ public:
     size_t getMemSize(int groupIndex) const;
     int64_t getEarliestMemCommit(int groupIndex) const;
 
+    size_t getMaxDiskChainLength(int groupIndex) const;
+    void getCompactionSet(int groupIndex, RangeFragmentMap & compactionSet) const;
+
     void replaceMemFragments(
         std::vector<FragmentCPtr> const & oldFragments,
         FragmentCPtr const & newFragment,
         int groupIndex,
         std::vector<std::string> const & rowCoverage);
-
-    void compact(Compactor & compactor);
 
     std::pair<size_t, unsigned> getSerializeScore() const;
 

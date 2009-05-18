@@ -75,6 +75,11 @@ public:
         return loading.get();
     }
 
+    size_t getChainLength(int groupIndex) const
+    {
+        return fragGroups[groupIndex].size();
+    }
+
     void getFragments(std::vector<FragmentCPtr> & out, int groupIndex) const
     {
         out.insert(out.end(),
