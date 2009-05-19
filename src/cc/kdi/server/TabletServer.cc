@@ -245,20 +245,23 @@ public:
     virtual void done(std::vector<std::string> const & rowCoverage,
                       std::string const & outFn)
     {
-        // Open new fragment
-        FragmentCPtr newFrag = server->bits.fragmentLoader->load(outFn);
+        lock_t serverLock(server->serverMutex);
 
         // Make sure the table still exists
-        // XXX: make sure it doesn't disappear during this call
-        Table * table = server->findTable(tableName);
+        Table * table = server->findTableLocked(tableName);
         if(!table)
             return;
 
+        // Lock table, release server
         lock_t tableLock(table->tableMutex);
+        serverLock.unlock();
 
         // Make sure table schema hasn't changed
         if(table->getSchemaVersion() != schemaVersion)
             return;
+
+        // Open new fragment
+        FragmentCPtr newFrag = server->bits.fragmentLoader->load(outFn);
 
         // Replace fragments
         table->replaceMemFragments(
@@ -266,6 +269,9 @@ public:
             newFrag,
             groupIndex,
             rowCoverage);
+
+        // Kick compactor
+        server->wakeCompactor();
     }
 
 private:
@@ -327,7 +333,7 @@ public:
         }
 
         // Reject if the max is too small
-        if(!haveMax || maxScore < 128e6f)
+        if(!haveMax || maxScore < 32e6f)
             return ptr;
 
         // Build new work unit
@@ -356,9 +362,45 @@ class TabletServer::CWork
     : public Compactor::Work
 {
 public:
+    CWork(TabletServer * server, size_t schemaVersion) :
+        server(server), schemaVersion(schemaVersion) {}
+
     virtual void done(RangeOutputMap const & output)
     {
+        lock_t serverLock(server->serverMutex);
+
+        // Make sure the table still exists
+        Table * table = server->findTableLocked(schema.tableName);
+        if(!table)
+            return;
+
+        // Lock table, release server
+        lock_t tableLock(table->tableMutex);
+        serverLock.unlock();
+
+        // Make sure table schema hasn't changed
+        if(table->getSchemaVersion() != schemaVersion)
+            return;
+
+        // Replace fragments
+        for(RangeOutputMap::const_iterator i = output.begin();
+            i != output.end(); ++i)
+        {
+            RangeFragmentMap::const_iterator j = compactionSet.rangeMap.find(i->first);
+            if(j == compactionSet.end())
+                continue;
+
+            FragmentCPtr newFragment;
+            if(!i->second.empty())
+                newFragment = server->bits.fragmentLoader->load(i->second);
+
+            table->replaceDiskFragments(j->second, newFragment, groupIndex, i->first);
+        }
     }
+
+private:
+    TabletServer * const server;
+    size_t schemaVersion;
 };
 
 //----------------------------------------------------------------------------
@@ -404,11 +446,10 @@ public:
             return ptr;
 
         // Build a work unit
-        ptr.reset(new CWork);
-
         Table * table = maxIt->second;
         lock_t tableLock(table->tableMutex);
         
+        ptr.reset(new CWork(server, table->getSchemaVersion()));
         ptr->schema = table->getSchema();
         ptr->groupIndex = maxGroup;
         table->getCompactionSet(maxGroup, ptr->compactionSet);
@@ -419,7 +460,6 @@ public:
 private:
     TabletServer * const server;
 };
-
 
 //----------------------------------------------------------------------------
 // TabletServer::Workers
@@ -749,7 +789,7 @@ void TabletServer::apply_async(
         tableLock.unlock();
 
         // Signal the serializer
-        workers->serializer.wake();
+        wakeSerializer();
 
         // Push the cells to the log queue
         logPendingSz += commit.cells->getDataSize();
@@ -820,11 +860,26 @@ Table * TabletServer::getTable(strref_t tableName) const
 Table * TabletServer::findTable(strref_t tableName) const
 {
     lock_t serverLock(serverMutex);
+    return findTableLocked(tableName);
+}
+
+Table * TabletServer::findTableLocked(strref_t tableName) const
+{
     table_map::const_iterator i = tableMap.find(
         tableName.toString());
     if(i != tableMap.end())
         return i->second;
     return 0;
+}
+
+void TabletServer::wakeSerializer()
+{
+    workers->serializer.wake();
+}
+
+void TabletServer::wakeCompactor()
+{
+    workers->compactor.wake();
 }
 
 void TabletServer::logLoop()

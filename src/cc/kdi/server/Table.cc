@@ -228,6 +228,28 @@ void Table::replaceMemFragments(
     }
 }
 
+void Table::replaceDiskFragments(
+    std::vector<FragmentCPtr> const & oldFragments,
+    FragmentCPtr const & newFragment,
+    int groupIndex,
+    warp::Interval<std::string> const & rowRange)
+{
+    tablet_vec::const_iterator end = std::upper_bound(
+        tablets.begin(), tablets.end(),
+        rowRange.getUpperBound(),
+        TabletLt());
+    
+    tablet_vec::const_iterator begin = end;
+    while(begin != tablets.begin() &&
+          rowRange.contains((*(begin-1))->getRows()))
+        --begin;
+
+    for(tablet_vec::const_iterator i = begin; i != end; ++i)
+    {
+        (*i)->replaceFragments(oldFragments, newFragment, groupIndex);
+    }
+}
+
 Table::Table() :
     schemaVersion(0)
 {

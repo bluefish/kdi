@@ -92,6 +92,29 @@ public:
         fragGroups[groupIndex].push_back(frag);
     }
 
+    void replaceFragments(std::vector<FragmentCPtr> const & oldFragments,
+                          FragmentCPtr const & newFragment,
+                          int groupIndex)
+    {
+        assert(!oldFragments.empty());
+
+        frag_vec & chain = fragGroups[groupIndex];
+        frag_vec::iterator i = std::search(
+            chain.begin(), chain.end(),
+            oldFragments.begin(), oldFragments.end());
+        if(i == chain.end())
+            return;
+
+        frag_vec::iterator end = i + oldFragments.size();
+        if(newFragment)
+        {
+            *i = newFragment;
+            ++i;
+        }
+        
+        chain.erase(i, end);
+    }
+
     void applySchema(TableSchema const & schema);
     void deferUntilLoaded(LoadedCb * cb);
     warp::Runnable * finishLoading();

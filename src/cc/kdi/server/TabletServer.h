@@ -174,7 +174,11 @@ public:
     Table * findTable(strref_t tableName) const;
 
 private:
+    Table * findTableLocked(strref_t tableName) const;
     Table * getTable(strref_t tableName) const;
+
+    void wakeSerializer();
+    void wakeCompactor();
 
     void logLoop();
 

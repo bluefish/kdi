@@ -26,6 +26,7 @@
 #include <warp/call_or_die.h>
 #include <warp/log.h>
 #include <warp/strutil.h>
+#include <warp/timer.h>
 #include <boost/scoped_ptr.hpp>
 #include <cassert>
 
@@ -60,10 +61,11 @@ bool Compactor::doWork()
     log("Compactor: compact");
 
     RangeOutputMap output;
-    compact(work->schema,
-            work->groupIndex,
-            work->compactionSet,
-            output);
+    if(!compact(work->schema,
+                work->groupIndex,
+                work->compactionSet,
+                output))
+        return false;
 
     log("Compactor: done");
 
@@ -74,32 +76,37 @@ bool Compactor::doWork()
     return true;
 }
 
-void Compactor::compact(TableSchema const & schema, int groupIndex,
+bool Compactor::compact(TableSchema const & schema, int groupIndex,
                         RangeFragmentMap const & compactionSet,
                         RangeOutputMap & outputSet) 
 {
     assert(groupIndex >= 0 && (size_t)groupIndex < schema.groups.size());
+
     ScanPredicate groupPred = schema.groups[groupIndex].getPredicate();
+    log("Compacting table %s group %s: %s", schema.tableName, groupIndex, groupPred);
 
     // Split outputs if they get bigger than this:
-    size_t const OUTPUT_SPLIT_SIZE = size_t(1) << 30;  // 1 GB
+    size_t const OUTPUT_SPLIT_SIZE = size_t(512) << 20;  // 512 MB
 
-    // Stop the compaction entirely if it gets bigger than this:
-    //size_t const MAX_OUTPUT_SIZE = 4 * OUTPUT_SPLIT_SIZE;
-    
+    warp::WallTimer totTimer;
     size_t totSz = 0;
     size_t totCells = 0;
 
+    warp::WallTimer outTimer;
     boost::scoped_ptr<FragmentWriter> writer;
     typedef std::vector<RangeFragmentMap::range_t> output_t;
     output_t outputRanges;
 
     RangeFragmentMap::const_iterator i;
+    size_t nRanges = 0;
     for(i = compactionSet.begin(); i != compactionSet.end(); ++i)
     {
+        ++nRanges;
+
         RangeFragmentMap::range_t const & range = i->first;
         RangeFragmentMap::frag_list_t const & frags = i->second;
-        log("compacting %d frags in range %s", frags.size(), range);
+        log("Compacting %d frags in range %d of %d: %s",
+            frags.size(), nRanges, compactionSet.size(), range);
 
         // Open a new writer if we need one
         if(!writer)
@@ -111,7 +118,10 @@ void Compactor::compact(TableSchema const & schema, int groupIndex,
         // Merge everything in this range
         FragmentMerge merge(frags, cache, groupPred.clipRows(range), 0); 
         while(merge.copyMerged(size_t(-1), size_t(-1), *writer))
-            ;
+        {
+            if(isCancelled())
+                return false;
+        }
 
         // See if we emitted any new cells for this range
         size_t cellsInRange = writer->getCellCount() - beforeCount;
@@ -132,17 +142,20 @@ void Compactor::compact(TableSchema const & schema, int groupIndex,
         size_t dataSz = writer->getDataSize();
         if(dataSz >= OUTPUT_SPLIT_SIZE)
         {
-            // XXX: keep track of this file somewhere
+            double dt = outTimer.getElapsed();
+            outTimer.reset();
+
             std::string fn = writer->finish();
-            log("Compactor: wrote %s (%sB)", fn, sizeString(dataSz));
+            log("Compactor: wrote %s %sB in %.3f sec, %sB/s",
+                fn, sizeString(dataSz), dt, sizeString(size_t(dataSz/dt)));
             writer.reset();
 
-            for(output_t::const_iterator i = outputRanges.begin();
-                i != outputRanges.end(); ++i)
+            for(output_t::const_iterator j = outputRanges.begin();
+                j != outputRanges.end(); ++j)
             {
-                outputSet[*i] = fn;
+                outputSet[*j] = fn;
             }
-            outputSet.clear();
+            outputRanges.clear();
 
             totSz += dataSz;
         }
@@ -153,22 +166,30 @@ void Compactor::compact(TableSchema const & schema, int groupIndex,
     {
         size_t dataSz = writer->getDataSize();
 
-        // XXX: keep track of this file somewhere
+        double dt = outTimer.getElapsed();
+        outTimer.reset();
+
         std::string fn = writer->finish();
-        log("Compactor: wrote %s (%sB)", fn, sizeString(dataSz));
+        log("Compactor: wrote %s %sB in %.3f sec, %sB/s",
+            fn, sizeString(dataSz), dt, sizeString(size_t(dataSz/dt)));
         writer.reset();
 
-        for(output_t::const_iterator i = outputRanges.begin();
-            i != outputRanges.end(); ++i)
+        for(output_t::const_iterator j = outputRanges.begin();
+            j != outputRanges.end(); ++j)
         {
-            outputSet[*i] = fn;
+            outputSet[*j] = fn;
         }
-        outputSet.clear();
+        outputRanges.clear();
 
         totSz += dataSz;
     }
 
-    log("compaction output, cells: %d, size: %d", totCells, totSz);
+    double dt = totTimer.getElapsed();
+    log("Compaction complete for table %s, output %s cell(s), %sB in %.3f sec, %sB/s",
+        schema.tableName, sizeString(totCells, 1000), sizeString(totSz),
+        dt, sizeString(size_t(totSz/dt)));
+
+    return true;
 }
 
 //----------------------------------------------------------------------------

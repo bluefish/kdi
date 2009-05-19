@@ -161,6 +161,12 @@ public:
         int groupIndex,
         std::vector<std::string> const & rowCoverage);
 
+    void replaceDiskFragments(
+        std::vector<FragmentCPtr> const & oldFragments,
+        FragmentCPtr const & newFragment,
+        int groupIndex,
+        warp::Interval<std::string> const & rowRange);
+
 private:
     class TabletLt;
 
