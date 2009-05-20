@@ -27,9 +27,9 @@ import random
 # Constants
 #----------------------------------------------------------------------------
 INITIAL_DATA_SIZE = 128
-NUM_GROUPS = 2
-SPLIT_THRESHOLD = 256
-MAX_WIDTH = 8
+NUM_GROUPS = 1
+SPLIT_THRESHOLD = 200
+MAX_WIDTH = 32
 
 #----------------------------------------------------------------------------
 # alphanum
@@ -274,6 +274,21 @@ def chooseCompactionSet(table, groupIndex):
 def ptable(table, compactPair=None):
     print '%d tablet(s)' % len(table.tablets)
 
+    allLens = [ [] for i in xrange(table.getGroupCount()) ]
+    for gi,lens in enumerate(allLens):
+        for t in table.tablets:
+            lens.append(len(t.frags[gi]))
+        lens.sort()
+        if not lens:
+            lens.append(0)
+        print 'group %d' % (gi+1)
+        print '  nFrags = %d' % sum(lens)
+        print '  avg chain = %.2f' % (sum(lens) * 1.0 / len(lens))
+        print '  max chain = %d' % lens[-1]
+        print '  pct: %s' % (' '.join('%d=%d' % (p,lens[int(p/100.0*len(lens))])
+                                      for p in xrange(10,99,10)))
+    return
+
     def fname(t,gi,f):
         if compactPair and gi == compactPair[0]:
             if t in compactPair[1] and f in compactPair[1][t]:
@@ -285,7 +300,7 @@ def ptable(table, compactPair=None):
 
     for ti,t in enumerate(table.tablets):
         print '  %2d %d' % (ti+1, t.getTotalSize())
-        for gi in xrange(NUM_GROUPS):
+        for gi in xrange(table.getGroupCount()):
             print '    %2d %5d %s' % (gi+1, t.getDataSize(gi), flist(t,gi))
 
 
@@ -300,8 +315,10 @@ def main():
 
     delay = 0
 
-    for i in xrange(10000):
-        t.appendFragment(Fragment())
+    for i in xrange(5000):
+
+        if i < 2000:
+            t.appendFragment(Fragment())
         cpair = None
 
         if not delay:
