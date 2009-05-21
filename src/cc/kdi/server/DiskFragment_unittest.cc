@@ -23,6 +23,9 @@
 #include <kdi/server/CellBuilder.h>
 #include <kdi/memory_table.h>
 
+#include <kdi/server/FileTracker.h>
+#include <kdi/server/PendingFile.h>
+
 #include <warp/fs.h>
 #include <string>
 #include <boost/format.hpp>
@@ -38,21 +41,38 @@ using namespace warp;
 using namespace std;
 using boost::format;
 
+namespace {
+
+    typedef boost::shared_ptr<DiskWriter> DiskWriterPtr;
+    
+    DiskWriterPtr openWriter(std::string const & fn, size_t blockSize)
+    {
+        static FileTracker tracker("memfs:");
+        
+        FilePtr fp = File::output(fn);
+        PendingFilePtr pfn = tracker.createPending();
+        pfn->assignName(fn);
+        
+        DiskWriterPtr p(new DiskWriter(fp, pfn, blockSize));
+        return p;
+    }
+}
+
 BOOST_AUTO_TEST_CASE(output_test)
 {
-    DiskWriter out(128);
-    out.open("memfs:output");
-    BOOST_CHECK_EQUAL(0, out.getCellCount());
-    size_t startSize = out.getDataSize();
+    DiskWriterPtr out = openWriter("memfs:output", 128);
+    BOOST_CHECK_EQUAL(0, out->getCellCount());
+    size_t startSize = out->getDataSize();
 
-    out.emitCell("row", "col", 0, "val");
-    BOOST_CHECK_EQUAL(1, out.getCellCount());
-    BOOST_CHECK(out.getDataSize() > startSize);
+    out->emitCell("row", "col", 0, "val");
+    BOOST_CHECK_EQUAL(1, out->getCellCount());
+    BOOST_CHECK(out->getDataSize() > startSize);
 
-    out.emitErasure("erase", "col", 0);
-    BOOST_CHECK_EQUAL(2, out.getCellCount());
+    out->emitErasure("erase", "col", 0);
+    BOOST_CHECK_EQUAL(2, out->getCellCount());
 
-    out.close();
+    PendingFileCPtr fn = out->finish();
+    BOOST_CHECK_EQUAL(fn->getName(), "memfs:output");
 }
 
 namespace {
@@ -127,15 +147,14 @@ public:
 class TestFragmentBuilder
 {
     MemoryTablePtr memTable;
-    DiskWriter out;
+    DiskWriterPtr out;
 
 public:
     
     explicit TestFragmentBuilder(string const & file, size_t blockSz=128) :
         memTable(MemoryTable::create(false)),
-        out(blockSz)
+        out(openWriter(file,blockSz))
     {
-        out.open(file);
     }
 
     ~TestFragmentBuilder()
@@ -162,15 +181,15 @@ public:
         {
             if(x.isErasure())
             {
-                out.emitErasure(x.getRow(), x.getColumn(), x.getTimestamp());
+                out->emitErasure(x.getRow(), x.getColumn(), x.getTimestamp());
             }
             else
             {
-                out.emitCell(x.getRow(), x.getColumn(), x.getTimestamp(),
-                             x.getValue());
+                out->emitCell(x.getRow(), x.getColumn(), x.getTimestamp(),
+                              x.getValue());
             }
         }
-        out.close();
+        out->finish();
     }
 };
 
@@ -208,9 +227,8 @@ BOOST_AUTO_TEST_CASE(empty_test)
 {
     // Make empty table
     {
-        DiskWriter out(128);
-        out.open("memfs:empty");
-        out.close();
+        DiskWriterPtr out = openWriter("memfs:empty", 128);
+        out->finish();
     }
 
     DiskFragment df("memfs:empty");
@@ -229,16 +247,15 @@ BOOST_AUTO_TEST_CASE(simple_test)
 {
     // Write some cells
     {
-        DiskWriter out(128);
-        out.open("memfs:simple");
-        out.emitCell("row1", "col1", 42, "val1");
-        out.emitCell("row1", "col2", 42, "val2");
-        out.emitCell("row1", "col2", 23, "val3");
-        out.emitErasure("row1", "col3", 23);
-        out.emitCell("row2", "col1", 42, "val4");
-        out.emitCell("row2", "col3", 42, "val5");
-        out.emitCell("row3", "col2", 23, "val6");
-        out.close();
+        DiskWriterPtr out = openWriter("memfs:simple", 128);
+        out->emitCell("row1", "col1", 42, "val1");
+        out->emitCell("row1", "col2", 42, "val2");
+        out->emitCell("row1", "col2", 23, "val3");
+        out->emitErasure("row1", "col3", 23);
+        out->emitCell("row2", "col1", 42, "val4");
+        out->emitCell("row2", "col3", 42, "val5");
+        out->emitCell("row3", "col2", 23, "val6");
+        out->finish();
     }
 
     DiskFragment df("memfs:simple");
@@ -259,16 +276,15 @@ BOOST_AUTO_TEST_CASE(pred_test)
 {
     // Write some cells
     {
-        DiskWriter out(128);
-        out.open("memfs:pred");
-        out.emitCell("row1", "col1", 42, "val1");
-        out.emitCell("row1", "col2", 42, "val2");
-        out.emitCell("row1", "col2", 23, "val3");
-        out.emitErasure("row1", "col3", 23);
-        out.emitCell("row2", "col1", 42, "val4");
-        out.emitCell("row2", "col3", 42, "val5");
-        out.emitCell("row3", "col2", 23, "val6");
-        out.close();
+        DiskWriterPtr out = openWriter("memfs:pred", 128);
+        out->emitCell("row1", "col1", 42, "val1");
+        out->emitCell("row1", "col2", 42, "val2");
+        out->emitCell("row1", "col2", 23, "val3");
+        out->emitErasure("row1", "col3", 23);
+        out->emitCell("row2", "col1", 42, "val4");
+        out->emitCell("row2", "col3", 42, "val5");
+        out->emitCell("row3", "col2", 23, "val6");
+        out->finish();
     }
 
     CHECK_FRAGMENT("memfs:pred",
@@ -279,35 +295,6 @@ BOOST_AUTO_TEST_CASE(pred_test)
         "(row2,col1,42,val4)"
         "(row2,col3,42,val5)"
         "(row3,col2,23,val6)"
-    );
-}
-
-BOOST_AUTO_TEST_CASE(rewrite_test)
-{
-    DiskWriter out(128);
-    
-    // First fragment
-    out.open("memfs:one");
-    out.emitCell("row1", "col1", 42, "one1");
-    out.emitCell("row1", "col2", 42, "one2");
-    out.close();
-
-    // Second fragment
-    out.open("memfs:two");
-    out.emitCell("row1", "col1", 42, "two1");
-    out.emitCell("row1", "col3", 42, "two2");
-    out.close();
-
-    // Check first fragment
-    CHECK_FRAGMENT("memfs:one",
-        "(row1,col1,42,one1)"
-        "(row1,col2,42,one2)"
-    );
-
-    // Check second fragment
-    CHECK_FRAGMENT("memfs:two",
-        "(row1,col1,42,two1)"
-        "(row1,col3,42,two2)"
     );
 }
 
@@ -324,11 +311,10 @@ BOOST_AUTO_UNIT_TEST(rowscan_test)
 
     // Need to test row scans on tiny tables as well
     // Single block tables can be a corner case
-    DiskWriter out(2056);
-    out.open("memfs:rowscan_small");
-    out.emitCell("row1", "col1", 42, "one1");
-    out.emitCell("row2", "col2", 42, "one2");
-    out.close();
+    DiskWriterPtr out = openWriter("memfs:rowscan_small", 2056);
+    out->emitCell("row1", "col1", 42, "one1");
+    out->emitCell("row2", "col2", 42, "one2");
+    out->finish();
 
     DiskFragment df_small("memfs:rowscan_small");
     BOOST_CHECK_EQUAL(1u, countCells(df_small, "row = 'row2'")); 
@@ -397,13 +383,12 @@ BOOST_AUTO_UNIT_TEST(filtering_test)
     // Try to make verify that filtering blocks doesn't skip data it shouldn't
     
     // Column filtering of the last block of a row predicate with subsequent row predicate
-    DiskWriter out(1); // Force one cell per block
-    out.open("memfs:filtering");
-    out.emitCell("row-A", "fam-1:col", 1, "val");
-    out.emitCell("row-A", "fam-2:col", 1, "val");
-    out.emitCell("row-Z", "fam-3:col", 1, "val");
-    out.emitCell("row-Z", "fam-4:col", 1, "val");
-    out.close();
+    DiskWriterPtr out = openWriter("memfs:filtering", 1); // Force one cell per block
+    out->emitCell("row-A", "fam-1:col", 1, "val");
+    out->emitCell("row-A", "fam-2:col", 1, "val");
+    out->emitCell("row-Z", "fam-3:col", 1, "val");
+    out->emitCell("row-Z", "fam-4:col", 1, "val");
+    out->finish();
 
     DiskFragment df("memfs:filtering");
     BOOST_CHECK_EQUAL(1u, countCells(df, "row = 'row-A' or row = 'row-Z' and " 
@@ -418,12 +403,11 @@ BOOST_AUTO_UNIT_TEST(advance_test)
     // Column filtering of the last block of a row predicate with subsequent 
     // row predicate
     
-    DiskWriter out(4096);  // Make sure they are all in the same block
-    out.open("memfs:advance");
-    out.emitCell("row-A", "col1", 1, "val");
-    out.emitCell("row-A", "col2", 1, "val");
-    out.emitCell("row-A", "col3", 2, "val");
-    out.close();
+    DiskWriterPtr out = openWriter("memfs:advance", 4096);  // Make sure they are all in the same block
+    out->emitCell("row-A", "col1", 1, "val");
+    out->emitCell("row-A", "col2", 1, "val");
+    out->emitCell("row-A", "col3", 2, "val");
+    out->finish();
 
     // Get the block out 
     DiskFragment df("memfs:advance");
@@ -441,5 +425,4 @@ BOOST_AUTO_UNIT_TEST(advance_test)
     reader = block->makeReader(ScanPredicate("time = @2"));
     BOOST_CHECK(reader->advance(nextCell));
     BOOST_CHECK_EQUAL(2, nextCell.getTimestamp());
-
 }

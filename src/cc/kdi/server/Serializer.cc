@@ -67,7 +67,7 @@ bool Serializer::doWork()
     size_t outSz = work->output->getDataSize();
     float dt = timer.getElapsed();
 
-    std::string outputFn = work->output->finish();
+    PendingFileCPtr outputFn = work->output->finish();
 
     log("Serializer: done, output %s, %d row(s), %sB, %.3f sec, %sB/s",
         outputFn, rows.size(), sizeString(outSz), dt,

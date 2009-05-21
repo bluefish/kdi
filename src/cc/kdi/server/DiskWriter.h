@@ -44,14 +44,9 @@ class kdi::server::DiskWriter
 {
     
 public:
-    DiskWriter(warp::FilePtr const & out, std::string const & fn,
+    DiskWriter(warp::FilePtr const & out, PendingFileCPtr const & fn,
                size_t blockSize);
     ~DiskWriter();
-
-public:                         // Deprecated
-    DiskWriter(size_t blockSize)        __attribute__((__deprecated__));
-    void open(std::string const & fn)   __attribute__((__deprecated__));
-    void close()                        __attribute__((__deprecated__));
 
 public:                         // CellOutput API
     void emitCell(strref_t row, strref_t column, int64_t timestamp,
@@ -63,14 +58,12 @@ public:                         // CellOutput API
     size_t getDataSize() const;
 
 public:                         // FragmentWriter API
-    std::string finish();
+    PendingFileCPtr finish();
 
 private:
     class Impl;
     boost::scoped_ptr<Impl> impl;
-    std::string fn;
-
-    size_t blockSize_deprecated;
+    PendingFileCPtr fn;
 };
 
 //----------------------------------------------------------------------------

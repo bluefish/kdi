@@ -31,6 +31,7 @@
 #include <map>
 #include <vector>
 #include <memory>
+#include <boost/shared_ptr.hpp>
 
 namespace kdi {
 namespace server {
@@ -42,6 +43,8 @@ namespace server {
     class FragmentWriterFactory;
     class BlockCache;
     class TableSchema;
+    class PendingFile;
+    typedef boost::shared_ptr<PendingFile const> PendingFileCPtr;
 
 } // namespace server
 } // namespace kdi
@@ -81,7 +84,7 @@ public:
 namespace kdi {
 namespace server {
 
-typedef std::map<warp::Interval<std::string>, std::string, 
+typedef std::map<warp::Interval<std::string>, PendingFileCPtr, 
                  kdi::server::RangeFragmentMap::RangeLt> 
         RangeOutputMap;
 

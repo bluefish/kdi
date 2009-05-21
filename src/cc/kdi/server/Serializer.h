@@ -37,7 +37,9 @@ namespace server {
 
     // Forward declarations
     class Fragment;
+    class PendingFile;
     typedef boost::shared_ptr<Fragment const> FragmentCPtr;
+    typedef boost::shared_ptr<PendingFile const> PendingFileCPtr;
 
 } // namespace server
 } // namespace kdi
@@ -57,7 +59,7 @@ public:
 
         virtual ~Work() {}
         virtual void done(std::vector<std::string> const & rowCoverage,
-                          std::string const & outFn) = 0;
+                          PendingFileCPtr const & outFn) = 0;
     };
 
     class Input

@@ -34,6 +34,7 @@
 #include <kdi/server/FragmentWriterFactory.h>
 #include <kdi/server/LogPlayer.h>
 #include <kdi/server/ConfigWriter.h>
+#include <kdi/server/PendingFile.h>
 
 #include <kdi/server/name_util.h>
 #include <kdi/server/errors.h>
@@ -243,7 +244,7 @@ public:
     }
 
     virtual void done(std::vector<std::string> const & rowCoverage,
-                      std::string const & outFn)
+                      PendingFileCPtr const & outFn)
     {
         lock_t serverLock(server->serverMutex);
 
@@ -261,7 +262,7 @@ public:
             return;
 
         // Open new fragment
-        FragmentCPtr newFrag = server->bits.fragmentLoader->load(outFn);
+        FragmentCPtr newFrag = server->bits.fragmentLoader->load(outFn->getName());
 
         // Replace fragments
         table->replaceMemFragments(
@@ -269,6 +270,9 @@ public:
             newFrag,
             groupIndex,
             rowCoverage);
+
+        /// XXX : hold on to pending file reference until configs are
+        /// saved
 
         // Kick compactor
         server->wakeCompactor();
@@ -391,8 +395,8 @@ public:
                 continue;
 
             FragmentCPtr newFragment;
-            if(!i->second.empty())
-                newFragment = server->bits.fragmentLoader->load(i->second);
+            if(!i->second)
+                newFragment = server->bits.fragmentLoader->load(i->second->getName());
 
             table->replaceDiskFragments(j->second, newFragment, groupIndex, i->first);
         }

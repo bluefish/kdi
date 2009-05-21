@@ -29,6 +29,9 @@ namespace server {
 
     class DiskWriterFactory;
 
+    // Forward declarations
+    class FileTracker;
+
 } // namespace server
 } // namespace kdi
 
@@ -39,14 +42,18 @@ class kdi::server::DiskWriterFactory
     : public kdi::server::FragmentWriterFactory
 {
 public:
-    explicit DiskWriterFactory(std::string const & dataRoot) :
-        dataRoot(dataRoot) {}
+    DiskWriterFactory(std::string const & dataRoot,
+                      FileTracker * fileTracker) :
+        dataRoot(dataRoot),
+        fileTracker(fileTracker)
+    {}
 
     virtual std::auto_ptr<FragmentWriter>
     start(TableSchema const & schema, int groupIndex);
 
 private:
     std::string const dataRoot;
+    FileTracker * const fileTracker;
 };
 
 #endif // KDI_SERVER_DISKWRITERFACTORY_H

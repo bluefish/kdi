@@ -22,12 +22,16 @@
 #define KDI_SERVER_FRAGMENTWRITER_H
 
 #include <kdi/server/CellOutput.h>
-#include <string>
+#include <boost/shared_ptr.hpp>
 
 namespace kdi {
 namespace server {
 
     class FragmentWriter;
+
+    // Forward declarations
+    class PendingFile;
+    typedef boost::shared_ptr<PendingFile const> PendingFileCPtr;
 
 } // namespace server
 } // namespace kdi
@@ -43,7 +47,7 @@ public:
 
     /// Finalize the output file and return the filename for the newly
     /// created fragment.
-    virtual std::string finish() = 0;
+    virtual PendingFileCPtr finish() = 0;
 };
 
 

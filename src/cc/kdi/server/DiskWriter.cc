@@ -350,38 +350,17 @@ size_t DiskWriter::Impl::getCellCount() const
 //----------------------------------------------------------------------------
 // DiskTableWriter
 //----------------------------------------------------------------------------
-DiskWriter::DiskWriter(warp::FilePtr const & out, std::string const & fn,
+DiskWriter::DiskWriter(warp::FilePtr const & out, PendingFileCPtr const & fn,
                        size_t blockSize) :
     impl(new DiskWriter::Impl(blockSize)),
-    fn(fn),
-    blockSize_deprecated(blockSize)
+    fn(fn)
 {
     impl->open(out);
-}
-
-DiskWriter::DiskWriter(size_t blockSize) :
-    blockSize_deprecated(blockSize)
-{
 }
 
 DiskWriter::~DiskWriter()
 {
     impl.reset();
-}
-
-void DiskWriter::open(std::string const & fn)
-{
-    if(impl)
-        raise<RuntimeError>("DiskWriter already open");
-
-    impl.reset(new Impl(blockSize_deprecated));
-    impl->open(File::output(fn));
-    this->fn = fn;
-}
-
-void DiskWriter::close()
-{
-    finish();
 }
 
 void DiskWriter::emitCell(strref_t row, strref_t column, int64_t timestamp,
@@ -417,7 +396,7 @@ size_t DiskWriter::getDataSize() const
     return impl->getDataSize();
 }
 
-std::string DiskWriter::finish()
+PendingFileCPtr DiskWriter::finish()
 {
     if(!impl)
         raise<RuntimeError>("DiskWriter already closed");

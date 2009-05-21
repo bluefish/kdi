@@ -39,6 +39,7 @@
 #include <kdi/server/CachedFragmentLoader.h>
 #include <kdi/server/DiskLoader.h>
 #include <kdi/server/FileLogWriterFactory.h>
+#include <kdi/server/FileTracker.h>
 
 using namespace kdi::server;
 using namespace kdi;
@@ -58,6 +59,7 @@ namespace {
     class MainServerAssembly
         : private boost::noncopyable
     {
+        boost::scoped_ptr<FileTracker> fragFileTracker;
         boost::scoped_ptr<TestConfigReader> configReader;
         boost::scoped_ptr<NullConfigWriter> configWriter;
         boost::scoped_ptr<warp::WorkerPool> workerPool;
@@ -115,11 +117,14 @@ namespace {
 
         void init(string const & dataRoot, string const & logDir)
         {
+            fragFileTracker.reset(new FileTracker(dataRoot));
+
             workerPool.reset(new WorkerPool(4, "Pool", true));
             char const *groups[] = { "group", 0, 0 };
             configReader.reset(new TestConfigReader(groups));
             configWriter.reset(new NullConfigWriter);
-            fragmentFactory.reset(new DiskWriterFactory(dataRoot));
+            fragmentFactory.reset(
+                new DiskWriterFactory(dataRoot, fragFileTracker.get()));
 
             diskLoader.reset(new DiskLoader(dataRoot));
             cachedLoader.reset(new CachedFragmentLoader(diskLoader.get()));
@@ -157,6 +162,7 @@ namespace {
             configWriter.reset();
             fragmentFactory.reset();
             workerPool.reset();
+            fragFileTracker.reset();
         }
     };
     

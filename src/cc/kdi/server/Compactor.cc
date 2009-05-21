@@ -23,6 +23,7 @@
 #include <kdi/server/FragmentWriterFactory.h>
 #include <kdi/server/FragmentWriter.h>
 #include <kdi/server/TableSchema.h>
+#include <kdi/server/PendingFile.h>
 #include <warp/call_or_die.h>
 #include <warp/log.h>
 #include <warp/strutil.h>
@@ -135,7 +136,7 @@ bool Compactor::compact(TableSchema const & schema, int groupIndex,
         else
         {
             // Empty replacement set, this range has been compacted away
-            outputSet[range] = "";
+            outputSet[range] = PendingFileCPtr();
         }
 
         // If we've written enough, roll to a new file.
@@ -145,9 +146,9 @@ bool Compactor::compact(TableSchema const & schema, int groupIndex,
             double dt = outTimer.getElapsed();
             outTimer.reset();
 
-            std::string fn = writer->finish();
+            PendingFileCPtr fn = writer->finish();
             log("Compactor: wrote %s %sB in %.3f sec, %sB/s",
-                fn, sizeString(dataSz), dt, sizeString(size_t(dataSz/dt)));
+                fn->getName(), sizeString(dataSz), dt, sizeString(size_t(dataSz/dt)));
             writer.reset();
 
             for(output_t::const_iterator j = outputRanges.begin();
@@ -169,9 +170,9 @@ bool Compactor::compact(TableSchema const & schema, int groupIndex,
         double dt = outTimer.getElapsed();
         outTimer.reset();
 
-        std::string fn = writer->finish();
+        PendingFileCPtr fn = writer->finish();
         log("Compactor: wrote %s %sB in %.3f sec, %sB/s",
-            fn, sizeString(dataSz), dt, sizeString(size_t(dataSz/dt)));
+            fn->getName(), sizeString(dataSz), dt, sizeString(size_t(dataSz/dt)));
         writer.reset();
 
         for(output_t::const_iterator j = outputRanges.begin();

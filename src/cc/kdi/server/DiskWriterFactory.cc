@@ -21,6 +21,8 @@
 #include <kdi/server/DiskWriterFactory.h>
 #include <kdi/server/TableSchema.h>
 #include <kdi/server/DiskWriter.h>
+#include <kdi/server/FileTracker.h>
+#include <kdi/server/PendingFile.h>
 #include <warp/fs.h>
 #include <warp/file.h>
 #include <warp/tuple.h>
@@ -43,13 +45,15 @@ DiskWriterFactory::start(TableSchema const & schema, int groupIndex)
 
     string tableDir = fs::resolve(dataRoot, schema.tableName);
 
+    PendingFilePtr fn = fileTracker->createPending();
+
     fs::makedirs(tableDir);
 
     string path = fs::resolve(tableDir, "$(UNIQUE)");
     FilePtr fp;
     tie(fp, path) = File::openUnique(path);
 
-    string fn = schema.tableName + "/" + fs::basename(path);
+    fn->assignName(schema.tableName + "/" + fs::basename(path));
     p.reset(new DiskWriter(fp, fn, schema.groups[groupIndex].diskBlockSize));
     return p;
 }
