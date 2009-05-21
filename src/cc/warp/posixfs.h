@@ -50,9 +50,9 @@ public:
     virtual bool isDirectory(std::string const & uri);
     virtual bool isFile(std::string const & uri);
     virtual bool isEmpty(std::string const & uri);
-    virtual double modificationTime(std::string const & uri);
-    virtual double accessTime(std::string const & uri);
-    virtual double creationTime(std::string const & uri);
+    virtual Timestamp modificationTime(std::string const & uri);
+    virtual Timestamp accessTime(std::string const & uri);
+    virtual Timestamp creationTime(std::string const & uri);
 
     // Extra functions
 

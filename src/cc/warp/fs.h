@@ -31,6 +31,9 @@ namespace warp
 {
     class Filesystem;
 
+    // Forward declarations
+    class Timestamp;
+
     // Filesystem independent URI-path manipulation functions
     namespace fs
     {
@@ -173,19 +176,16 @@ namespace warp
         /// directory.  Path must exist.
         bool isEmpty(std::string const & uri);
 
-        /// Return modification time of a file or directory, measured
-        /// in seconds from the Epoch (00:00:00 UTC, January 1, 1970).
-        double modificationTime(std::string const & uri);
+        /// Return modification time of a file or directory.
+        Timestamp modificationTime(std::string const & uri);
 
-        /// Return access time of a file or directory, measured in
-        /// seconds from the Epoch (00:00:00 UTC, January 1, 1970).
-        /// Not all implementations support this in a meaningful way.
-        double accessTime(std::string const & uri);
+        /// Return access time of a file or directory.  Not all
+        /// implementations support this in a meaningful way.
+        Timestamp accessTime(std::string const & uri);
 
-        /// Return creation time of a file or directory, measured in
-        /// seconds from the Epoch (00:00:00 UTC, January 1, 1970).
-        /// Not all implementations support this in a meaningful way.
-        double creationTime(std::string const & uri);
+        /// Return creation time of a file or directory.  Not all
+        /// implementations support this in a meaningful way.
+        Timestamp creationTime(std::string const & uri);
     }
 
     typedef boost::shared_ptr<Filesystem> FsPtr;
@@ -241,19 +241,16 @@ public:
     /// Path must exist.
     virtual bool isEmpty(std::string const & uri) = 0;
 
-    /// Return last modification time of a file or directory, measured
-    /// in seconds from the Epoch (00:00:00 UTC, January 1, 1970).
-    virtual double modificationTime(std::string const & uri) = 0;
+    /// Return last modification time of a file or directory.
+    virtual Timestamp modificationTime(std::string const & uri) = 0;
 
-    /// Return last access time of a file or directory, measured in
-    /// seconds from the Epoch (00:00:00 UTC, January 1, 1970).  Not
-    /// all implementations support this in a meaningful way.
-    virtual double accessTime(std::string const & uri) = 0;
+    /// Return last access time of a file or directory.  Not all
+    /// implementations support this in a meaningful way.
+    virtual Timestamp accessTime(std::string const & uri) = 0;
 
-    /// Return creation time of a file or directory, measured in
-    /// seconds from the Epoch (00:00:00 UTC, January 1, 1970).  Not
-    /// all implementations support this in a meaningful way.
-    virtual double creationTime(std::string const & uri) = 0;
+    /// Return creation time of a file or directory.  Not all
+    /// implementations support this in a meaningful way.
+    virtual Timestamp creationTime(std::string const & uri) = 0;
 
 
 

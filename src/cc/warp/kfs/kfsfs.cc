@@ -21,6 +21,7 @@
 
 #include <warp/kfs/kfsfs.h>
 #include <warp/uri.h>
+#include <warp/timestamp.h>
 #include <ex/exception.h>
 
 #include <sys/stat.h>
@@ -199,7 +200,7 @@ bool KfsFilesystem::isEmpty(string const & uri)
     }
 }
 
-double KfsFilesystem::modificationTime(string const & uri)
+Timestamp KfsFilesystem::modificationTime(string const & uri)
 {
     string path = fs::path(uri);
 
@@ -209,10 +210,12 @@ double KfsFilesystem::modificationTime(string const & uri)
         raise<IOError>("modificationTime failed for '%s': %s", uri,
                        getStdError(-r));
 
-    return double(st.st_mtime) + double(st.st_mtim.tv_nsec) * 1e-9;
+    return Timestamp::fromMicroseconds(
+        int64_t(st.st_mtime) * 1000000 +
+        int64_t(st.st_mtim.tv_nsec) / 1000);
 }
 
-double KfsFilesystem::accessTime(string const & uri)
+Timestamp KfsFilesystem::accessTime(string const & uri)
 {
     string path = fs::path(uri);
 
@@ -221,10 +224,12 @@ double KfsFilesystem::accessTime(string const & uri)
     if(r != 0)
         raise<IOError>("accessTime failed for '%s': %s", uri, getStdError(-r));
 
-    return double(st.st_atime) + double(st.st_atim.tv_nsec) * 1e-9;
+    return Timestamp::fromMicroseconds(
+        int64_t(st.st_atime) * 1000000 +
+        int64_t(st.st_atim.tv_nsec) / 1000);
 }
 
-double KfsFilesystem::creationTime(string const & uri)
+Timestamp KfsFilesystem::creationTime(string const & uri)
 {
     string path = fs::path(uri);
 
@@ -234,7 +239,9 @@ double KfsFilesystem::creationTime(string const & uri)
         raise<IOError>("creationTime failed for '%s': %s", uri,
                        getStdError(-r));
 
-    return double(st.st_ctime) + double(st.st_ctim.tv_nsec) * 1e-9;
+    return Timestamp::fromMicroseconds(
+        int64_t(st.st_ctime) * 1000000 +
+        int64_t(st.st_ctim.tv_nsec) / 1000);
 }
 
 KfsClientPtr KfsFilesystem::getClient(std::string const & uri)

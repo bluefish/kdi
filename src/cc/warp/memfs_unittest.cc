@@ -22,6 +22,7 @@
 #include <warp/memfs.h>
 #include <warp/string_range.h>
 #include <warp/file.h>
+#include <warp/timestamp.h>
 #include <unittest/main.h>
 #include <ex/exception.h>
 #include <string>

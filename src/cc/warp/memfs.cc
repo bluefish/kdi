@@ -23,6 +23,7 @@
 #include <warp/file.h>
 #include <warp/dir.h>
 #include <warp/shared.h>
+#include <warp/timestamp.h>
 #include <ex/exception.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -39,13 +40,6 @@ using boost::static_pointer_cast;
 //----------------------------------------------------------------------------
 namespace
 {
-    inline double now()
-    {
-        struct timeval t;
-        gettimeofday(&t, 0);
-        return t.tv_sec + t.tv_usec * 1e-6;
-    }
-
     inline string normpath(string const & uri)
     {
         // Get path component
@@ -79,16 +73,16 @@ shared_ptr<MemoryFilesystem> const & MemoryFilesystem::get()
 class MemoryFilesystem::Item
 {
 public:
-    double mtime;
-    double atime;
-    double ctime;
+    Timestamp mtime;
+    Timestamp atime;
+    Timestamp ctime;
 
 public:
-    Item() { mtime = atime = ctime = now(); }
+    Item() { mtime = atime = ctime = Timestamp::now(); }
     virtual ~Item() {}
 
-    void touchRead() { atime = now(); }
-    void touchWrite() { mtime = atime = now(); }
+    void touchRead() { atime = Timestamp::now(); }
+    void touchWrite() { mtime = atime = Timestamp::now(); }
 
     virtual size_t size() const = 0;
     virtual bool isFile() const { return false; }
@@ -585,7 +579,7 @@ bool MemoryFilesystem::isEmpty(string const & uri)
     return it->size() == 0;
 }
 
-double MemoryFilesystem::modificationTime(string const & uri)
+Timestamp MemoryFilesystem::modificationTime(string const & uri)
 {
     itemptr_t it(find(uri));
     if(!it)
@@ -593,7 +587,7 @@ double MemoryFilesystem::modificationTime(string const & uri)
     return it->mtime;
 }
 
-double MemoryFilesystem::accessTime(string const & uri)
+Timestamp MemoryFilesystem::accessTime(string const & uri)
 {
     itemptr_t it(find(uri));
     if(!it)
@@ -601,7 +595,7 @@ double MemoryFilesystem::accessTime(string const & uri)
     return it->atime;
 }
 
-double MemoryFilesystem::creationTime(string const & uri)
+Timestamp MemoryFilesystem::creationTime(string const & uri)
 {
     itemptr_t it(find(uri));
     if(!it)

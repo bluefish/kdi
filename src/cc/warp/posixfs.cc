@@ -21,6 +21,7 @@
 
 #include <warp/posixfs.h>
 #include <warp/uri.h>
+#include <warp/timestamp.h>
 #include <ex/exception.h>
 
 #include <sys/stat.h>
@@ -205,7 +206,7 @@ bool PosixFilesystem::isEmpty(string const & uri)
     }
 }
 
-double PosixFilesystem::modificationTime(string const & uri)
+Timestamp PosixFilesystem::modificationTime(string const & uri)
 {
     string path = fs::path(uri);
 
@@ -215,10 +216,12 @@ double PosixFilesystem::modificationTime(string const & uri)
         raise<IOError>("modificationTime failed for '%s': %s", uri,
                        getStdError());
 
-    return double(st.st_mtime) + double(st.st_mtim.tv_nsec) * 1e-9;
+    return Timestamp::fromMicroseconds(
+        int64_t(st.st_mtime) * 1000000 +
+        int64_t(st.st_mtim.tv_nsec) / 1000);
 }
 
-double PosixFilesystem::accessTime(string const & uri)
+Timestamp PosixFilesystem::accessTime(string const & uri)
 {
     string path = fs::path(uri);
 
@@ -227,10 +230,12 @@ double PosixFilesystem::accessTime(string const & uri)
     if(r != 0)
         raise<IOError>("accessTime failed for '%s': %s", uri, getStdError());
 
-    return double(st.st_atime) + double(st.st_atim.tv_nsec) * 1e-9;
+    return Timestamp::fromMicroseconds(
+        int64_t(st.st_atime) * 1000000 +
+        int64_t(st.st_atim.tv_nsec) / 1000);
 }
 
-double PosixFilesystem::creationTime(string const & uri)
+Timestamp PosixFilesystem::creationTime(string const & uri)
 {
     string path = fs::path(uri);
 
@@ -239,7 +244,9 @@ double PosixFilesystem::creationTime(string const & uri)
     if(r != 0)
         raise<IOError>("creationTime failed for '%s': %s", uri, getStdError());
 
-    return double(st.st_ctime) + double(st.st_ctim.tv_nsec) * 1e-9;
+    return Timestamp::fromMicroseconds(
+        int64_t(st.st_ctime) * 1000000 +
+        int64_t(st.st_ctim.tv_nsec) / 1000);
 }
 
 string PosixFilesystem::getCwd()

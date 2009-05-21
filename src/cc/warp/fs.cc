@@ -26,6 +26,7 @@
 #include <warp/strutil.h>
 #include <warp/strhash.h>
 #include <warp/hashmap.h>
+#include <warp/timestamp.h>
 #include <ex/exception.h>
 #include <fnmatch.h>
 
@@ -449,17 +450,17 @@ bool fs::isEmpty(string const & uri)
     return Filesystem::get(uri)->isEmpty(uri);
 }
 
-double fs::modificationTime(string const & uri)
+Timestamp fs::modificationTime(string const & uri)
 {
     return Filesystem::get(uri)->modificationTime(uri);    
 }
 
-double fs::accessTime(string const & uri)
+Timestamp fs::accessTime(string const & uri)
 {
     return Filesystem::get(uri)->accessTime(uri);
 }
 
-double fs::creationTime(string const & uri)
+Timestamp fs::creationTime(string const & uri)
 {
     return Filesystem::get(uri)->creationTime(uri);
 }
