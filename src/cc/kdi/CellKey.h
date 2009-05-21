@@ -82,6 +82,13 @@ public:
     void setColumn(strref_t x)    { column.assign(x.begin(), x.end()); }
     void setTimestamp(int64_t x)  { timestamp = x; }
 
+    void set(strref_t r, strref_t c, int64_t t)
+    {
+        setRow(r);
+        setColumn(c);
+        setTimestamp(t);
+    }
+
     std::string const & getRow() const     { return row; }
     std::string const & getColumn() const  { return column; }
     int64_t getTimestamp() const           { return timestamp; }
@@ -133,6 +140,13 @@ public:
     void setRow(strref_t x)       { row = x; }
     void setColumn(strref_t x)    { column = x; }
     void setTimestamp(int64_t x)  { timestamp = x; }
+
+    void set(strref_t r, strref_t c, int64_t t)
+    {
+        setRow(r);
+        setColumn(c);
+        setTimestamp(t);
+    }
 
     strref_t getRow() const       { return row; }
     strref_t getColumn() const    { return column; }
