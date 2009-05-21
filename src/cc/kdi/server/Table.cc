@@ -177,8 +177,11 @@ void Table::replaceMemFragments(
     std::vector<FragmentCPtr> const & oldFragments,
     FragmentCPtr const & newFragment,
     int groupIndex,
-    std::vector<std::string> const & rowCoverage)
+    std::vector<std::string> const & rowCoverage,
+    ConfigWrittenCb * cb)
 {
+    assert(!cb);
+
     // Make sure the oldFragment list is at the head of the memory
     // chain
     frag_vec & memFrags = groupMemFrags[groupIndex];
@@ -232,8 +235,11 @@ void Table::replaceDiskFragments(
     std::vector<FragmentCPtr> const & oldFragments,
     FragmentCPtr const & newFragment,
     int groupIndex,
-    warp::Interval<std::string> const & rowRange)
+    warp::Interval<std::string> const & rowRange,
+    ConfigWrittenCb * cb)
 {
+    assert(!cb);
+
     tablet_vec::const_iterator end = std::upper_bound(
         tablets.begin(), tablets.end(),
         rowRange.getUpperBound(),

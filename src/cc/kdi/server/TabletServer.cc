@@ -269,10 +269,11 @@ public:
             this->fragments,
             newFrag,
             groupIndex,
-            rowCoverage);
+            rowCoverage,
+            0);
 
-        /// XXX : hold on to pending file reference until configs are
-        /// saved
+        /// xxx Hold on to pending file reference until config is saved
+        //table->deferUntilConfigWritten(new HoldPendingCb(outFn));
 
         // Kick compactor
         server->wakeCompactor();
@@ -390,15 +391,23 @@ public:
         for(RangeOutputMap::const_iterator i = output.begin();
             i != output.end(); ++i)
         {
-            RangeFragmentMap::const_iterator j = compactionSet.rangeMap.find(i->first);
+            RangeFragmentMap::const_iterator j =
+                compactionSet.rangeMap.find(i->first);
             if(j == compactionSet.end())
                 continue;
 
             FragmentCPtr newFragment;
             if(!i->second)
-                newFragment = server->bits.fragmentLoader->load(i->second->getName());
+            {
+                newFragment = server->bits.fragmentLoader->load(
+                    i->second->getName());
+            }
 
-            table->replaceDiskFragments(j->second, newFragment, groupIndex, i->first);
+            table->replaceDiskFragments(
+                j->second, newFragment, groupIndex, i->first, 0);
+
+            /// xxx Hold on to pending file reference until config is saved
+            //table->deferUntilConfigWritten(new HoldPendingCb(i->second));
         }
     }
 

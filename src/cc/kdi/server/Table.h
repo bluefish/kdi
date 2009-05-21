@@ -64,6 +64,15 @@ namespace server {
 class kdi::server::Table
 {
 public:
+    class ConfigWrittenCb
+    {
+    public:
+        virtual void done() = 0;
+    protected:
+        ~ConfigWrittenCb() {}
+    };
+
+public:
     boost::mutex tableMutex;
 
 public:
@@ -159,13 +168,15 @@ public:
         std::vector<FragmentCPtr> const & oldFragments,
         FragmentCPtr const & newFragment,
         int groupIndex,
-        std::vector<std::string> const & rowCoverage);
+        std::vector<std::string> const & rowCoverage,
+        ConfigWrittenCb * cb);
 
     void replaceDiskFragments(
         std::vector<FragmentCPtr> const & oldFragments,
         FragmentCPtr const & newFragment,
         int groupIndex,
-        warp::Interval<std::string> const & rowRange);
+        warp::Interval<std::string> const & rowRange,
+        ConfigWrittenCb * cb);
 
 private:
     class TabletLt;
