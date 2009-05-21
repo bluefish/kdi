@@ -39,7 +39,8 @@ kdi::ScanPredicate TableSchema::Group::getPredicate() const
     {
         p.setTimePredicate(
             warp::IntervalSet<int64_t>()
-            .add(warp::makeLowerBound(Timestamp::now() - maxAge))
+            .add(warp::makeLowerBound(
+                     Timestamp::now().toMicroseconds() - maxAge))
             );
     }
 
