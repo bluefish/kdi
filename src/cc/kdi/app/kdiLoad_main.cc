@@ -120,7 +120,7 @@ public:
         string row;
         string col;
         string val;
-        int64_t time;
+        warp::Timestamp time;
 
         using namespace boost::spirit;
         using namespace warp::parsing;
@@ -163,11 +163,11 @@ private:
         TablePtr const & table;
         string const & row;
         string const & col;
-        int64_t const & time;
+        warp::Timestamp const & time;
         string const & val;
 
         SetCell(TablePtr const & table, string const & row, string const & col,
-                int64_t const & time, string const & val) :
+                warp::Timestamp const & time, string const & val) :
             table(table), row(row), col(col), time(time), val(val)
         {
         }

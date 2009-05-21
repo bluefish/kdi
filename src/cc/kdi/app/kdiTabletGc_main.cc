@@ -70,8 +70,7 @@ int main(int ac, char ** av)
     {
         if(fs::isFile(beforeStr))
         {
-            beforeTime = Timestamp::fromSeconds(
-                fs::modificationTime(beforeStr));
+            beforeTime = fs::modificationTime(beforeStr);
         }
         else
         {

@@ -24,6 +24,7 @@
 
 #include <warp/options.h>
 #include <warp/fs.h>
+#include <warp/timestamp.h>
 #include <warp/file.h>
 #include <warp/dir.h>
 #include <warp/strutil.h>

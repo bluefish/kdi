@@ -111,7 +111,7 @@ void buildCandidateSet(
                 continue;
             }
 
-            Timestamp mtime = Timestamp::fromSeconds(fs::modificationTime(path));
+            Timestamp mtime = fs::modificationTime(path);
             if(mtime >= beforeTime)
             {
                 //cerr << "Ignoring: " << path << "   " << mtime << endl;

@@ -280,7 +280,7 @@ public:
         //    TIME_LITERAL INEQUALITY TIME_FIELD INEQUALITY TIME_LITERAL |
         //    TIME_FIELD EQUALS TIME_LITERAL |
 
-        int64_t t1,t2;
+        warp::Timestamp t1,t2;
         OperatorType i1,i2;
 
         return
@@ -309,15 +309,17 @@ private:
     {
         Interval<int64_t> & ival;
         OperatorType const & op;
-        int64_t const & val;
+        warp::Timestamp const & tval;
 
-        Assign1(Interval<int64_t> & ival, OperatorType const & op, int64_t const & val) :
-            ival(ival), op(op), val(val)
+        Assign1(Interval<int64_t> & ival, OperatorType const & op, warp::Timestamp const & val) :
+            ival(ival), op(op), tval(val)
         {
         }
 
         void operator()(char const * begin, char const * end) const
         {
+            int64_t val = tval.toMicroseconds();
+
             switch(op)
             {
                 case OP_GT:
@@ -351,18 +353,21 @@ private:
         Interval<int64_t> & ival;
         OperatorType const & op1;
         OperatorType const & op2;
-        int64_t const & val1;
-        int64_t const & val2;
+        warp::Timestamp const & tval1;
+        warp::Timestamp const & tval2;
 
-        Assign2(int64_t const & val1, OperatorType const & op1,
+        Assign2(warp::Timestamp const & val1, OperatorType const & op1,
                 Interval<int64_t> & ival,
-                OperatorType const & op2, int64_t const & val2) :
-            ival(ival), op1(op1), op2(op2), val1(val1), val2(val2)
+                OperatorType const & op2, warp::Timestamp const & val2) :
+            ival(ival), op1(op1), op2(op2), tval1(val1), tval2(val2)
         {
         }
 
         void operator()(char const * begin, char const * end) const
         {
+            int64_t val1 = tval1.toMicroseconds();
+            int64_t val2 = tval2.toMicroseconds();
+
             switch(op1)
             {
                 case OP_GT:

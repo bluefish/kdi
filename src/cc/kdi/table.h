@@ -23,6 +23,7 @@
 
 #include <kdi/strref.h>
 #include <kdi/cell.h>
+#include <kdi/timestamp.h>
 #include <flux/stream.h>
 #include <boost/shared_ptr.hpp>
 #include <string>
@@ -68,10 +69,21 @@ public:
     virtual void set(strref_t row, strref_t column, int64_t timestamp,
                      strref_t value) = 0;
 
+    inline void set(strref_t row, strref_t column, Timestamp timestamp,
+                    strref_t value)
+    {
+        set(row, column, timestamp.toMicroseconds(), value);
+    }
+
     /// Erase the cell with the given (row, column, timestamp) key.
     /// If the cell doesn't already exist, this operation has no
     /// effect.
     virtual void erase(strref_t row, strref_t column, int64_t timestamp) = 0;
+
+    inline void erase(strref_t row, strref_t column, Timestamp timestamp)
+    {
+        erase(row, column, timestamp.toMicroseconds());
+    }
 
     /// Insert a cell or cell erasure into the table.  The default
     /// implementation of this function calls either set() or erase().

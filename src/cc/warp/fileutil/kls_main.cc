@@ -147,7 +147,7 @@ namespace {
             }
             if(flags & SHOW_MTIME)
             {
-                time_t mtime = (time_t)fs::modificationTime(filepath);
+                time_t mtime = fs::modificationTime(filepath).toSeconds();
                 struct tm mtime_tm;
                 localtime_r(&mtime, &mtime_tm);
 

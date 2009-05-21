@@ -21,6 +21,7 @@
 
 #include <warp/lockfile.h>
 #include <warp/fs.h>
+#include <warp/timestamp.h>
 #include <ex/exception.h>
 
 #include <sys/types.h>
@@ -92,9 +93,9 @@ void warp::lockFile(string const & fn, string const & cmt, int maxRetries,
         // lock (delete it)
         if(lockTimeout > 0)
         {
-            double now = time(0);
-            double mtime = fs::modificationTime(fn);
-            if(now - mtime >= lockTimeout)
+            Timestamp now = Timestamp::now();
+            Timestamp mtime = fs::modificationTime(fn);
+            if((now - mtime).toFloatSeconds() >= lockTimeout)
             {
                 if(verbose)
                     cerr << "Forcing lock: " << fn << endl;
