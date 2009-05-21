@@ -24,7 +24,7 @@
 #include <kdi/server/DiskWriter.h>
 #include <kdi/server/FileTracker.h>
 #include <kdi/server/Serializer.h>
-#include <kdi/server/DiskFragment.h>
+#include <kdi/server/TestFragment.h>
 #include <kdi/server/DirectBlockCache.h>
 #include <kdi/server/CellBuilder.h>
 #include <kdi/server/TableSchema.h>
@@ -57,13 +57,9 @@ void addFragment(RangeFragmentMap & rf,
 
 }
 
-#warning disabled test
-// this stuff should be converted to use a simpler test fragment
-// structure than DiskFragment.  the mem frag stuff is a possibility
-#if 0
 BOOST_AUTO_TEST_CASE(compact_test)
 {
-    FileTracker tracker;
+    FileTracker tracker("memfs:");
     DiskWriterFactory diskFactory("memfs:", &tracker);
 
     DirectBlockCache blockCache;
@@ -75,49 +71,17 @@ BOOST_AUTO_TEST_CASE(compact_test)
     schema.groups[0].families.push_back("x");
 
     // Make some test fragments
-    {
-        DiskWriter out(128);
-        out.open("memfs:orig_1");
-        out.emitCell("row1", "x:col", 0, "val");
-        out.close();
-    }
-    
-    FragmentCPtr f1(new DiskFragment("memfs:orig_1"));
-    FragmentCPtr f2(new DiskFragment("memfs:orig_1"));
-    FragmentCPtr f3(new DiskFragment("memfs:orig_1"));
-    FragmentCPtr f4(new DiskFragment("memfs:orig_1"));
-    FragmentCPtr f5(new DiskFragment("memfs:orig_1"));
+    TestFragmentPtr f(new TestFragment);
+    f->set("row1", "x:col", 0, "val");
     
     RangeFragmentMap compactionSet;
     RangeOutputMap outputSet;
 
-    addFragment(compactionSet, "a", "b", f1);
-    addFragment(compactionSet, "a", "b", f2);
-    addFragment(compactionSet, "b", "c", f3);
-    addFragment(compactionSet, "b", "c", f4);
-    addFragment(compactionSet, "b", "c", f5);
+    addFragment(compactionSet, "a", "b", f);
+    addFragment(compactionSet, "a", "b", f);
+    addFragment(compactionSet, "b", "c", f);
+    addFragment(compactionSet, "b", "c", f);
+    addFragment(compactionSet, "b", "c", f);
 
     compactor.compact(schema, 0, compactionSet, outputSet);
 }
-#endif
-
-#warning disabled test
-#if 0
-BOOST_AUTO_TEST_CASE(serialize_test)
-{
-    FragmentCPtr f1(new DiskFragment("memfs:orig_1"));
-    vector<FragmentCPtr> frags;
-    frags.push_back(f1);
-
-    TableSchema schema;
-    schema.tableName = "test";
-    schema.groups.resize(1);
-    schema.groups[0].families.push_back("x");
-
-    DiskWriterFactory diskFactory("memfs:");
-    boost::scoped_ptr<FragmentWriter> writer(diskFactory.start(schema, 0).release());
-
-    Serializer serialize;
-    serialize(schema.groups[0], frags, writer.get());
-}
-#endif
