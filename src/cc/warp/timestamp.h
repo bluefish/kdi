@@ -75,7 +75,20 @@ public:
                 int hour, int min, int sec,
                 int32_t usec);
 
-    operator int64_t() const { return usec; }
+    /// Get the time as seconds from the Epoch, truncating sub-second
+    /// precision.
+    int64_t toSeconds() const { return usec / 1000000; }
+
+    /// Get the time as seconds from the Epoch as a double-precision
+    /// float.
+    double toFloatSeconds() const { return usec / 1000000; }
+
+    /// Get the time as milliseconds from the Epoch, truncating
+    /// sub-millisecond precision.
+    int64_t toMilliseconds() const { return usec / 1000; }
+
+    /// Get the time as microseconds from the Epoch.
+    int64_t toMicroseconds() const { return usec; }
 
     bool operator< (Timestamp const & o) const { return usec <  o.usec; }
     bool operator<=(Timestamp const & o) const { return usec <= o.usec; }
@@ -136,6 +149,10 @@ public:
     static Timestamp fromMicroseconds(int64_t us) {
         return Timestamp(us);
     }
+
+public:
+    static Timestamp const MAX_TIME;
+    static Timestamp const MIN_TIME;
 };
 
 namespace warp

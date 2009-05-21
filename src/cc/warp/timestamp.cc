@@ -26,10 +26,17 @@
 #include <warp/parsing/timestamp.h>
 #include <warp/strutil.h>
 #include <ex/exception.h>
+#include <limits>
 
 using namespace warp;
 using namespace warp::parsing;
 using namespace ex;
+
+Timestamp const Timestamp::MAX_TIME = Timestamp::fromMicroseconds(
+    std::numeric_limits<int64_t>::max());
+
+Timestamp const Timestamp::MIN_TIME = Timestamp::fromMicroseconds(
+    std::numeric_limits<int64_t>::min());
 
 namespace
 {
@@ -185,8 +192,8 @@ Timestamp Timestamp::now()
 std::ostream & warp::operator<<(std::ostream & o, Timestamp const & t)
 {
     // Format time as a string
-    time_t sec = t / 1000000;
-    int64_t frac = t % 1000000;
+    time_t sec = t.toSeconds();
+    int64_t frac = t.toMicroseconds() % 1000000;
     if(frac < 0)
     {
         --sec;

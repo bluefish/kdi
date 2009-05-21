@@ -54,27 +54,27 @@ BOOST_AUTO_UNIT_TEST(timestamp_set)
 
     // at Epoch, UTC
     t.set(1970, 1, 1, 0, 0, 0, 0, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 0);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 0);
 
     // 1 microsecond after Epoch, UTC
     t.set(1970, 1, 1, 0, 0, 0, 1, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 1);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1);
 
     // 1 second after Epoch, UTC
     t.set(1970, 1, 1, 0, 0, 1, 0, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 1000000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1000000);
 
     // gmtoff = -1 sec
     t.set(1970, 1, 1, 0, 0, 0, 0, -1);
-    BOOST_CHECK_EQUAL(int64_t(t), 1000000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1000000);
 
     // 2008-11-16 11:05:08.204113 PST (-0800)
     t.set(2008, 11, 19, 11, 5, 8, 204113, -8*60*60);
-    BOOST_CHECK_EQUAL(int64_t(t), 1227121508204113);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1227121508204113);
 
     // 2008-11-16 12:05:08.204113 "PDT" (-0700)
     t.set(2008, 11, 19, 12, 5, 8, 204113, -7*60*60);
-    BOOST_CHECK_EQUAL(int64_t(t), 1227121508204113);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1227121508204113);
 }
 
 BOOST_AUTO_UNIT_TEST(timestamp_set_local_eastern)
@@ -85,15 +85,15 @@ BOOST_AUTO_UNIT_TEST(timestamp_set_local_eastern)
 
     // 1970-01-01 00:00:00 EST (-0500)
     t.setLocal(1970, 1, 1, 0, 0, 0, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 5*60*60*1000000L);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 5*60*60*1000000L);
 
     // 2004-06-15 14:35:06 EDT (-0400)
     t.setLocal(2004, 6, 15, 14, 35, 6, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 1087324506000000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1087324506000000);
 
     // 1963-02-03 05:07:59.1 EST (-0500)
     t.setLocal(1963, 2, 3, 5, 7, 59, 100000);
-    BOOST_CHECK_EQUAL(int64_t(t), -218037120900000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), -218037120900000);
 }
 
 BOOST_AUTO_UNIT_TEST(timestamp_set_eastern)
@@ -103,15 +103,15 @@ BOOST_AUTO_UNIT_TEST(timestamp_set_eastern)
 
     // 1970-01-01 00:00:00 EST (-0500)
     t.set(1970, 1, 1, 0, 0, 0, 0, -5*60*60);
-    BOOST_CHECK_EQUAL(int64_t(t), 5*60*60*1000000L);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 5*60*60*1000000L);
 
     // 2004-06-15 14:35:06 EDT (-0400)
     t.set(2004, 6, 15, 14, 35, 6, 0, -4*60*60);
-    BOOST_CHECK_EQUAL(int64_t(t), 1087324506000000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1087324506000000);
 
     // 1963-02-03 05:07:59.1 EST (-0500)
     t.set(1963, 2, 3, 5, 7, 59, 100000, -5*60*60);
-    BOOST_CHECK_EQUAL(int64_t(t), -218037120900000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), -218037120900000);
 }
 
 BOOST_AUTO_UNIT_TEST(timestamp_set_local_pacific)
@@ -122,15 +122,15 @@ BOOST_AUTO_UNIT_TEST(timestamp_set_local_pacific)
 
     // 1970-01-01 00:00:00 PST (-0800)
     t.setLocal(1970, 1, 1, 0, 0, 0, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 8*60*60*1000000L);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 8*60*60*1000000L);
         
     // 2004-06-15 11:35:06 PDT (-0700)
     t.setLocal(2004, 6, 15, 11, 35, 6, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 1087324506000000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1087324506000000);
 
     // 1963-02-03 02:07:59.1 PST (-0800)
     t.setLocal(1963, 2, 3, 2, 7, 59, 100000);
-    BOOST_CHECK_EQUAL(int64_t(t), -218037120900000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), -218037120900000);
 }
 
 BOOST_AUTO_UNIT_TEST(timestamp_set_pacific)
@@ -140,15 +140,15 @@ BOOST_AUTO_UNIT_TEST(timestamp_set_pacific)
 
     // 1970-01-01 00:00:00 PST (-0800)
     t.set(1970, 1, 1, 0, 0, 0, 0, -8*60*60);
-    BOOST_CHECK_EQUAL(int64_t(t), 8*60*60*1000000L);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 8*60*60*1000000L);
         
     // 2004-06-15 11:35:06 PDT (-0700)
     t.set(2004, 6, 15, 11, 35, 6, 0, -7*60*60);
-    BOOST_CHECK_EQUAL(int64_t(t), 1087324506000000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1087324506000000);
 
     // 1963-02-03 02:07:59.1 PST (-0800)
     t.set(1963, 2, 3, 2, 7, 59, 100000, -8*60*60);
-    BOOST_CHECK_EQUAL(int64_t(t), -218037120900000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), -218037120900000);
 }
 
 BOOST_AUTO_UNIT_TEST(timestamp_set_local_utc)
@@ -159,15 +159,15 @@ BOOST_AUTO_UNIT_TEST(timestamp_set_local_utc)
 
     // 1970-01-01 00:00:00 UTC
     t.setLocal(1970, 1, 1, 0, 0, 0, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 0);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 0);
         
     // 2004-06-15 18:35:06 UTC
     t.setLocal(2004, 6, 15, 18, 35, 6, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 1087324506000000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1087324506000000);
 
     // 1963-02-03 10:07:59.1 UTC
     t.setLocal(1963, 2, 3, 10, 7, 59, 100000);
-    BOOST_CHECK_EQUAL(int64_t(t), -218037120900000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), -218037120900000);
 }
 
 BOOST_AUTO_UNIT_TEST(timestamp_set_utc)
@@ -177,15 +177,15 @@ BOOST_AUTO_UNIT_TEST(timestamp_set_utc)
 
     // 1970-01-01 00:00:00 UTC
     t.setUtc(1970, 1, 1, 0, 0, 0, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 0);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 0);
         
     // 2004-06-15 18:35:06 UTC
     t.setUtc(2004, 6, 15, 18, 35, 6, 0);
-    BOOST_CHECK_EQUAL(int64_t(t), 1087324506000000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), 1087324506000000);
 
     // 1963-02-03 10:07:59.1 UTC
     t.setUtc(1963, 2, 3, 10, 7, 59, 100000);
-    BOOST_CHECK_EQUAL(int64_t(t), -218037120900000);
+    BOOST_CHECK_EQUAL(t.toMicroseconds(), -218037120900000);
 }
 
 BOOST_AUTO_UNIT_TEST(string_format_utc)
