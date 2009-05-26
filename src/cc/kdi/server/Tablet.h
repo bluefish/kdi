@@ -34,7 +34,16 @@ namespace server {
 
     class Tablet;
 
-    enum TabletState { TABLET_ACTIVE };
+    enum TabletState {
+        TABLET_UNKNOWN,
+        TABLET_CONFIG_LOADING,
+        TABLET_LOG_REPLAYING,
+        TABLET_CONFIG_SAVING,
+        TABLET_FRAGMENTS_LOADING,
+        TABLET_ACTIVE,
+        TABLET_UNLOAD_COMPACTING,
+        TABLET_UNLOAD_CONFIG_SAVING,
+    };
 
     // Forward declarations
     class TableSchema;

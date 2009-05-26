@@ -38,7 +38,11 @@ namespace server {
 
     class Table;
 
-    enum TableState { TABLE_ACTIVE };
+    enum TableState {
+        TABLE_UNKNOWN,
+        TABLE_LOADING_SCHEMA,
+        TABLE_ACTIVE,
+    };
 
     // Forward declarations
     class Tablet;
