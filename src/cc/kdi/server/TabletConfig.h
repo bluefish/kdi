@@ -45,6 +45,11 @@ namespace server {
         std::string location;
 
         std::string getTabletName() const;
+
+        bool empty() const
+        {
+            return fragments.empty() && log.empty() && location.empty();
+        }
     };
 
 } // namespace server
