@@ -692,7 +692,7 @@ void TabletServer::apply_async(
     try {
         // Decode and validate cells
         Commit commit;
-        commit.tableName.assign(tableName.begin(), tableName.end());
+        tableName.assignTo(commit.tableName);
         commit.cells.reset(new CellBuffer(packedCells));
 
         // Get the rows and column families from the commit
@@ -897,50 +897,46 @@ void TabletServer::wakeCompactor()
 
 void TabletServer::logLoop()
 {
-    typedef std::vector<Commit> commit_vec;
-    typedef std::pair<std::string const *, Fragment const *> frag_pair;
-    typedef std::vector<frag_pair> frag_vec;
+    size_t const GROUP_COMMIT_LIMIT = size_t(4) << 20;
+    size_t const LOG_SIZE_LIMIT = size_t(128) << 20;
 
     boost::scoped_ptr<LogWriter> log;
 
-    commit_vec commits;
-    frag_vec frags;
     Commit commit;
     while(logQueue.pop(commit))
     {
-        // - throttle: block until logger.committedBufferSz < MAX_BUFFER_SIZE
-
-        size_t commitSz = commit.cells->getDataSize();
-        commits.push_back(commit);
-
-        //- opt: while queue is not empty, gather more buffers
-        while(logQueue.pop(commit, false))
-        {
-            commitSz += commit.cells->getDataSize();
-            commits.push_back(commit);
-        }
+        // xxx ?? throttle: block until logger.committedBufferSz < MAX_BUFFER_SIZE
 
         // Start a new log if necessary
         if(!log && bits.logFactory)
             log.reset(bits.logFactory->start().release());
 
-        // Get the last commit in the log group
-        int64_t maxTxn = commits.back().txn;
+        size_t commitSz = 0;
+        int64_t maxTxn;
 
-        // Commit the group to disk
+        // We got a commit to log.  Keep logging until the next queue
+        // fetch would block or we've written a significant amount of
+        // data.
+        do {
+            
+            commitSz += commit.cells->getDataSize();
+            maxTxn = commit.txn;
+
+            // Log the commit to disk
+            if(log)
+                log->writeCells(
+                    commit.tableName, commit.cells->getPacked());
+
+            // Release the cells
+            commit.cells.reset();
+
+        } while( commitSz < GROUP_COMMIT_LIMIT &&
+                 logQueue.pop(commit, false) );
+
+        // Sync log to disk.  After this, commits up to maxTxn are
+        // durable.
         if(log)
-        {
-            // Log the commits in the order we received them
-            for(commit_vec::const_iterator i = commits.begin();
-                i != commits.end(); ++i)
-            {
-                log->writeCells(i->tableName, i->cells->getPacked());
-            }
-
-            // Sync log to disk.  After this, commits up to maxTxn are
-            // durable.
             log->sync();
-        }
 
         lock_t serverLock(serverMutex);
 
@@ -957,7 +953,6 @@ void TabletServer::logLoop()
             bits.workerPool->submit(durableCallbacks);
 
         // Roll log if it's big enough
-        size_t LOG_SIZE_LIMIT = 128u << 20;
         if(log && log->getDiskSize() >= LOG_SIZE_LIMIT)
         {
             std::string logFn = log->finish();
@@ -968,11 +963,6 @@ void TabletServer::logLoop()
             //if(bits.logTracker)
             //    bits.logTracker->addLogFile(logFn, maxTxn);
         }
-
-        // Clean up before next loop
-        commits.clear();
-        frags.clear();
-        commit = Commit();
     }
 }
 

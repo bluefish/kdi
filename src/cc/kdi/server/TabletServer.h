@@ -191,24 +191,6 @@ private:
         std::string tableName;
         int64_t txn;
         CellBufferCPtr cells;
-        
-        bool operator<(Commit const & o) const
-        {
-            return warp::order(
-                tableName, o.tableName,
-                txn, o.txn);
-        }
-
-        struct TableNeq
-        {
-            std::string const & name;
-            TableNeq(std::string const & name) : name(name) {}
-
-            bool operator()(Commit const & c) const
-            {
-                return c.tableName != name;
-            }
-        };
     };
 
     class ConfigsLoadedCb;
