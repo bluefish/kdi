@@ -131,6 +131,8 @@ public:
     /// Fill in the fragments part of the TabletConfig.
     void getConfigFragments(TabletConfig & cfg) const;
 
+    TabletState getState() const { return state; }
+
 private:
     class Loading;
 
