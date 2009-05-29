@@ -157,6 +157,14 @@ public:
     TableSchema const & getSchema() const { return schema; }
     size_t getSchemaVersion() const { return schemaVersion; }
 
+    TableState getState() const
+    {
+        if(!schemaVersion)
+            return TABLE_LOADING_SCHEMA;
+        else
+            return TABLE_ACTIVE;
+    }
+
     std::vector<FragmentCPtr> const & getMemFragments(int groupIndex) const;
     size_t getMemSize(int groupIndex) const;
     int64_t getEarliestMemCommit(int groupIndex) const;

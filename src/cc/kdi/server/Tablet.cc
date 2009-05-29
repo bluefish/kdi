@@ -50,6 +50,7 @@ public:
 // Tablet
 //----------------------------------------------------------------------------
 Tablet::Tablet(warp::Interval<std::string> const & rows) :
+    state(TABLET_CONFIG_LOADING),
     rows(rows),
     loading(new Loading)
 {
