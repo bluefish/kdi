@@ -29,6 +29,7 @@
 #include <kdi/CellKey.h>
 #include <oort/fileio.h>
 #include <warp/file.h>
+#include <warp/fs.h>
 #include <warp/functional.h>
 #include <warp/adler.h>
 #include <warp/bloom_filter.h>
@@ -280,7 +281,8 @@ DiskFragment::DiskFragment(std::string const & fn) :
     fp(File::input(fn)),
     input(FileInput::make(fp)),
     indexRec(IndexCache::getGlobal(), fn),
-    filename(fn)
+    filename(fn),
+    dataSize(fs::filesize(fn))
 {
 }
 
@@ -289,7 +291,8 @@ DiskFragment::DiskFragment(std::string const & loadPath,
     fp(File::input(loadPath)),
     input(FileInput::make(fp)),
     indexRec(IndexCache::getGlobal(), loadPath),
-    filename(filename)
+    filename(filename),
+    dataSize(fs::filesize(loadPath))
 {
 }
 

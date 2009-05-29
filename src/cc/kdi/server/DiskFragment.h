@@ -64,13 +64,14 @@ class kdi::server::DiskFragment
     oort::FileInput::handle_t input;
     kdi::local::CacheRecord indexRec;
     std::string filename;
+    size_t dataSize;
 
 public:
     explicit DiskFragment(std::string const & fn);
     DiskFragment(std::string const & loadPath, std::string const & filename);
 
     virtual std::string getFilename() const;
-    virtual size_t getDataSize() const { return 0; /* NOT IMPLEMENTED YET */ };
+    virtual size_t getDataSize() const { return dataSize; };
 
     virtual void getColumnFamilies(
         std::vector<std::string> & families) const;
