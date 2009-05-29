@@ -20,6 +20,7 @@
 
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
+#include <kdi/server/TabletConfig.h>
 #include <kdi/server/Serializer.h>
 #include <kdi/server/Compactor.h>
 #include <kdi/server/FragmentWriterFactory.h>
@@ -178,10 +179,8 @@ void Table::replaceMemFragments(
     FragmentCPtr const & newFragment,
     int groupIndex,
     std::vector<std::string> const & rowCoverage,
-    ConfigWrittenCb * cb)
+    std::vector<Tablet *> & updatedTablets)
 {
-    assert(!cb);
-
     // Make sure the oldFragment list is at the head of the memory
     // chain
     frag_vec & memFrags = groupMemFrags[groupIndex];
@@ -211,6 +210,9 @@ void Table::replaceMemFragments(
         }
         else if(lt((*ti)->getRows().getLowerBound(), *ri))
         {
+            // Track the changed tablet
+            updatedTablets.push_back(*ti);
+
             // Found tablet containing row.  Add the new fragment to
             // it.
             (*ti)->addFragment(newFragment, groupIndex);
@@ -236,10 +238,8 @@ void Table::replaceDiskFragments(
     FragmentCPtr const & newFragment,
     int groupIndex,
     warp::Interval<std::string> const & rowRange,
-    ConfigWrittenCb * cb)
+    std::vector<Tablet *> & updatedTablets)
 {
-    assert(!cb);
-
     tablet_vec::const_iterator end = std::upper_bound(
         tablets.begin(), tablets.end(),
         rowRange.getUpperBound(),
@@ -252,8 +252,30 @@ void Table::replaceDiskFragments(
 
     for(tablet_vec::const_iterator i = begin; i != end; ++i)
     {
+        updatedTablets.push_back(*i);
         (*i)->replaceFragments(oldFragments, newFragment, groupIndex);
     }
+}
+
+TabletConfigVecPtr Table::getTabletConfigs(
+    std::vector<Tablet *> & selectedTablets,
+    std::string const & logDir,
+    std::string const & location) const
+{
+    TabletConfigVecPtr p(new TabletConfigVec(selectedTablets.size()));
+
+    TabletConfigVec::iterator o = p->begin();
+    for(std::vector<Tablet *>::const_iterator i = selectedTablets.begin();
+        i != selectedTablets.end(); ++i, ++o)
+    {
+        o->tableName = schema.tableName;
+        o->rows = (*i)->getRows();
+        (*i)->getConfigFragments(*o);
+        o->log = logDir;
+        o->location = location;
+    }
+
+    return p;
 }
 
 Table::Table() :

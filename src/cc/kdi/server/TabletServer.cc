@@ -29,6 +29,7 @@
 #include <kdi/server/Compactor.h>
 #include <kdi/server/LogWriterFactory.h>
 #include <kdi/server/LogWriter.h>
+#include <kdi/server/ConfigSaver.h>
 
 #include <kdi/server/FragmentLoader.h>
 #include <kdi/server/FragmentWriterFactory.h>
@@ -138,6 +139,49 @@ namespace {
         {
             lock_t lock(mutex);
             while(nPending)
+                cond.wait(lock);
+        }
+    };
+
+    class HoldPendingCb
+        : public ConfigSaverWork
+    {
+    public:
+        void addPending(PendingFileCPtr const & p)
+        {
+            pending.push_back(p);
+        }
+        
+        virtual void done()
+        {
+            delete this;
+        }
+
+    private:        
+        std::vector<PendingFileCPtr> pending;
+    };
+
+    class WaitForSaveCb
+        : public ConfigSaverWork
+    {
+        boost::mutex mutex;
+        boost::condition cond;
+        bool gotDone;
+        
+    public:
+        WaitForSaveCb() : gotDone(false) {}
+
+        virtual void done()
+        {
+            lock_t lock(mutex);
+            gotDone = true;
+            cond.notify_all();
+        }
+
+        void wait()
+        {
+            lock_t lock(mutex);
+            while(!gotDone)
                 cond.wait(lock);
         }
     };
@@ -265,15 +309,23 @@ public:
         FragmentCPtr newFrag = server->bits.fragmentLoader->load(outFn->getName());
 
         // Replace fragments
+        std::vector<Tablet *> updatedTablets;
         table->replaceMemFragments(
             this->fragments,
             newFrag,
             groupIndex,
             rowCoverage,
-            0);
+            updatedTablets);
 
-        /// xxx Hold on to pending file reference until config is saved
-        //table->deferUntilConfigWritten(new HoldPendingCb(outFn));
+        /// Hold on to pending file reference until config is saved
+        std::auto_ptr<HoldPendingCb> cb(new HoldPendingCb);
+        cb->setConfigs(
+            table->getTabletConfigs(
+                updatedTablets,
+                server->bits.serverLogDir,
+                server->bits.serverLocation));
+        cb->addPending(outFn);
+        server->queueConfigSave(cb.release());
 
         // Kick compactor
         server->wakeCompactor();
@@ -310,8 +362,8 @@ public:
         // Find max mem-fragment group
         bool haveMax = false;
         table_map::const_iterator maxIt;
-        int maxGroup;
-        float maxScore;
+        int maxGroup = 0;
+        float maxScore = 0;
         for(table_map::const_iterator i = server->tableMap.begin();
             i != server->tableMap.end(); ++i)
         {
@@ -388,6 +440,8 @@ public:
             return;
 
         // Replace fragments
+        std::vector<Tablet *> updatedTablets;
+        std::auto_ptr<HoldPendingCb> cb(new HoldPendingCb);
         for(RangeOutputMap::const_iterator i = output.begin();
             i != output.end(); ++i)
         {
@@ -404,11 +458,19 @@ public:
             }
 
             table->replaceDiskFragments(
-                j->second, newFragment, groupIndex, i->first, 0);
+                j->second, newFragment, groupIndex, i->first,
+                updatedTablets);
 
-            /// xxx Hold on to pending file reference until config is saved
-            //table->deferUntilConfigWritten(new HoldPendingCb(i->second));
+            /// Hold on to pending file reference until config is saved
+            cb->addPending(i->second);
         }
+
+        cb->setConfigs(
+            table->getTabletConfigs(
+                updatedTablets,
+                server->bits.serverLogDir,
+                server->bits.serverLocation));
+        server->queueConfigSave(cb.release());
     }
 
 private:
@@ -485,6 +547,7 @@ public:
     DirectBlockCache compactorCache;
     Serializer serializer;
     Compactor compactor;
+    ConfigSaver saver;
 
     Workers(TabletServer * server) :
         serializerInput(server),
@@ -492,7 +555,8 @@ public:
         serializer(&serializerInput),
         compactor(&compactorInput,
                   server->bits.fragmentFactory,
-                  &compactorCache)
+                  &compactorCache),
+        saver(server->bits.configWriter)
     {
     }
 
@@ -500,6 +564,7 @@ public:
     {
         serializer.start();
         compactor.start();
+        saver.start();
     }
 
     void stop()
@@ -895,6 +960,11 @@ void TabletServer::wakeCompactor()
     workers->compactor.wake();
 }
 
+void TabletServer::queueConfigSave(ConfigSaverWork * save)
+{
+    workers->saver.submit(save);
+}
+
 void TabletServer::logLoop()
 {
     size_t const GROUP_COMMIT_LIMIT = size_t(4) << 20;
@@ -1141,31 +1211,34 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
     // Save configs for all loaded tablets
     {
         // Init to size of all loaded tablets
-        std::vector<TabletConfig> out(loading.size());
-        for(size_t i = 0; i < out.size(); ++i)
+        TabletConfigVecPtr configs(new TabletConfigVec(loading.size()));
+        for(size_t i = 0; i < configs->size(); ++i)
         {
             // Set log and location to reference this server
-            out[i].log = bits.serverLogDir;
-            out[i].location = bits.serverLocation;
+            (*configs)[i].log = bits.serverLogDir;
+            (*configs)[i].location = bits.serverLocation;
 
             // Set name and rows from loaded config (assuming no
             // splits possible?)
-            out[i].tableName = loading[i].config->tableName;
-            out[i].rows = loading[i].config->rows;
+            (*configs)[i].tableName = loading[i].config->tableName;
+            (*configs)[i].rows = loading[i].config->rows;
         }
 
         // Get Fragment lists for each Tablet
         serverLock.lock();
-        for(size_t i = 0; i < out.size(); ++i)
+        for(size_t i = 0; i < configs->size(); ++i)
         {
-            Table * table = getTable(out[i].tableName);
+            Table * table = getTable((*configs)[i].tableName);
             lock_t tableLock(table->tableMutex);
-            Tablet * tablet = table->findTablet(out[i].rows.getUpperBound());
-            tablet->getConfigFragments(out[i]);
+            Tablet * tablet = table->findTablet((*configs)[i].rows.getUpperBound());
+            tablet->getConfigFragments((*configs)[i]);
         }
         serverLock.unlock();
 
-        bits.configWriter->writeConfigs(out);
+        WaitForSaveCb cb;
+        cb.setConfigs(configs);
+        queueConfigSave(&cb);
+        cb.wait();
     }
         
     typedef std::vector<warp::Runnable *> callback_vec;

@@ -58,6 +58,8 @@ namespace server {
     class CellBuffer;
     typedef boost::shared_ptr<CellBuffer const> CellBufferCPtr;
 
+    class ConfigSaverWork;
+
 } // namespace server
 } // namespace kdi
 
@@ -179,6 +181,7 @@ private:
 
     void wakeSerializer();
     void wakeCompactor();
+    void queueConfigSave(ConfigSaverWork * save);
 
     void logLoop();
 

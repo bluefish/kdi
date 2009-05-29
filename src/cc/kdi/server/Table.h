@@ -28,6 +28,7 @@
 #include <warp/hashmap.h>
 #include <warp/strhash.h>
 #include <boost/thread/mutex.hpp>
+#include <boost/shared_ptr.hpp>
 #include <tr1/unordered_set>
 #include <string>
 #include <vector>
@@ -54,6 +55,10 @@ namespace server {
     class FragmentLoader;
     class FragmentWriterFactory;
     class RangeFragmentMap;
+    class TabletConfig;
+    
+    typedef std::vector<TabletConfig> TabletConfigVec;
+    typedef boost::shared_ptr<TabletConfigVec> TabletConfigVecPtr;
 
 } // namespace server
 
@@ -67,15 +72,6 @@ namespace server {
 //----------------------------------------------------------------------------
 class kdi::server::Table
 {
-public:
-    class ConfigWrittenCb
-    {
-    public:
-        virtual void done() = 0;
-    protected:
-        ~ConfigWrittenCb() {}
-    };
-
 public:
     boost::mutex tableMutex;
 
@@ -173,14 +169,19 @@ public:
         FragmentCPtr const & newFragment,
         int groupIndex,
         std::vector<std::string> const & rowCoverage,
-        ConfigWrittenCb * cb);
+        std::vector<Tablet *> & updatedTablets);
 
     void replaceDiskFragments(
         std::vector<FragmentCPtr> const & oldFragments,
         FragmentCPtr const & newFragment,
         int groupIndex,
         warp::Interval<std::string> const & rowRange,
-        ConfigWrittenCb * cb);
+        std::vector<Tablet *> & updatedTablets);
+
+    TabletConfigVecPtr getTabletConfigs(
+        std::vector<Tablet *> & selectedTablets,
+        std::string const & logDir,
+        std::string const & location) const;
 
 private:
     class TabletLt;
