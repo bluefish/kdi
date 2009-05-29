@@ -426,3 +426,40 @@ BOOST_AUTO_UNIT_TEST(advance_test)
     BOOST_CHECK(reader->advance(nextCell));
     BOOST_CHECK_EQUAL(2, nextCell.getTimestamp());
 }
+
+BOOST_AUTO_UNIT_TEST(column_family_test)
+{
+    DiskWriterPtr out = openWriter("memfs:colfam", 16);
+    out->emitCell("row-a", "foo:bar", 0, "val-x");
+    out->emitCell("row-b", "foo:bar", 0, "val-x");
+    out->emitErasure("row-a", "frip:", 0);
+    out->emitCell("row-b", "spam:dingo", 0, "val-x");
+    out->finish();
+
+    FragmentCPtr f(new DiskFragment("memfs:colfam"));
+
+    BOOST_CHECK(f->getDataSize() > 10u);
+
+    std::vector<std::string> fams;
+    f->getColumnFamilies(fams);
+    BOOST_CHECK_EQUAL(fams.size(), 3u);
+    BOOST_CHECK(std::find(fams.begin(), fams.end(), "foo") != fams.end());
+    BOOST_CHECK(std::find(fams.begin(), fams.end(), "frip") != fams.end());
+    BOOST_CHECK(std::find(fams.begin(), fams.end(), "spam") != fams.end());
+    
+    fams.clear();
+    fams.push_back("frip");
+    FragmentCPtr rf = f->getRestricted(fams);
+
+    fams.clear();
+    rf->getColumnFamilies(fams);
+    BOOST_CHECK_EQUAL(fams.size(), 1u);
+    BOOST_CHECK(std::find(fams.begin(), fams.end(), "frip") != fams.end());
+
+    fams.clear();
+    f->getColumnFamilies(fams);
+    BOOST_CHECK_EQUAL(fams.size(), 3u);
+    BOOST_CHECK(std::find(fams.begin(), fams.end(), "foo") != fams.end());
+    BOOST_CHECK(std::find(fams.begin(), fams.end(), "frip") != fams.end());
+    BOOST_CHECK(std::find(fams.begin(), fams.end(), "spam") != fams.end());
+}
