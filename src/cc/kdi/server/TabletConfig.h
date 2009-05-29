@@ -22,6 +22,7 @@
 #define KDI_SERVER_TABLETCONFIG_H
 
 #include <warp/interval.h>
+#include <boost/shared_ptr.hpp>
 #include <vector>
 #include <string>
 
@@ -51,6 +52,10 @@ namespace server {
             return fragments.empty() && log.empty() && location.empty();
         }
     };
+
+    typedef std::vector<TabletConfig> TabletConfigVec;
+    typedef boost::shared_ptr<TabletConfigVec> TabletConfigVecPtr;
+    typedef boost::shared_ptr<TabletConfigVec const> TabletConfigVecCPtr;
 
 } // namespace server
 } // namespace kdi
