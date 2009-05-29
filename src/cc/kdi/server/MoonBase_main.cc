@@ -34,7 +34,7 @@
 #include <warp/WorkerPool.h>
 #include <kdi/server/TestConfigReader.h>
 #include <kdi/server/DirectBlockCache.h>
-#include <kdi/server/NullConfigWriter.h>
+#include <kdi/server/FileConfigWriter.h>
 #include <kdi/server/DiskWriterFactory.h>
 #include <kdi/server/CachedFragmentLoader.h>
 #include <kdi/server/DiskLoader.h>
@@ -61,7 +61,7 @@ namespace {
     {
         boost::scoped_ptr<FileTracker> fragFileTracker;
         boost::scoped_ptr<TestConfigReader> configReader;
-        boost::scoped_ptr<NullConfigWriter> configWriter;
+        boost::scoped_ptr<FileConfigWriter> configWriter;
         boost::scoped_ptr<warp::WorkerPool> workerPool;
         boost::scoped_ptr<TabletServer> server;
         boost::scoped_ptr<DirectBlockCache> cache;
@@ -115,14 +115,17 @@ namespace {
         TabletServer * getServer() const { return server.get(); }
         BlockCache * getBlockCache() const { return cache.get(); }
 
-        void init(string const & dataRoot, string const & logDir)
+        void init(string const & dataRoot,
+                  string const & logDir,
+                  string const & configDir,
+                  string const & location)
         {
             fragFileTracker.reset(new FileTracker(dataRoot));
 
             workerPool.reset(new WorkerPool(4, "Pool", true));
             char const *groups[] = { "group", 0, 0 };
             configReader.reset(new TestConfigReader(groups));
-            configWriter.reset(new NullConfigWriter);
+            configWriter.reset(new FileConfigWriter(configDir));
             fragmentFactory.reset(
                 new DiskWriterFactory(dataRoot, fragFileTracker.get()));
 
@@ -139,6 +142,7 @@ namespace {
             bits.fragmentLoader = cachedLoader.get();
             bits.logFactory = logFactory.get();
             bits.serverLogDir = logDir;
+            bits.serverLocation = location;
             
             server.reset(new TabletServer(bits));
             cache.reset(new DirectBlockCache);
@@ -181,6 +185,8 @@ namespace {
                              "Root directory for tablet data");
                 op.addOption("logDir,l", value<string>(),
                              "Private directory for logging tablet data");
+                op.addOption("configDir,c", value<string>(),
+                             "Directory for tablet configs");
                 op.addOption("pidfile,p", value<string>(),
                              "Write PID to file");
                 op.addOption("nodaemon", "Don't fork and run as daemon");
@@ -203,6 +209,11 @@ namespace {
             if(fs::exists(logDir) && (!fs::isDirectory(logDir) || !fs::isEmpty(logDir)))
                 op.error("--logDir already exists and is not empty");
 
+            // Get config directory
+            string configDir;
+            if(!opt.get("configDir", configDir) || !fs::isRooted(configDir))
+                op.error("need absolute --configDir");
+
             // Write PID file
             string pidfile;
             if(opt.get("pidfile", pidfile))
@@ -223,15 +234,19 @@ namespace {
             // Install locators
             readWriteAdapter->addServantLocator(scannerLocator, "scan");
 
+            // Get server location
+            Ice::Identity serverId = ic->stringToIdentity("TabletServer");
+            std::string location = readWriteAdapter->createProxy(serverId)->ice_toString();
+
             // Make our TabletServer
             MainServerAssembly serverAssembly;
-            serverAssembly.init(dataRoot, logDir);
+            serverAssembly.init(dataRoot, logDir, configDir, location);
 
             // Create TableManagerI object
             Ice::ObjectPtr obj = new TabletServerI(serverAssembly.getServer(),
                                                    scannerLocator,
                                                    serverAssembly.getBlockCache());
-            readWriteAdapter->add(obj, ic->stringToIdentity("TabletServer"));
+            readWriteAdapter->add(obj, serverId);
 
             // Run server
             readWriteAdapter->activate();

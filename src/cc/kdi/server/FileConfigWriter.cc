@@ -69,6 +69,7 @@ namespace {
 FileConfigWriter::FileConfigWriter(std::string const & configDir) :
     configDir(configDir)
 {
+    fs::makedirs(configDir);
 }
 
 void FileConfigWriter::writeConfigs(std::vector<TabletConfig> const & configs)
