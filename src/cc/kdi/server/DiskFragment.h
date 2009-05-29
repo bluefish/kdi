@@ -60,14 +60,12 @@ class kdi::server::DiskFragment
       public boost::enable_shared_from_this<DiskFragment>,
       private boost::noncopyable
 {
-    warp::FilePtr fp;
-    oort::FileInput::handle_t input;
-    kdi::local::CacheRecord indexRec;
     std::string filename;
+    kdi::local::CacheRecord indexRec;
     size_t dataSize;
 
 public:
-    explicit DiskFragment(std::string const & fn);
+    explicit DiskFragment(std::string const & filename);
     DiskFragment(std::string const & loadPath, std::string const & filename);
 
     virtual std::string getFilename() const;

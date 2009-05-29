@@ -277,21 +277,17 @@ DiskBlock::makeReader(ScanPredicate const & pred) const
 //----------------------------------------------------------------------------
 // DiskFragment
 //----------------------------------------------------------------------------
-DiskFragment::DiskFragment(std::string const & fn) :
-    fp(File::input(fn)),
-    input(FileInput::make(fp)),
-    indexRec(IndexCache::getGlobal(), fn),
-    filename(fn),
-    dataSize(fs::filesize(fn))
+DiskFragment::DiskFragment(std::string const & filename) :
+    filename(filename),
+    indexRec(IndexCache::getGlobal(), filename),
+    dataSize(fs::filesize(filename))
 {
 }
 
 DiskFragment::DiskFragment(std::string const & loadPath,
                            std::string const & filename) :
-    fp(File::input(loadPath)),
-    input(FileInput::make(fp)),
-    indexRec(IndexCache::getGlobal(), loadPath),
     filename(filename),
+    indexRec(IndexCache::getGlobal(), loadPath),
     dataSize(fs::filesize(loadPath))
 {
 }
@@ -376,6 +372,7 @@ nextBlock:
 
 std::auto_ptr<FragmentBlock> DiskFragment::loadBlock(size_t blockAddr) const 
 {
+    warp::FilePtr fp(File::input(filename));
     BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
     IndexEntryV1 const & idx = index->blocks[blockAddr];
     return std::auto_ptr<FragmentBlock>(new DiskBlock(fp, idx));
