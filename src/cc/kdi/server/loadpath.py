@@ -18,9 +18,10 @@
 # with this program; if not, write to the Free Software Foundation, Inc., 51
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
-
 import threading
 import Queue
+import random
+import heapq
 
 #----------------------------------------------------------------------------
 # States
@@ -48,6 +49,13 @@ def decodeTabletName(x):
     return x[:i], x[i:]
 
 #----------------------------------------------------------------------------
+# util
+#----------------------------------------------------------------------------
+def randomString(minLen, maxLen):
+    return ''.join(chr(random.randint(ord('a'),ord('z')))
+                   for i in xrange(random.randint(minLen, maxLen)))
+
+#----------------------------------------------------------------------------
 # Schema
 #----------------------------------------------------------------------------
 class Schema:
@@ -61,6 +69,22 @@ class Schema:
 
     def __str__(self):
         return 'Schema(%s)' % self.tableName
+
+def randomSchema(tableName):
+    x = Schema()
+    x.tableName = tableName
+    used = set()
+    for i in xrange(random.randrange(1,5)):
+        g = Schema.Group()
+        for j in xrange(random.randrange(1,4)):
+            while True:
+                f = randomString(3,10)
+                if f not in used:
+                    break
+            g.families.append(f)
+            used.add(f)
+        x.groups.append(g)
+    return x
 
 #----------------------------------------------------------------------------
 # Config
@@ -84,25 +108,47 @@ class Config:
     def __str__(self):
         return 'Config(%s%s)' % (self.tableName, self.lastRow)
 
+def randomConfig(tabletName):
+    x = Config()
+    x.tableName, x.lastRow = decodeTabletName(tabletName)
+    for i in xrange(random.randrange(1,5)):
+        f = Config.Fragment()
+        f.filename = randomString(5,15)
+        fams = set()
+        for j in xrange(random.randrange(1,4)):
+            fams.add(randomString(3,10))
+        f.families = list(fams)
+        x.fragments.append(f)
+    return x
+
 #----------------------------------------------------------------------------
 # Tablet
 #----------------------------------------------------------------------------
 class Tablet:
     def __init__(self):
         self.state = TABLET_CONFIG_LOADING
-        self.loadcb = []
+        self._stateq = []
 
     def getState(self):
         return self.state
 
-    def deferUntilLoaded(self, cb):
-        self.loadcb.append(cb)
+    def deferUntilState(self, cb, state):
+        heapq.heappush(self._stateq, (state, cb))
 
+    def _notify(self):
+        while self._stateq:
+            state,cb = self._stateq[0]
+            if state > self.state:
+                break
+            heapq.heappop(self._stateq)
+            cb.done()
+            
     def applyConfig(self, config):
+        assert self.state == TABLET_CONFIG_LOADING
         print 'Config applied: %s' % config
-        self.state = TABLET_LOG_REPLAYING
-        for x in self.loadcb:
-            x.done()
+        #self.state = TABLET_LOG_REPLAYING
+        self.state = TABLET_ACTIVE
+        self._notify()
 
 #----------------------------------------------------------------------------
 # Table
@@ -154,8 +200,7 @@ class SchemaLoader(QueuedWorker):
         self.server = server
 
     def doWork(self, work):
-        x = Schema()
-        x.tableName = work.tableName
+        x = randomSchema(work.tableName)
 
         print 'Schema loaded: %s' % x
 
@@ -179,8 +224,7 @@ class ConfigLoader(QueuedWorker):
         self.server = server
         
     def doWork(self, work):
-        x = Config()
-        x.tableName,x.lastRow = decodeTabletName(work.tabletName)
+        x = randomConfig(work.tabletName)
 
         print 'Config loaded: %s' % x
 
@@ -277,7 +321,7 @@ class TabletServer:
 
             if tablet.getState() < TABLET_ACTIVE:
                 delayedCb.needLoad()
-                tablet.deferUntilLoaded(delayedCb)
+                tablet.deferUntilState(delayedCb, TABLET_ACTIVE)
             elif tablet.getState() > TABLET_ACTIVE:
                 delayedCb.error(
                     RuntimeError('tablet is unloading: %s' % tabletName))
