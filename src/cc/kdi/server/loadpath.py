@@ -55,6 +55,11 @@ def randomString(minLen, maxLen):
     return ''.join(chr(random.randint(ord('a'),ord('z')))
                    for i in xrange(random.randint(minLen, maxLen)))
 
+def log(msg, _lock=threading.Lock()):
+    _lock.acquire()
+    print msg
+    _lock.release()
+
 #----------------------------------------------------------------------------
 # Schema
 #----------------------------------------------------------------------------
@@ -145,7 +150,7 @@ class Tablet:
             
     def applyConfig(self, config):
         assert self.state == TABLET_CONFIG_LOADING
-        print 'Config applied: %s' % config
+        log('Config applied: %s' % config)
         #self.state = TABLET_LOG_REPLAYING
         self.state = TABLET_ACTIVE
         self._notify()
@@ -159,7 +164,7 @@ class Table:
         self.tablets = {}
 
     def applySchema(self, schema):
-        print 'Schema applied: %s' % schema
+        log('Schema applied: %s' % schema)
         self.state = TABLE_ACTIVE
 
     def getState(self):
@@ -202,7 +207,7 @@ class SchemaLoader(QueuedWorker):
     def doWork(self, work):
         x = randomSchema(work.tableName)
 
-        print 'Schema loaded: %s' % x
+        log('Schema loaded: %s' % x)
 
         self.server.applySchema(work.tableName, x)
         work.cb.done()
@@ -226,7 +231,7 @@ class ConfigLoader(QueuedWorker):
     def doWork(self, work):
         x = randomConfig(work.tabletName)
 
-        print 'Config loaded: %s' % x
+        log('Config loaded: %s' % x)
 
         self.server.applyConfig(work.tabletName, x)
         work.cb.done()
@@ -355,14 +360,14 @@ class TestCb:
         self._cond = threading.Condition()
 
     def done(self):
-        print 'Done'
+        log('Done')
         self._cond.acquire()
         self._done = True
         self._cond.notifyAll()
         self._cond.release()
 
     def error(self, err):
-        print 'Error: %r' % err
+        log('Error: %r' % err)
         self._cond.acquire()
         self._done = True
         self._err = err
