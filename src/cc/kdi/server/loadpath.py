@@ -38,6 +38,7 @@ TABLET_FRAGMENTS_LOADING = 4
 TABLET_ACTIVE = 5
 TABLET_UNLOAD_COMPACTING = 6
 TABLET_UNLOAD_CONFIG_SAVING = 7
+TABLET_ERROR = 1000
 
 #----------------------------------------------------------------------------
 # name util
@@ -75,9 +76,14 @@ class Schema:
     def __str__(self):
         return 'Schema(%s)' % self.tableName
 
-def randomSchema(tableName):
+def defaultSchema(tableName):
     x = Schema()
     x.tableName = tableName
+    x.groups.append(Schema.Group())
+    return x
+
+def randomSchema(tableName):
+    x = defaultSchema(tableName)
     used = set()
     for i in xrange(random.randrange(1,5)):
         g = Schema.Group()
@@ -107,6 +113,9 @@ class Config:
         self.log = ''
         self.location = ''
 
+    def getTabletName(self):
+        return self.tableName + self.lastRow
+
     def empty(self):
         return not (self.fragments or self.log or self.location)
 
@@ -127,12 +136,30 @@ def randomConfig(tabletName):
     return x
 
 #----------------------------------------------------------------------------
+# Fragment
+#----------------------------------------------------------------------------
+class Fragment:
+    def __init__(self, filename, families):
+        self.filename = filename
+        self.families = families
+    
+    def getFileName(self):
+        return self.filename
+
+    def getFamilies(self):
+        return self.families
+
+#----------------------------------------------------------------------------
 # Tablet
 #----------------------------------------------------------------------------
 class Tablet:
-    def __init__(self):
+    def __init__(self, schema, lastRow):
         self.state = TABLET_CONFIG_LOADING
         self._stateq = []
+        self.fragments = []
+        self.loadingFrags = None
+        self.schema = schema
+        self.lastRow = lastRow
 
     def getState(self):
         return self.state
@@ -140,32 +167,67 @@ class Tablet:
     def deferUntilState(self, cb, state):
         heapq.heappush(self._stateq, (state, cb))
 
-    def _notify(self):
+    def setState(self, state):
+        self.state = state
+        callbacks = []
         while self._stateq:
             state,cb = self._stateq[0]
             if state > self.state:
                 break
             heapq.heappop(self._stateq)
-            cb.done()
-            
-    def applyConfig(self, config):
-        assert self.state == TABLET_CONFIG_LOADING
-        log('Config applied: %s' % config)
-        #self.state = TABLET_LOG_REPLAYING
-        self.state = TABLET_ACTIVE
-        self._notify()
+            callbacks.append(cb)
+        if callbacks:
+            def issueCbs():
+                for cb in callbacks:
+                    cb.done()
+            return issueCbs
+        else:
+            return None
+
+    def getTableName(self):
+        return self.schema.tableName
+    
+    def getLastRow(self):
+        return self.lastRow
+
+    def getFragmentConfigs(self):
+        r = []
+        if self.loadingFrags:
+            r.extend(self.loadingFrags)
+        for frag in self.fragments:
+            cf = Config.Fragment()
+            cf.filename = frag.getFilename()
+            cf.families = frag.getFamilies()
+            r.append(cf)
+        return r
+
+    def makePlaceholderFragments(self, fragments):
+        log('Placeholder: %d frags' % len(fragments))
+        self.loadingFrags = fragments
+
+    def applyLoadedFragments(self, fragments):
+        log('Apply fragments: %d frags' % len(fragments))
+        self.fragments[:0] = fragments
+        self.loadingFrags = None
+
+    def applySchema(self, schema):
+        self.schema = schema
 
 #----------------------------------------------------------------------------
 # Table
 #----------------------------------------------------------------------------
 class Table:
-    def __init__(self):
+    def __init__(self, tableName):
         self.state = TABLE_SCHEMA_LOADING
         self.tablets = {}
+        self.schema = defaultSchema(tableName)
 
     def applySchema(self, schema):
         log('Schema applied: %s' % schema)
         self.state = TABLE_ACTIVE
+        self.schema = schema
+        for tablet in self.tablets.itervalues():
+            tablet.applySchema(schema)
 
     def getState(self):
         return self.state
@@ -174,16 +236,22 @@ class Table:
 # QueuedWorker
 #----------------------------------------------------------------------------
 class QueuedWorker(threading.Thread):
-    def __init__(self):
-        super(QueuedWorker,self).__init__()
+    def __init__(self, name=None):
+        super(QueuedWorker, self).__init__()
+        self._name = name or self.__class__.__name__
         self._q = Queue.Queue()
         self.daemon = True
 
     def run(self):
-        while True:
-            work = self._q.get()
-            self.doWork(work)
-            self._q.task_done()
+        log('%s worker starting' % self._name)
+        try:
+            while True:
+                work = self._q.get()
+                work.doWork()
+                self._q.task_done()
+        except Exception, err:
+            log('%s worker error: %s' % (self._name, err))
+        log('%s worker exiting' % self._name)
 
     def submit(self, work):
         self._q.put(work)
@@ -196,21 +264,10 @@ class SchemaLoaderWork:
         self.cb = cb
         self.tableName = tableName
 
-#----------------------------------------------------------------------------
-# SchemaLoader
-#----------------------------------------------------------------------------
-class SchemaLoader(QueuedWorker):
-    def __init__(self, server):
-        super(SchemaLoader, self).__init__()
-        self.server = server
-
-    def doWork(self, work):
-        x = randomSchema(work.tableName)
-
-        log('Schema loaded: %s' % x)
-
-        self.server.applySchema(work.tableName, x)
-        work.cb.done()
+    def doWork(self):
+        log('Loading schema: %s' % self.tableName)
+        x = randomSchema(self.tableName)
+        self.cb.done(x)
 
 #----------------------------------------------------------------------------
 # ConfigLoaderWork
@@ -220,21 +277,39 @@ class ConfigLoaderWork:
         self.cb = cb
         self.tabletName = tabletName
 
-#----------------------------------------------------------------------------
-# ConfigLoader
-#----------------------------------------------------------------------------
-class ConfigLoader(QueuedWorker):
-    def __init__(self, server):
-        super(ConfigLoader, self).__init__()
-        self.server = server
-        
-    def doWork(self, work):
-        x = randomConfig(work.tabletName)
+    def doWork(self):
+        log('Loading config: %s' % self.tabletName)
+        x = randomConfig(self.tabletName)
+        self.cb.done(x)
 
-        log('Config loaded: %s' % x)
+#----------------------------------------------------------------------------
+# ConfigSaverWork
+#----------------------------------------------------------------------------
+class ConfigSaverWork:
+    def __init__(self, cb, cfg):
+        self.cb = cb
+        self.cfg = cfg
 
-        self.server.applyConfig(work.tabletName, x)
-        work.cb.done()
+    def doWork(self):
+        log('Saving config: %s' % self.cfg)
+        self.cb.done()
+
+#----------------------------------------------------------------------------
+# FragmentLoaderWork
+#----------------------------------------------------------------------------
+class FragmentLoaderWork:
+    def __init__(self, cb, fragments):
+        self.cb = cb
+        self.fragments = fragments
+
+    def doWork(self):
+        log('Loading %d fragment(s)' % len(self.fragments))
+        frags = []
+        for cf in self.fragments:
+            log('Loading fragment: %s' % cf.filename)
+            f = Fragment(cf.filename, cf.families)
+            frags.append(f)
+        self.cb.done(frags)
 
 #----------------------------------------------------------------------------
 # MultipleErrors
@@ -264,8 +339,6 @@ class DelayedCbWrapper:
         self.ref += 1
         self._lock.release()
 
-    needSchema = addRef
-    needConfig = addRef
     needLoad = addRef
 
     def error(self, err):
@@ -291,19 +364,147 @@ class DelayedCbWrapper:
         else:
             self.cb.error(MultipleErrors(self.errors))
 
+#----------------------------------------------------------------------------
+# FragmentsLoadedCb
+#----------------------------------------------------------------------------
+class FragmentsLoadedCb:
+    def __init__(self, server, tabletName):
+        self.server = server
+        self.tabletName = tabletName
+
+    def done(self, fragments):
+        log('Fragments loaded: %s' % self.tabletName)
+
+        tablet = self.server.getTablet(self.tabletName)
+        assert tablet.getState() == TABLET_FRAGMENTS_LOADING
+
+        tablet.applyLoadedFragments(fragments)
+        cb = tablet.setState(TABLET_ACTIVE)
+        if cb:
+            cb()
+    
+    def error(self, err):
+        log('Fragment load error: %s' % err)
+        self.server.tabletLoadError(self.tabletName, err)
+        
+
+#----------------------------------------------------------------------------
+# ConfigSavedCb
+#----------------------------------------------------------------------------
+class ConfigSavedCb:
+    def __init__(self, server, config):
+        self.server = server
+        self.config = config
+
+    def done(self):
+        log('Config saved: %s' % self.config)
+        
+        tablet = self.server.getTablet(self.config.getTabletName())
+        assert tablet.getState() == TABLET_CONFIG_SAVING
+        
+        if self.config.fragments:
+            cb = tablet.setState(TABLET_FRAGMENTS_LOADING)
+            self.server.loadFragments_async(
+                FragmentsLoadedCb(self.server, self.config.getTabletName()),
+                self.config.fragments)
+        else:
+            cb = tablet.setState(TABLET_ACTIVE)
+        if cb:
+            cb()
+
+    def error(self, err):
+        log('Config save error: %s' % err)
+        self.server.tabletLoadError(self.config.getTabletName(), err)
+
+
+#----------------------------------------------------------------------------
+# ReplayDoneCb
+#----------------------------------------------------------------------------
+class ReplayDoneCb:
+    def __init__(self, server, config):
+        self.server = server
+        self.config = config
+
+    def done(self):
+        log('Log replayed: %s' % self.config)
+        
+        tablet = self.server.getTablet(self.config.getTabletName())
+        assert tablet.getState() == TABLET_LOG_REPLAYING
+        
+        cb = tablet.setState(TABLET_CONFIG_SAVING)
+        self.server.saveConfig_async(ConfigSavedCb(self.server, self.config), tablet)
+        if cb:
+            cb()
+
+    def error(self, err):
+        log('Log replay error: %s' % err)
+        self.server.tabletLoadError(self.config.getTabletName(), err)
+
+
+#----------------------------------------------------------------------------
+# ConfigLoadedCb
+#----------------------------------------------------------------------------
+class ConfigLoadedCb:
+    def __init__(self, server, tabletName):
+        self.server = server
+        self.tabletName = tabletName
+
+    def done(self, config):
+        log('Config loaded: %s' % config)
+
+        tablet = self.server.getTablet(self.tabletName)
+        assert tablet.getState() == TABLET_CONFIG_LOADING
+        assert self.tabletName == config.getTabletName()
+        
+        tablet.makePlaceholderFragments(config.fragments)
+
+        if config.log:
+            cb = tablet.setState(TABLET_LOG_REPLAYING)
+            self.server.replayLogs_async(ReplayDoneCb(self.server, config), config.log)
+        else:
+            cb = tablet.setState(TABLET_CONFIG_SAVING)
+            self.server.saveConfig_async(ConfigSavedCb(self.server, config), tablet)
+        if cb:
+            cb()
+
+    def error(self, err):
+        log('Config load error: %s' % err)
+        self.server.tabletLoadError(self.tabletName, err)
+
+#----------------------------------------------------------------------------
+# SchemaLoadedCb
+#----------------------------------------------------------------------------
+class SchemaLoadedCb:
+    def __init__(self, server, tableName):
+        self.server = server
+        self.tableName = tableName
+
+    def done(self, schema):
+        log('Schema loaded: %s' % schema)
+
+        table = self.server.getTable(self.tableName)
+        assert self.tableName == schema.tableName
+
+        table.applySchema(schema)
+
+    def error(self, err):
+        log('Schema load error: %s', err)
+        self.server.schemaLoadError(self.tableName, err)
 
 #----------------------------------------------------------------------------
 # TabletServer
 #----------------------------------------------------------------------------
 class TabletServer:
-    def __init__(self):
+    def __init__(self, log, location):
         self.tables = {}
-        self.schemaLoader = SchemaLoader(self)
-        self.configLoader = ConfigLoader(self)
+        self.configWorker = QueuedWorker('Config')
+        self.fragmentLoader  = QueuedWorker('Fragment')
+        self.log = log
+        self.location = location
 
     def start(self):
-        self.schemaLoader.start()
-        self.configLoader.start()
+        self.configWorker.start()
+        self.fragmentLoader.start()
 
     def load_async(self, cb, tabletNames):
         delayedCb = DelayedCbWrapper(cb)
@@ -311,16 +512,14 @@ class TabletServer:
             tableName, lastRow = decodeTabletName(tabletName)
 
             if tableName not in self.tables:
-                self.tables[tableName] = Table()
-                delayedCb.needSchema()
-                self.loadSchema_async(delayedCb, tableName)
+                self.tables[tableName] = Table(tableName)
+                self.loadSchema_async(SchemaLoadedCb(self, tableName), tableName)
 
             table = self.tables[tableName]
 
             if lastRow not in table.tablets:
-                table.tablets[lastRow] = Tablet()
-                delayedCb.needConfig()
-                self.loadConfig_async(delayedCb, tabletName)
+                table.tablets[lastRow] = Tablet(tableName, lastRow)
+                self.loadConfig_async(ConfigLoadedCb(self, tabletName), tabletName)
 
             tablet = table.tablets[lastRow]
 
@@ -336,18 +535,34 @@ class TabletServer:
 
     def loadSchema_async(self, cb, tableName):
         work = SchemaLoaderWork(cb, tableName)
-        self.schemaLoader.submit(work)
+        self.configWorker.submit(work)
 
     def loadConfig_async(self, cb, tabletName):
         work = ConfigLoaderWork(cb, tabletName)
-        self.configLoader.submit(work)
+        self.configWorker.submit(work)
 
-    def applySchema(self, tableName, schema):
-        self.tables[tableName].applySchema(schema)
+    def saveConfig_async(self, cb, tablet):
+        cfg = Config()
+        cfg.log = self.log
+        cfg.location = self.location
+        cfg.tableName = tablet.getTableName()
+        cfg.lastRow = tablet.getLastRow()
+        cfg.fragments = tablet.getFragmentConfigs()
+        work = ConfigSaverWork(cb, cfg)
+        self.configWorker.submit(work)
 
-    def applyConfig(self, tabletName, config):
+    def loadFragments_async(self, cb, fragments):
+        work = FragmentLoaderWork(cb, fragments)
+        self.fragmentLoader.submit(work)
+
+    def getTable(self, tableName):
+        return self.tables[tableName]
+
+    def getTablet(self, tabletName):
         tableName, lastRow = decodeTabletName(tabletName)
-        self.tables[tableName].tablets[lastRow].applyConfig(config)
+        return self.tables[tableName].tablets[lastRow]
+
+        
 
 
 #----------------------------------------------------------------------------
@@ -384,7 +599,7 @@ class TestCb:
 # main
 #----------------------------------------------------------------------------
 def main():
-    server = TabletServer()
+    server = TabletServer('log','location')
     server.start()
     cb = TestCb()
 
