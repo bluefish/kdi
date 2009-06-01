@@ -38,6 +38,7 @@ TABLET_FRAGMENTS_LOADING = 4
 TABLET_ACTIVE = 5
 TABLET_UNLOAD_COMPACTING = 6
 TABLET_UNLOAD_CONFIG_SAVING = 7
+
 TABLET_ERROR = 1000
 
 #----------------------------------------------------------------------------
@@ -184,6 +185,18 @@ class Tablet:
         else:
             return None
 
+    def setLoadError(self, err):
+        self.state = TABLET_ERROR
+        callbacks = [cb for state,cb in self._stateq]
+        self._stateq = []
+        if callbacks:
+            def issueCbs():
+                for cb in callbacks:
+                    cb.error(err)
+            return issueCbs
+        else:
+            return None
+
     def getTableName(self):
         return self.schema.tableName
     
@@ -307,6 +320,10 @@ class FragmentLoaderWork:
         frags = []
         for cf in self.fragments:
             log('Loading fragment: %s' % cf.filename)
+            if 'b' in cf.filename:
+                self.cb.error(
+                    RuntimeError("we don't like B's: %s" % cf.filename))
+                return
             f = Fragment(cf.filename, cf.families)
             frags.append(f)
         self.cb.done(frags)
@@ -497,8 +514,8 @@ class SchemaLoadedCb:
 class TabletServer:
     def __init__(self, log, location):
         self.tables = {}
-        self.configWorker = QueuedWorker('Config')
-        self.fragmentLoader  = QueuedWorker('Fragment')
+        self.configWorker   = QueuedWorker('Config')
+        self.fragmentLoader = QueuedWorker('Fragment')
         self.log = log
         self.location = location
 
@@ -562,7 +579,11 @@ class TabletServer:
         tableName, lastRow = decodeTabletName(tabletName)
         return self.tables[tableName].tablets[lastRow]
 
-        
+    def tabletLoadError(self, tabletName, err):
+        tablet = self.getTablet(tabletName)
+        cb = tablet.setLoadError(err)
+        if cb:
+            cb()
 
 
 #----------------------------------------------------------------------------
