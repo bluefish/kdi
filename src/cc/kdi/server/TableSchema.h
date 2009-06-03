@@ -69,6 +69,9 @@ struct kdi::server::TableSchema
 
     std::string tableName;
     std::vector<Group> groups;
+
+    /// Init as a default schema for the given table name.
+    void initDefault(std::string const & tableName);
 };
 
 

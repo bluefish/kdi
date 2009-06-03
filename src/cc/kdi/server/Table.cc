@@ -139,12 +139,28 @@ void Table::updateRowCommits(std::vector<warp::StringRange> const & rows,
     }
 }
 
-Tablet * Table::createTablet(warp::Interval<std::string> const & rows)
+Tablet * Table::createTablet(warp::IntervalPoint<std::string> const & lastRow)
 {
-    Tablet * t = new Tablet(rows);
-    tablets.push_back(t);
-    t->applySchema(schema);
-    return t;
+    assert(!findTablet(lastRow));
+
+    tablet_vec::iterator i = tablets.insert(
+        std::lower_bound(
+            tablets.begin(),
+            tablets.end(),
+            lastRow,
+            TabletLt()),
+        0);
+    
+    *i = new Tablet(
+        warp::Interval<std::string>(
+            warp::IntervalPoint<std::string>(
+                std::string(),
+                warp::PT_INFINITE_LOWER_BOUND),
+            lastRow));
+
+    (*i)->applySchema(schema);
+
+    return *i;
 }
 
 size_t Table::getMaxDiskChainLength(int groupIndex) const
@@ -278,9 +294,10 @@ TabletConfigVecPtr Table::getTabletConfigs(
     return p;
 }
 
-Table::Table() :
+Table::Table(std::string const & tableName) :
     schemaVersion(0)
 {
+    schema.initDefault(tableName);
 }
 
 Table::~Table()

@@ -21,13 +21,12 @@
 #ifndef KDI_SERVER_CONFIGSAVER_H
 #define KDI_SERVER_CONFIGSAVER_H
 
-#include <warp/QueuedWorker.h>
+#include <warp/Runnable.h>
 #include <kdi/server/TabletConfig.h>
 
 namespace kdi {
 namespace server {
 
-    class ConfigSaverWork;
     class ConfigSaver;
 
     // Forward declarations
@@ -36,53 +35,31 @@ namespace server {
 } // namespace server
 } // namespace kdi
 
-//----------------------------------------------------------------------------
-// ConfigSaverWork
-//----------------------------------------------------------------------------
-class kdi::server::ConfigSaverWork
-{
-public:
-    ConfigSaverWork() {}
-    explicit ConfigSaverWork(TabletConfigVecCPtr const & configs) :
-        configs(configs) {}
-
-    void setConfigs(TabletConfigVecCPtr const & configs)
-    {
-        this->configs = configs;
-    }
-
-    TabletConfigVecCPtr const & getConfigs() const
-    {
-        return configs;
-    }
-
-public:
-    virtual void done() = 0;
-
-protected:
-    ~ConfigSaverWork() {}
-
-private:
-    TabletConfigVecCPtr configs;
-};
-
+namespace warp { class Callback; }
 
 //----------------------------------------------------------------------------
 // ConfigSaver
 //----------------------------------------------------------------------------
 class kdi::server::ConfigSaver
-    : public warp::QueuedWorker<ConfigSaverWork *>
+    : public warp::Runnable
 {
-    typedef warp::QueuedWorker<ConfigSaverWork *> super;
-
 public:
-    explicit ConfigSaver(ConfigWriter * writer);
+    ConfigSaver(warp::Callback * cb,
+                ConfigWriter * writer,
+                TabletConfigVecCPtr const & configs) :
+        cb(cb),
+        writer(writer),
+        configs(configs)
+    {
+    }
 
-protected:                      // QueuedWorker API
-    virtual void processWork(super::work_cref_t x);
+public:                         // Runnable API
+    virtual void run();
 
 private:
-    ConfigWriter * const writer;
+    warp::Callback *    const cb;
+    ConfigWriter *      const writer;
+    TabletConfigVecCPtr const configs;
 };
 
 #endif // KDI_SERVER_CONFIGSAVER_H

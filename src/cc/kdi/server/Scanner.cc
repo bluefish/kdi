@@ -105,14 +105,14 @@ Scanner::Scanner(Table * table, BlockCache * cache,
     if(mode != SCAN_ANY_TXN)
         throw BadScanModeError();
 
-    lock_t tableLock(table->tableMutex);
+    TableLock tableLock(table);
     table->addFragmentListener(this);
     table->addTabletListener(this);
 }
 
 Scanner::~Scanner()
 {
-    lock_t tableLock(table->tableMutex);
+    TableLock tableLock(table);
     table->removeTabletListener(this);
     table->removeFragmentListener(this);
 }
@@ -181,7 +181,7 @@ bool Scanner::startMerge(lock_t & scannerLock)
 
     // Need table lock -- unlock scanner lock first
     scannerLock.unlock();
-    lock_t tableLock(table->tableMutex);
+    TableLock tableLock(table);
                 
     // Get the last commit transaction for the table
     scanTxn = table->getLastCommitTxn();

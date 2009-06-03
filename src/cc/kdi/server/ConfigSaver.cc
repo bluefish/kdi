@@ -20,24 +20,31 @@
 
 #include <kdi/server/ConfigSaver.h>
 #include <kdi/server/ConfigWriter.h>
+#include <warp/Callback.h>
 #include <cassert>
+#include <exception>
 
 using namespace kdi::server;
 
 //----------------------------------------------------------------------------
 // ConfigSaver
 //----------------------------------------------------------------------------
-ConfigSaver::ConfigSaver(ConfigWriter * writer) :
-    super("Config"), writer(writer)
+void ConfigSaver::run()
 {
-}
+    assert(cb);
+    assert(writer);
+    assert(configs);
 
-void ConfigSaver::processWork(super::work_cref_t x)
-{
-    assert(x);
-    
-    if(writer && x->getConfigs())
-        writer->writeConfigs(*x->getConfigs());
+    try {
+        writer->writeConfigs(*configs);
+        cb->done();
+    }
+    catch(std::exception const & err) {
+        cb->error(err);
+    }
+    catch(...) {
+        cb->error(std::runtime_error("ConfigSaver: unknown error"));
+    }
 
-    x->done();
+    delete this;
 }

@@ -38,6 +38,7 @@ namespace kdi {
 namespace server {
 
     class Table;
+    class TableLock;
 
     enum TableState {
         TABLE_UNKNOWN,
@@ -72,11 +73,13 @@ namespace server {
 //----------------------------------------------------------------------------
 class kdi::server::Table
 {
-public:
-    boost::mutex tableMutex;
+private:
+    friend class TableLock;
+    mutable boost::mutex tableMutex;
 
 public:
-    Table();
+    /// Create a Table with a default schema
+    explicit Table(std::string const & tableName);
     ~Table();
 
     /// Make sure that the tablets containing all the given rows are
@@ -124,10 +127,14 @@ public:
         return rowCommits.getMaxCommit();
     }
 
+    /// Find a Tablet or return null.
     Tablet * findTablet(warp::IntervalPoint<std::string> const & lastRow) const;
 
-    Tablet * createTablet(warp::Interval<std::string> const & rows);
+    /// Get a Tablet or throw an exception.
+    Tablet * getTablet(warp::IntervalPoint<std::string> const & lastRow) const;
 
+    /// Create a new Tablet.
+    Tablet * createTablet(warp::IntervalPoint<std::string> const & lastRow);
 
     /// Get the ordered chain of fragments to merge for the first part
     /// of the given predicate.  Throws and error if such a chain is
@@ -220,5 +227,27 @@ private:
     fel_set fragmentListeners;
     tel_set tabletListeners;
 };
+
+//----------------------------------------------------------------------------
+// TableLock
+//----------------------------------------------------------------------------
+class kdi::server::TableLock
+    : private boost::noncopyable
+{
+public:
+    explicit TableLock(Table const * table) :
+        _lock(table->tableMutex) {}
+
+    TableLock(Table const * table, bool doLock) :
+        _lock(table->tableMutex, doLock) {}
+
+    void lock() { _lock.lock(); }
+    void unlock() { _lock.unlock(); }
+    bool locked() const { return _lock.locked(); }
+
+private:
+    boost::mutex::scoped_lock _lock;
+};
+
 
 #endif // KDI_SERVER_TABLE_H

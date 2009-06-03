@@ -39,6 +39,8 @@
 
 #include <kdi/server/name_util.h>
 #include <kdi/server/errors.h>
+#include <warp/PersistentWorker.h>
+#include <warp/MultipleCallback.h>
 #include <warp/call_or_die.h>
 #include <warp/functional.h>
 #include <warp/log.h>
@@ -77,74 +79,8 @@ namespace {
         }
     };
 
-    struct Loading
-    {
-        TabletConfig const * config;
-        std::vector<FragmentCPtr> frags;
-
-        Loading() : config(0) {}
-        Loading(TabletConfig const * config) :
-            config(config) {}
-
-        void addLoadedFragment(FragmentCPtr const & frag)
-        {
-            frags.push_back(frag);
-        }
-
-        bool operator<(Loading const & o) const
-        {
-            TabletConfig const & a = *config;
-            TabletConfig const & b = *o.config;
-
-            if(int c = warp::string_compare(a.log, b.log))
-                return c < 0;
-
-            if(int c = warp::string_compare(a.tableName, b.tableName))
-                return c < 0;
-
-            return a.rows.getUpperBound() < b.rows.getUpperBound();
-        }
-
-        struct LogNeq
-        {
-            strref_t log;
-            LogNeq(strref_t log) : log(log) {}
-            bool operator()(Loading const & x) const
-            {
-                return x.config->log != log;
-            }
-        };
-    };
-
-    class LoadCompleteCb
-        : public Tablet::LoadedCb
-    {
-        size_t nPending;
-        boost::mutex mutex;
-        boost::condition cond;
-
-    public:
-        LoadCompleteCb() : nPending(0) {}
-        
-        void increment() { ++nPending; }
-
-        void done()
-        {
-            lock_t lock(mutex);
-            if(!--nPending)
-                cond.notify_one();
-        }
-
-        void wait()
-        {
-            lock_t lock(mutex);
-            while(nPending)
-                cond.wait(lock);
-        }
-    };
-
     class HoldPendingCb
-        : public ConfigSaverWork
+        : public warp::Callback
     {
     public:
         void addPending(PendingFileCPtr const & p)
@@ -157,119 +93,355 @@ namespace {
             delete this;
         }
 
+        virtual void error(std::exception const & err)
+        {
+            log("ERROR HoldPendingCb: %s", err.what());
+            std::terminate();
+        }
+
     private:        
         std::vector<PendingFileCPtr> pending;
     };
 
-    class WaitForSaveCb
-        : public ConfigSaverWork
+
+    /// Get a TabletConfig handle for the given Tablet (which should
+    /// be of the given TabletServer and Table).  The Table should be
+    /// locked.
+    TabletConfigCPtr getTabletConfig(TabletServer const * server,
+                                     Table const * table,
+                                     Tablet * tablet)
     {
-        boost::mutex mutex;
-        boost::condition cond;
-        bool gotDone;
+        /// xxx This is nearly the stupidest way we could do this.
+
+        std::vector<Tablet *> v;
+        v.push_back(tablet);
         
-    public:
-        WaitForSaveCb() : gotDone(false) {}
-
-        virtual void done()
-        {
-            lock_t lock(mutex);
-            gotDone = true;
-            cond.notify_all();
-        }
-
-        void wait()
-        {
-            lock_t lock(mutex);
-            while(!gotDone)
-                cond.wait(lock);
-        }
-    };
+        TabletConfigVecCPtr configs = table->getTabletConfigs(
+            v,
+            server->getLogDir(),
+            server->getLocation());
+        
+        TabletConfigCPtr p(new TabletConfig((*configs)[0]));
+        return p;
+    }
 
 }
 
-
 //----------------------------------------------------------------------------
-// TabletServer::ConfigsLoadedCb
+// TabletServer::SchemaLoadedCb
 //----------------------------------------------------------------------------
-class TabletServer::ConfigsLoadedCb
-    : public ConfigReader::ReadConfigsCb
+class TabletServer::SchemaLoadedCb
+    : public TabletServer::LoadSchemaCb
 {
     TabletServer * server;
-    LoadCb * cb;
-
-public:
-    ConfigsLoadedCb(TabletServer * server, LoadCb * cb) :
-        server(server),
-        cb(cb)
-    {
-    }
-
-    void done(std::vector<TabletConfig> const & configs)
-    {
-        try {
-            server->loadTablets(configs);
-            cb->done();
-        }
-        catch(std::exception const & ex) {
-            cb->error(ex);
-        }
-        catch(...) {
-            cb->error(std::runtime_error("load3: unknown exception"));
-        }
-        delete this;
-    }
-
-    void error(std::exception const & err)
-    {
-        cb->error(err);
-        delete this;
-    }
-};
-
-
-//----------------------------------------------------------------------------
-// TabletServer::SchemasLoadedCb
-//----------------------------------------------------------------------------
-class TabletServer::SchemasLoadedCb
-    : public ConfigReader::ReadSchemasCb
-{
-    TabletServer * server;
-    LoadCb * cb;
-    string_vec tablets;
+    std::string tableName;
     
 public:
-    SchemasLoadedCb(TabletServer * server, LoadCb * cb,
-                    string_vec const & tablets) :
-        server(server),
-        cb(cb),
-        tablets(tablets)
-    {
-    }
+    SchemaLoadedCb(TabletServer * server, std::string const & tableName) :
+        server(server), tableName(tableName) {}
 
-    void done(std::vector<TableSchema> const & schemas)
+    void done(TableSchema const & schema)
     {
         try {
-            server->applySchemas(schemas);
-            server->bits.configReader->readConfigs_async(
-                new ConfigsLoadedCb(server, cb),
-                tablets);
+            TabletServerLock serverLock(server);
+            Table * table = server->getTable(tableName);
+            TableLock tableLock(table);
+            table->applySchema(schema);
         }
-        catch(std::exception const & ex) {
-            cb->error(ex);
-        }
-        catch(...) {
-            cb->error(std::runtime_error("load2: unknown exception"));
-        }
+        catch(std::exception const & ex) { fail(ex); }
+        catch(...) { fail(std::runtime_error("unknown exception")); }
         delete this;
     }
 
     void error(std::exception const & err)
     {
-        cb->error(err);
+        fail(err);
         delete this;
     }
+
+private:
+    void fail(std::exception const & err)
+    {
+        log("ERROR SchemaLoadedCb: %s", err.what());
+    }
 };
+
+//----------------------------------------------------------------------------
+// TabletServer::FragmentsLoadedCb
+//----------------------------------------------------------------------------
+class TabletServer::FragmentsLoadedCb
+    : public TabletServer::LoadFragmentsCb
+{
+    TabletServer * server;
+    std::string tabletName;
+
+public:
+    FragmentsLoadedCb(TabletServer * server, std::string const & tabletName) :
+        server(server), tabletName(tabletName) {}
+
+    void done(std::vector<FragmentCPtr> const & fragments)
+    {
+        try {
+            std::string tableName;
+            warp::IntervalPoint<std::string> lastRow;
+            decodeTabletName(tabletName, tableName, lastRow);
+
+            TabletServerLock serverLock(server);
+            Table * table = server->getTable(tableName);
+            TableLock tableLock(table);
+            Tablet * tablet = table->getTablet(lastRow);
+
+            assert(tablet->getState() == TABLET_FRAGMENTS_LOADING);
+
+            // Apply the loaded Fragments
+            tablet->onFragmentsLoaded(fragments);
+            
+            // Move to next load state
+            warp::Runnable * callbacks = tablet->setState(TABLET_ACTIVE);
+
+            tableLock.unlock();
+            serverLock.unlock();
+
+            // Issue load state callbacks, if any
+            if(callbacks)
+                callbacks->run();
+        }
+        catch(std::exception const & ex) { fail(ex); }
+        catch(...) { fail(std::runtime_error("unknown exception")); }
+        delete this;
+    }
+
+    void error(std::exception const & err)
+    {
+        fail(err);
+        delete this;
+    }
+
+private:
+    void fail(std::exception const & err)
+    {
+        log("ERROR FragmentsLoadedCb: %s", err.what());
+
+        // xxx This should issue errors to all callbacks waiting for
+        // the tablet to load and then delete the tablet.
+        std::terminate();
+    }
+};
+
+//----------------------------------------------------------------------------
+// TabletServer::ConfigSavedCb
+//----------------------------------------------------------------------------
+class TabletServer::ConfigSavedCb
+    : public warp::Callback
+{
+    TabletServer * server;
+    TabletConfigCPtr config;
+
+public:
+    ConfigSavedCb(TabletServer * server, TabletConfigCPtr const & config) :
+        server(server), config(config) {}
+
+    void done()
+    {
+        try {
+            TabletServerLock serverLock(server);
+            Table * table = server->getTable(config->tableName);
+            TableLock tableLock(table);
+            Tablet * tablet = table->getTablet(config->rows.getUpperBound());
+
+            assert(tablet->getState() == TABLET_CONFIG_SAVING);
+
+            TabletState nextState;
+            if(!config->fragments.empty())
+            {
+                // We need to load fragments
+                nextState = TABLET_FRAGMENTS_LOADING;
+
+                server->loadFragments_async(
+                    new FragmentsLoadedCb(server, config->getTabletName()),
+                    config);
+            }
+            else
+            {
+                // No fragments to load
+                nextState = TABLET_ACTIVE;
+            }
+
+            // Move to next load state
+            warp::Runnable * callbacks = tablet->setState(nextState);
+
+            tableLock.unlock();
+            serverLock.unlock();
+
+            // Issue load state callbacks, if any
+            if(callbacks)
+                callbacks->run();
+        }
+        catch(std::exception const & ex) { fail(ex); }
+        catch(...) { fail(std::runtime_error("unknown exception")); }
+        delete this;
+    }
+
+    void error(std::exception const & err)
+    {
+        fail(err);
+        delete this;
+    }
+
+private:
+    void fail(std::exception const & err)
+    {
+        log("ERROR ConfigSavedCb: %s", err.what());
+
+        // xxx This should issue errors to all callbacks waiting for
+        // the tablet to load and then delete the tablet.
+        std::terminate();
+    }
+};
+
+//----------------------------------------------------------------------------
+// TabletServer::LogReplayedCb
+//----------------------------------------------------------------------------
+class TabletServer::LogReplayedCb
+    : public warp::Callback
+{
+    TabletServer * server;
+    TabletConfigCPtr config;
+
+public:
+    LogReplayedCb(TabletServer * server, TabletConfigCPtr const & config) :
+        server(server), config(config) {}
+
+    void done()
+    {
+        try {
+            TabletServerLock serverLock(server);
+            Table * table = server->getTable(config->tableName);
+            TableLock tableLock(table);
+            Tablet * tablet = table->getTablet(config->rows.getUpperBound());
+
+            assert(tablet->getState() == TABLET_LOG_REPLAYING);
+
+            // Start the config save
+            server->saveConfig_async(new ConfigSavedCb(server, config),
+                                     getTabletConfig(server, table, tablet));
+
+            // Move to next load state
+            warp::Runnable * callbacks = tablet->setState(TABLET_CONFIG_SAVING);
+
+            tableLock.unlock();
+            serverLock.unlock();
+
+            // Issue load state callbacks, if any
+            if(callbacks)
+                callbacks->run();
+        }
+        catch(std::exception const & ex) { fail(ex); }
+        catch(...) { fail(std::runtime_error("unknown exception")); }
+        delete this;
+    }
+
+    void error(std::exception const & err)
+    {
+        fail(err);
+        delete this;
+    }
+
+private:
+    void fail(std::exception const & err)
+    {
+        log("ERROR LogReplayedCb: %s", err.what());
+
+        // xxx This should issue errors to all callbacks waiting for
+        // the tablet to load and then delete the tablet.
+        std::terminate();
+    }
+};
+
+//----------------------------------------------------------------------------
+// TabletServer::ConfigLoadedCb
+//----------------------------------------------------------------------------
+class TabletServer::ConfigLoadedCb
+    : public TabletServer::LoadConfigCb
+{
+    TabletServer * server;
+    std::string tabletName;
+
+public:
+    ConfigLoadedCb(TabletServer * server, std::string const & tabletName) :
+        server(server), tabletName(tabletName) {}
+
+    void done(TabletConfigCPtr const & config)
+    {
+        try {
+            std::string tableName;
+            warp::IntervalPoint<std::string> lastRow;
+            decodeTabletName(tabletName, tableName, lastRow);
+            
+            TabletServerLock serverLock(server);
+            Table * table = server->getTable(tableName);
+            TableLock tableLock(table);
+            Tablet * tablet = table->getTablet(lastRow);
+
+            assert(tablet->getState() == TABLET_CONFIG_LOADING);
+
+            // Get the Tablet to apply what it needs out of the config
+            tablet->onConfigLoaded(config);
+
+            // Move to the next load state
+            TabletState nextState;
+            if(!config->log.empty())
+            {
+                // The config specifies a log directory.  We need to
+                // replay it.
+                nextState = TABLET_LOG_REPLAYING;
+
+                // Start the log replay
+                server->replayLogs_async(new LogReplayedCb(server, config),
+                                         tabletName, config->log);
+            }
+            else
+            {
+                // No log directory.  Move on to config save.
+                nextState = TABLET_CONFIG_SAVING;
+
+                // Start the config save
+                server->saveConfig_async(new ConfigSavedCb(server, config),
+                                         getTabletConfig(server, table, tablet));
+            }
+
+            // Move to next load state
+            warp::Runnable * callbacks = tablet->setState(nextState);
+
+            tableLock.unlock();
+            serverLock.unlock();
+
+            // Issue load state callbacks, if any
+            if(callbacks)
+                callbacks->run();
+        }
+        catch(std::exception const & ex) { fail(ex); }
+        catch(...) { fail(std::runtime_error("unknown exception")); }
+        delete this;
+    }
+
+    void error(std::exception const & err)
+    {
+        fail(err);
+        delete this;
+    }
+
+private:
+    void fail(std::exception const & err)
+    {
+        log("ERROR ConfigLoadedCb: %s", err.what());
+
+        // xxx This should issue errors to all callbacks waiting for
+        // the tablet to load and then delete the tablet.
+        std::terminate();
+    }
+};
+
 
 //----------------------------------------------------------------------------
 // TabletServer::SWork
@@ -290,7 +462,7 @@ public:
     virtual void done(std::vector<std::string> const & rowCoverage,
                       PendingFileCPtr const & outFn)
     {
-        lock_t serverLock(server->serverMutex);
+        TabletServerLock serverLock(server);
 
         // Make sure the table still exists
         Table * table = server->findTableLocked(tableName);
@@ -298,7 +470,7 @@ public:
             return;
 
         // Lock table, release server
-        lock_t tableLock(table->tableMutex);
+        TableLock tableLock(table);
         serverLock.unlock();
 
         // Make sure table schema hasn't changed
@@ -319,13 +491,12 @@ public:
 
         /// Hold on to pending file reference until config is saved
         std::auto_ptr<HoldPendingCb> cb(new HoldPendingCb);
-        cb->setConfigs(
-            table->getTabletConfigs(
-                updatedTablets,
-                server->bits.serverLogDir,
-                server->bits.serverLocation));
         cb->addPending(outFn);
-        server->queueConfigSave(cb.release());
+        TabletConfigVecCPtr configs = table->getTabletConfigs(
+            updatedTablets,
+            server->bits.serverLogDir,
+            server->bits.serverLocation);
+        server->saveConfigs_async(cb.release(), configs);
 
         // Kick compactor
         server->wakeCompactor();
@@ -357,7 +528,7 @@ public:
             return ptr;
         }
 
-        lock_t serverLock(server->serverMutex);
+        TabletServerLock serverLock(server);
 
         // Find max mem-fragment group
         bool haveMax = false;
@@ -368,7 +539,7 @@ public:
             i != server->tableMap.end(); ++i)
         {
             Table * table = i->second;
-            lock_t tableLock(table->tableMutex);
+            TableLock tableLock(table);
 
             int nGroups = table->getSchema().groups.size();
             for(int j = 0; j < nGroups; ++j)
@@ -395,7 +566,7 @@ public:
 
         // Build new work unit
         Table * table = maxIt->second;
-        lock_t tableLock(table->tableMutex);
+        TableLock tableLock(table);
         TableSchema const & schema = table->getSchema();
     
         ptr.reset(new SWork(server, maxIt->first, table->getSchemaVersion(), maxGroup));
@@ -424,7 +595,7 @@ public:
 
     virtual void done(RangeOutputMap const & output)
     {
-        lock_t serverLock(server->serverMutex);
+        TabletServerLock serverLock(server);
 
         // Make sure the table still exists
         Table * table = server->findTableLocked(schema.tableName);
@@ -432,7 +603,7 @@ public:
             return;
 
         // Lock table, release server
-        lock_t tableLock(table->tableMutex);
+        TableLock tableLock(table);
         serverLock.unlock();
 
         // Make sure table schema hasn't changed
@@ -465,12 +636,11 @@ public:
             cb->addPending(i->second);
         }
 
-        cb->setConfigs(
-            table->getTabletConfigs(
-                updatedTablets,
-                server->bits.serverLogDir,
-                server->bits.serverLocation));
-        server->queueConfigSave(cb.release());
+        TabletConfigVecCPtr configs = table->getTabletConfigs(
+            updatedTablets,
+            server->bits.serverLogDir,
+            server->bits.serverLocation);
+        server->saveConfigs_async(cb.release(), configs);
     }
 
 private:
@@ -491,17 +661,17 @@ public:
     {
         std::auto_ptr<Compactor::Work> ptr;
 
-        lock_t serverLock(server->serverMutex);
+        TabletServerLock serverLock(server);
 
         // Find longest disk-fragment chain
         size_t maxLen = 0;
         table_map::const_iterator maxIt;
-        int maxGroup;
+        int maxGroup = -1;
         for(table_map::const_iterator i = server->tableMap.begin();
             i != server->tableMap.end(); ++i)
         {
             Table * table = i->second;
-            lock_t tableLock(table->tableMutex);
+            TableLock tableLock(table);
 
             int nGroups = table->getSchema().groups.size();
             for(int j = 0; j < nGroups; ++j)
@@ -522,7 +692,7 @@ public:
 
         // Build a work unit
         Table * table = maxIt->second;
-        lock_t tableLock(table->tableMutex);
+        TableLock tableLock(table);
         
         ptr.reset(new CWork(server, table->getSchemaVersion()));
         ptr->schema = table->getSchema();
@@ -547,7 +717,7 @@ public:
     DirectBlockCache compactorCache;
     Serializer serializer;
     Compactor compactor;
-    ConfigSaver saver;
+    warp::WorkerPool configWorker;
 
     Workers(TabletServer * server) :
         serializerInput(server),
@@ -556,7 +726,7 @@ public:
         compactor(&compactorInput,
                   server->bits.fragmentFactory,
                   &compactorCache),
-        saver(server->bits.configWriter)
+        configWorker(1, "Config", true)
     {
     }
 
@@ -564,7 +734,6 @@ public:
     {
         serializer.start();
         compactor.start();
-        saver.start();
     }
 
     void stop()
@@ -606,95 +775,71 @@ TabletServer::~TabletServer()
 
 void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
 {
-    /*
-     *
-     * - Validate input tablets:
-     *   - Make sure each maps to a non-empty table name plus a last 
-     *     row (character after table name is either ' ' or '!')
-     *   - Filter out tablets that are already loaded
-     * - Get table names for all remaining tablets
-     * - Load any tables that aren't loaded yet
-     *   - Load schemas from ConfigReader
-     *   - Make sure loaded schemas are valid
-     * - Load tablet configs from ConfigReader
-     *   - (Optional) If config contains "location", make sure there 
-     *     isn't a server actively serving the tablet at that location
-     *   - If config contains "log", add (dir,tablet) to replay list
-     *
-     */
-
+    warp::MultipleCallback * mcb = new warp::MultipleCallback(cb);
     try {
-
-        string_vec neededTablets;
-        string_vec neededTables;
-
         std::string tableName;
         warp::IntervalPoint<std::string> lastRow;
 
-        lock_t serverLock(serverMutex);
+        TabletServerLock serverLock(this);
 
-        // Filter out tablets that are already loaded
+        // Walk list of tablets, start loads where needed and defer
+        // return until all tablets are active.
         for(string_vec::const_iterator i = tablets.begin();
             i != tablets.end(); ++i)
         {
-            decodeTabletName(*i, tableName, lastRow);
-            table_map::const_iterator j = tableMap.find(tableName);
-            if(j == tableMap.end())
+            std::string const & tabletName = *i;
+            decodeTabletName(tabletName, tableName, lastRow);
+
+            // Find the table (or create it)
+            Table * & table = tableMap[tableName];
+            if(!table)
             {
-                neededTablets.push_back(*i);
+                // Create a new Table with default schema
+                table = new Table(tableName);
 
-                if(neededTables.empty() || neededTables.back() != tableName)
-                    neededTables.push_back(tableName);
-
-                continue;
+                // Initiate a schema load for the Table
+                loadSchema_async(new SchemaLoadedCb(this, tableName), tableName);
             }
 
-            Table * table = j->second;
-            lock_t tableLock(table->tableMutex);
+            // Lock the table and find the tablet (or create it)
+            TableLock tableLock(table);
             Tablet * tablet = table->findTablet(lastRow);
-            bool loading = tablet && tablet->isLoading();
-            tableLock.unlock();
-
             if(!tablet)
-                neededTablets.push_back(*i);
-            else if(loading)
             {
-                // We could install a callback and defer, but this is
-                // a corner case we don't care much about.  Just
-                // trigger an error for now so nothing gets confused
-                // about what is loaded and when.
-                throw std::runtime_error("already loading: " + *i);
+                // Create a new Tablet
+                tablet = table->createTablet(lastRow);
+
+                // Initiate a config load for the Tablet
+                loadConfig_async(new ConfigLoadedCb(this, tabletName), tabletName);
+            }
+
+            if(tablet->getState() < TABLET_ACTIVE)
+            {
+                // Tablet is still loading.  Defer until it finishes.
+                mcb->incrementCount();
+                tablet->deferUntilState(mcb, TABLET_ACTIVE);
+            }
+            else if(tablet->getState() > TABLET_ACTIVE)
+            {
+                // Tablet in an unloading or error state.
+                using namespace ex;
+                raise<RuntimeError>(
+                    "Tablet is in %s state: %s",
+                    tablet->getState() == TABLET_ERROR ? "error" : "unloading",
+                    warp::reprString(tabletName));
             }
         }
 
         serverLock.unlock();
 
-        // If we need to load tables, do so
-        if(!neededTables.empty())
-        {
-            bits.configReader->readSchemas_async(
-                new SchemasLoadedCb(this, cb, neededTablets),
-                neededTables);
-            return;
-        }
-
-        // If we need to load tablets, do so
-        if(!neededTablets.empty())
-        {
-            bits.configReader->readConfigs_async(
-                new ConfigsLoadedCb(this, cb),
-                neededTablets);
-            return;
-        }
-
-        // We have nothing to load
-        cb->done();
+        // We're done here, let the callbacks come in
+        mcb->done();
     }
     catch(std::exception const & ex) {
-        cb->error(ex);
+        mcb->error(ex);
     }
     catch(...) {
-        cb->error(std::runtime_error("load: unknown exception"));
+        mcb->error(std::runtime_error("load1: unknown exception"));
     }
 }
 
@@ -715,7 +860,7 @@ void TabletServer::unload_async(UnloadCb * cb, string_vec const & tablets)
         std::string tableName;
         warp::IntervalPoint<std::string> lastRow;
 
-        lock_t serverLock(serverMutex);
+        TabletServerLock serverLock(this);
 
         for(string_vec::const_iterator i = tablets.begin();
             i != tablets.end(); ++i)
@@ -727,7 +872,7 @@ void TabletServer::unload_async(UnloadCb * cb, string_vec const & tablets)
                 continue;
 
             Table * table = j->second;
-            lock_t tableLock(table->tableMutex);
+            TableLock tableLock(table);
 
             Tablet * tablet = table->findTablet(lastRow);
             if(!tablet)
@@ -767,11 +912,11 @@ void TabletServer::apply_async(
         commit.cells->getColumnFamilies(families);
 
         // Try to apply the commit
-        lock_t serverLock(serverMutex);
+        TabletServerLock serverLock(this);
 
         // Find the table
         Table * table = getTable(tableName);
-        lock_t tableLock(table->tableMutex);
+        TableLock tableLock(table);
 
         // XXX: if the tablets are assigned to this server but still
         // in the process of being loaded, may want to defer until
@@ -897,7 +1042,7 @@ void TabletServer::apply_async(
 void TabletServer::sync_async(SyncCb * cb, int64_t waitForTxn)
 {
     try {
-        lock_t serverLock(serverMutex);
+        TabletServerLock serverLock(this);
 
         // Clip waitForTxn to the last committed transaction
         if(waitForTxn > txnCounter.getLastCommit())
@@ -937,7 +1082,7 @@ Table * TabletServer::getTable(strref_t tableName) const
 
 Table * TabletServer::findTable(strref_t tableName) const
 {
-    lock_t serverLock(serverMutex);
+    TabletServerLock serverLock(this);
     return findTableLocked(tableName);
 }
 
@@ -960,9 +1105,14 @@ void TabletServer::wakeCompactor()
     workers->compactor.wake();
 }
 
-void TabletServer::queueConfigSave(ConfigSaverWork * save)
+void TabletServer::saveConfigs_async(
+    warp::Callback * cb, TabletConfigVecCPtr const & configs)
 {
-    workers->saver.submit(save);
+    workers->configWorker.submit(
+        new ConfigSaver(
+            cb,
+            bits.configWriter,
+            configs));
 }
 
 void TabletServer::logLoop()
@@ -1008,7 +1158,7 @@ void TabletServer::logLoop()
         if(log)
             log->sync();
 
-        lock_t serverLock(serverMutex);
+        TabletServerLock serverLock(this);
 
         // Update last durable txn
         warp::Runnable * durableCallbacks = txnCounter.setLastDurable(maxTxn);
@@ -1036,24 +1186,6 @@ void TabletServer::logLoop()
     }
 }
 
-void TabletServer::applySchemas(std::vector<TableSchema> const & schemas) {
-    // For each schema:
-    //   if the referenced table doesn't already exist, create it
-    //   tell the table to update its schema
-
-    lock_t serverLock(serverMutex);
-
-    for(std::vector<TableSchema>::const_iterator i = schemas.begin();
-        i != schemas.end(); ++i)
-    {
-        Table * & table = tableMap[i->tableName];
-        if(!table)
-            table = new Table;
-
-        lock_t tableLock(table->tableMutex);
-        table->applySchema(*i);
-    }
-}
 
 // std::vector<TabletConfig::Fragment>
 // topoMerge(std::vector<TabletConfig::Fragment> const & frags)
@@ -1094,6 +1226,80 @@ void TabletServer::applySchemas(std::vector<TableSchema> const & schemas) {
 //     //                 for fn in topoMerge(chains) ]
 // 
 // }
+
+#if 0
+
+// This function has been replaced by the async loading chain.  That
+// chain still has some holes in it.  This is reference until those
+// get filled.
+
+namespace {
+    struct Loading
+    {
+        TabletConfig const * config;
+        std::vector<FragmentCPtr> frags;
+
+        Loading() : config(0) {}
+        Loading(TabletConfig const * config) :
+            config(config) {}
+
+        void addLoadedFragment(FragmentCPtr const & frag)
+        {
+            frags.push_back(frag);
+        }
+
+        bool operator<(Loading const & o) const
+        {
+            TabletConfig const & a = *config;
+            TabletConfig const & b = *o.config;
+
+            if(int c = warp::string_compare(a.log, b.log))
+                return c < 0;
+
+            if(int c = warp::string_compare(a.tableName, b.tableName))
+                return c < 0;
+
+            return a.rows.getUpperBound() < b.rows.getUpperBound();
+        }
+
+        struct LogNeq
+        {
+            strref_t log;
+            LogNeq(strref_t log) : log(log) {}
+            bool operator()(Loading const & x) const
+            {
+                return x.config->log != log;
+            }
+        };
+    };
+
+    class LoadCompleteCb
+        : public Tablet::LoadedCb
+    {
+        size_t nPending;
+        boost::mutex mutex;
+        boost::condition cond;
+
+    public:
+        LoadCompleteCb() : nPending(0) {}
+        
+        void increment() { ++nPending; }
+
+        void done()
+        {
+            lock_t lock(mutex);
+            if(!--nPending)
+                cond.notify_one();
+        }
+
+        void wait()
+        {
+            lock_t lock(mutex);
+            while(nPending)
+                cond.wait(lock);
+        }
+    };
+}
 
 void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
 {
@@ -1137,13 +1343,13 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
 
     LoadCompleteCb loadCompleteCb;
 
-    lock_t serverLock(serverMutex);
+    TabletServerLock serverLock(this);
 
     for(std::vector<TabletConfig>::const_iterator i = configs.begin();
         i != configs.end(); ++i)
     {
         Table * table = getTable(i->tableName);
-        lock_t tableLock(table->tableMutex);
+        TableLock tableLock(table);
 
         Tablet * tablet = table->findTablet(i->rows.getUpperBound());
         if(tablet)
@@ -1155,7 +1361,8 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
             }
             continue;
         }
-        tablet = table->createTablet(i->rows);
+        tablet = table->createTablet(i->rows.getUpperBound());
+        tablet->setLowerBound(i->rows.getLowerBound());
         loading.push_back(Loading(&*i));
     }
 
@@ -1187,7 +1394,7 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
         for(loading_vec::iterator i = first; i != last; ++i)
         {
             Table * table = getTable(i->config->tableName);
-            lock_t tableLock(table->tableMutex);
+            TableLock tableLock(table);
             table->addLoadedFragments(i->config->rows, i->frags);
         }
         serverLock.unlock();
@@ -1229,15 +1436,14 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
         for(size_t i = 0; i < configs->size(); ++i)
         {
             Table * table = getTable((*configs)[i].tableName);
-            lock_t tableLock(table->tableMutex);
+            TableLock tableLock(table);
             Tablet * tablet = table->findTablet((*configs)[i].rows.getUpperBound());
             tablet->getConfigFragments((*configs)[i]);
         }
         serverLock.unlock();
 
-        WaitForSaveCb cb;
-        cb.setConfigs(configs);
-        queueConfigSave(&cb);
+        warp::WaitCallback cb;
+        saveConfigs_async(&cb, configs);
         cb.wait();
     }
         
@@ -1250,7 +1456,7 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
         i != loading.end(); ++i)
     {
         Table * table = getTable(i->config->tableName);
-        lock_t tableLock(table->tableMutex);
+        TableLock tableLock(table);
         Tablet * tablet = table->findTablet(i->config->rows.getUpperBound());
         warp::Runnable * loadCallback = tablet->finishLoading();
         if(loadCallback)
@@ -1267,3 +1473,5 @@ void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
 
     loadCompleteCb.wait();
 }
+
+#endif

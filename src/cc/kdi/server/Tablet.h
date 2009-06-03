@@ -43,14 +43,20 @@ namespace server {
         TABLET_ACTIVE,
         TABLET_UNLOAD_COMPACTING,
         TABLET_UNLOAD_CONFIG_SAVING,
+
+        TABLET_ERROR
     };
 
     // Forward declarations
     class TableSchema;
     class TabletConfig;
 
+    typedef boost::shared_ptr<TabletConfig const> TabletConfigCPtr;
+
 } // namespace server
 } // namespace kdi
+
+namespace warp { class Callback; }
 
 //----------------------------------------------------------------------------
 // Tablet
@@ -128,10 +134,27 @@ public:
     void deferUntilLoaded(LoadedCb * cb);
     warp::Runnable * finishLoading();
 
+    /// Apply Tablet lower bound from config and make any necessary
+    /// placeholder fragments.
+    void onConfigLoaded(TabletConfigCPtr const & config);
+
+    /// Replace placeholder fragments with real loaded Fragments.
+    void onFragmentsLoaded(std::vector<FragmentCPtr> const & fragments);
+
     /// Fill in the fragments part of the TabletConfig.
     void getConfigFragments(TabletConfig & cfg) const;
+    
+    /// Requests a callback when the Tablet load state reaches or
+    /// exceeds the given state.
+    void deferUntilState(warp::Callback * cb, TabletState state);
 
+    /// Get the current Tablet load state
     TabletState getState() const { return state; }
+
+    /// Set a new Tablet load state.  If any callbacks need to be
+    /// issued because of the state change, a Runnable object will be
+    /// returned.  The caller must ensure that the object is run.
+    warp::Runnable * setState(TabletState state);
 
 private:
     class Loading;
