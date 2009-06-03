@@ -217,6 +217,50 @@ namespace {
         TabletConfigCPtr    const config;
     };
 
+    class FragmentLoaderWork
+        : public warp::Runnable
+    {
+    public:
+        FragmentLoaderWork(TabletServer::LoadFragmentsCb * cb,
+                           FragmentLoader * loader,
+                           TabletConfigCPtr const & config) :
+            cb(cb), loader(loader), config(config) {}
+
+        virtual void run()
+        {
+            assert(cb);
+            assert(loader);
+            assert(config);
+
+            try {
+                std::vector<FragmentCPtr> loaded;
+
+                typedef std::vector<TabletConfig::Fragment> fvec;
+                fvec const & frags = config->fragments;
+
+                for(fvec::const_iterator f = frags.begin();
+                    f != frags.end(); ++f)
+                {
+                    FragmentCPtr frag = loader->load(f->filename);
+                    frag = frag->getRestricted(f->families);
+                    loaded.push_back(frag);
+                }
+                
+                cb->done(loaded);
+            }
+            catch(std::exception const & err) { cb->error(err); }
+            catch(...) {
+                cb->error(std::runtime_error("FragmentLoaderWork: unknown error"));
+            }
+            delete this;
+        }
+
+    private:
+        TabletServer::LoadFragmentsCb * const cb;
+        FragmentLoader *                const loader;
+        TabletConfigCPtr                const config;
+    };
+
 }
 
 //----------------------------------------------------------------------------
@@ -809,6 +853,7 @@ public:
     Serializer serializer;
     Compactor compactor;
     warp::WorkerPool configWorker;
+    warp::WorkerPool fragmentWorkers;
 
     Workers(TabletServer * server) :
         serializerInput(server),
@@ -817,7 +862,8 @@ public:
         compactor(&compactorInput,
                   server->bits.fragmentFactory,
                   &compactorCache),
-        configWorker(1, "Config", true)
+        configWorker(1, "Config", true),
+        fragmentWorkers(2, "Fragment", true)
     {
     }
 
@@ -1227,7 +1273,11 @@ void TabletServer::loadFragments_async(
     LoadFragmentsCb * cb, TabletConfigCPtr const & config)
 {
     try {
-        EX_UNIMPLEMENTED_FUNCTION;
+        workers->fragmentWorkers.submit(
+            new FragmentLoaderWork(
+                cb,
+                bits.fragmentLoader,
+                config));
     }
     catch(std::exception const & ex) { cb->error(ex); }
     catch(...) {
