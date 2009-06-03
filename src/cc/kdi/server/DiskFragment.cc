@@ -277,21 +277,17 @@ DiskBlock::makeReader(ScanPredicate const & pred) const
 //----------------------------------------------------------------------------
 // DiskFragment
 //----------------------------------------------------------------------------
-DiskFragment::DiskFragment(std::string const & fn) :
-    fp(File::input(fn)),
-    input(FileInput::make(fp)),
-    indexRec(IndexCache::getGlobal(), fn),
-    filename(fn),
-    dataSize(fs::filesize(fn))
+DiskFragment::DiskFragment(std::string const & filename) :
+    filename(filename),
+    indexRec(IndexCache::getGlobal(), filename),
+    dataSize(fs::filesize(filename))
 {
 }
 
 DiskFragment::DiskFragment(std::string const & loadPath,
                            std::string const & filename) :
-    fp(File::input(loadPath)),
-    input(FileInput::make(fp)),
-    indexRec(IndexCache::getGlobal(), loadPath),
     filename(filename),
+    indexRec(IndexCache::getGlobal(), loadPath),
     dataSize(fs::filesize(loadPath))
 {
 }
@@ -323,6 +319,24 @@ size_t DiskFragment::nextBlock(ScanPredicate const & pred, size_t minBlock) cons
 {
     BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
 
+    uint32_t colFamilyMask = 0;
+    std::vector<warp::StringRange> families;
+    if(pred.getColumnFamilies(families))
+    {
+        vector<warp::StringRange>::const_iterator cfi;
+        for(cfi = families.begin(); cfi != families.end(); ++cfi) {
+            uint32_t nextMask = 1;
+            warp::StringOffset const * si;
+            for(si = index->colFamilies.begin(); si != index->colFamilies.end(); ++si) {
+                if(**si == *cfi) {
+                    colFamilyMask |= nextMask;
+                    break;
+                }
+                nextMask = nextMask << 1;
+            }
+        }
+    }
+
 nextBlock:
 
     if(minBlock >= index->blocks.size())
@@ -330,6 +344,8 @@ nextBlock:
 
     ScanPredicate::StringSetCPtr rows = pred.getRowPredicate();
     ScanPredicate::TimestampSetCPtr times = pred.getTimePredicate();
+
+    IndexEntryV1 const * ent = &index->blocks[minBlock];
 
     if(rows)
     {
@@ -345,7 +361,6 @@ nextBlock:
         if(lowerBoundIt == rows->end()) return size_t(-1);
 
         // Try finding the next block based on the index
-        IndexEntryV1 const * ent;
         ent = std::lower_bound(
                 &index->blocks[minBlock], index->blocks.end(),
                 *lowerBoundIt, RowLt());
@@ -354,21 +369,26 @@ nextBlock:
             return size_t(-1);
 
         minBlock = ent-index->blocks.begin();
+    } 
 
-        if(times) {
-            IntervalPoint<int64_t> lowTime(ent->lowestTime, PT_INCLUSIVE_LOWER_BOUND);
-            IntervalPoint<int64_t> highTime(ent->highestTime, PT_INCLUSIVE_UPPER_BOUND);
-            Interval<int64_t> timeInterval(lowTime, highTime);
+    if(times) {
+        IntervalPoint<int64_t> lowTime(ent->lowestTime, PT_INCLUSIVE_LOWER_BOUND);
+        IntervalPoint<int64_t> highTime(ent->highestTime, PT_INCLUSIVE_UPPER_BOUND);
+        Interval<int64_t> timeInterval(lowTime, highTime);
 
-            // If there is no overlap between the time ranges we are looking for and the
-            // interval of times in this block, skip to the next block
-            if(!times->overlaps(timeInterval)) {
-                minBlock += 1;
-                goto nextBlock;
-            }
+        // If there is no overlap between the time ranges we are looking for and the
+        // interval of times in this block, skip to the next block
+        if(!times->overlaps(timeInterval)) {
+            ++minBlock;
+            goto nextBlock;
         }
+    }
 
-        return minBlock;
+    if(colFamilyMask) {
+        if(!(colFamilyMask & ent->colFamilyMask)) {
+            ++minBlock;
+            goto nextBlock;
+        }
     }
 
     return minBlock;
@@ -376,57 +396,13 @@ nextBlock:
 
 std::auto_ptr<FragmentBlock> DiskFragment::loadBlock(size_t blockAddr) const 
 {
+    warp::FilePtr fp(File::input(filename));
     BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
     IndexEntryV1 const & idx = index->blocks[blockAddr];
     return std::auto_ptr<FragmentBlock>(new DiskBlock(fp, idx));
 }
 
 /*
-        // Column and timestamp ranges for filtering blocks
-        boost::shared_ptr< vector<string> > columnFamilies;
-        uint32_t colFamilyMask;
-        ScanPredicate::TimestampSetCPtr times;
-
-            if(times) {
-                IntervalPoint<int64_t> lowTime(indexIt->lowestTime, PT_INCLUSIVE_LOWER_BOUND);
-                IntervalPoint<int64_t> highTime(indexIt->highestTime, PT_INCLUSIVE_UPPER_BOUND);
-                Interval<int64_t> timeInterval(lowTime, highTime);
-
-                // If there is no overlap between the time ranges we are looking for and the
-                // interval of times in this block, skip to the next block
-                if(!times->overlaps(timeInterval)) {
-                    nextIndexIt = indexIt+1;
-                    goto nextBlock;
-                }
-            }
-
-            if(colFamilyMask) {
-                if(!(colFamilyMask & indexIt->colFamilyMask)) {
-                    nextIndexIt = indexIt+1;
-                    goto nextBlock;
-                }
-            }
-
-            if(columnFamilies) {
-                BlockIndexV1 const * index = indexRec.as<BlockIndexV1>();
-
-                // Figure out the column family bitmask now
-                vector<string>::const_iterator cfi;
-                for(cfi = columnFamilies->begin(); cfi != columnFamilies->end(); ++cfi) {
-                    uint32_t nextMask = 1;
-                    warp::StringOffset const * si;
-                    for(si = index->colFamilies.begin(); si != index->colFamilies.end(); ++si) {
-                        if(**si == *cfi) {
-                            colFamilyMask |= nextMask;
-                            break;
-                        }
-                        nextMask = nextMask << 1;
-                    }
-                }
-            }
-        }
-}
-
 //----------------------------------------------------------------------------
 // IndexScanner
 //----------------------------------------------------------------------------
@@ -485,123 +461,4 @@ namespace
     };
 }
 
-size_t DiskTable::readVersion(std::string const & fn)
-{
-    // Open file to TableInfo record
-    FilePtr fp = File::input(fn);
-    fp->seek(-(10+sizeof(TableInfo)), SEEK_END);
-
-    // Make a Record reader
-    FileInput::handle_t input = FileInput::make(fp);
-
-    // Read TableInfo
-    oort::Record r;
-    if(!input->get(r) || !r.getType() == TableInfo::TYPECODE)
-        raise<RuntimeError>("could not read TableInfo record: %s", fn);
-
-    return r.getVersion();
-}
-
-DiskTablePtr DiskTable::loadTable(std::string const & fn)
-{
-    size_t version = readVersion(fn);
-    switch(version)
-    {
-        case 0: return DiskTablePtr(new DiskTableV0(fn));
-        case 1: return DiskTablePtr(new DiskTableV1(fn));
-    }
-
-    raise<RuntimeError>("Unknown TableInfo version %d: %s", version, fn);
-}
-
-off_t DiskTable::loadIndex(std::string const & fn, oort::Record & r)
-{
-    // Open file to TableInfo record
-    FilePtr fp = File::input(fn);
-    fp->seek(-(10+sizeof(TableInfo)), SEEK_END);
-
-    // Make a Record reader
-    FileInput::handle_t input = FileInput::make(fp);
-
-    // Read TableInfo
-    if(!input->get(r) || r.getType() != TableInfo::TYPECODE)
-        raise<RuntimeError>("could not read TableInfo record: %s", fn);
-
-    // Seek to BlockIndex
-    uint64_t indexOffset = r.cast<TableInfo>()->indexOffset;
-    input->seek(indexOffset);
-
-    // Read BlockIndex
-    if(!input->get(r) || r.getType() != BlockIndex::TYPECODE)
-        raise<RuntimeError>("could not read BlockIndex record: %s", fn);
-
-    return indexOffset;
-}
-
-//----------------------------------------------------------------------------
-// DiskTableV1
-//----------------------------------------------------------------------------
-DiskTableV1::DiskTableV1(string const & fn) :
-    cache(IndexCache::getGlobal()), fn(fn), indexSize(0), dataSize(0)
-{
-    oort::Record r;
-    dataSize = loadIndex(fn, r);
-    indexSize = r.getLength();
-
-    // Make sure we have the right type
-    r.as<BlockIndexV1>();
-}
-
-DiskTableV1::~DiskTableV1()
-{
-    cache->remove(fn);
-}
-
-CellStreamPtr DiskTableV1::scan(ScanPredicate const & pred) const
-{
-    FilePtr fp = File::input(fn);
-
-    // Make a disk scanner appropriate for our row predicate
-    CellStreamPtr diskScanner;
-    if(ScanPredicate::StringSetCPtr const & rows = pred.getRowPredicate())
-    {
-        //ScanPredicate::StringSetCPtr const & columns = pred.getColumnPredicate();
-        ScanPredicate::TimestampSetCPtr const & times = pred.getTimePredicate();
-
-        boost::shared_ptr< vector<string> > famsCopy;
-        vector<StringRange> fams;
-        if(pred.getColumnFamilies(fams))
-        {
-            // Make a copy so the families don't get invalidated after
-            // the predicate goes out of scope.
-            famsCopy.reset(new vector<string>(fams.size()));
-            for(size_t i = 0; i < fams.size(); ++i)
-            {
-                (*famsCopy)[i] = fams[i].toString();
-            }
-        }
-
-        // Make a scanner that handles the row predicate
-        diskScanner.reset(new DiskScanner(fp, rows, famsCopy, times, cache, fn));
-    }
-    else
-    {
-        // Scan everything
-        diskScanner.reset(new DiskScanner(fp, cache, fn));
-    }
-
-    // Filter the rest
-    return applyPredicateFilter(
-        ScanPredicate(pred).clearRowPredicate(),
-        diskScanner);
-}
-
-flux::Stream< std::pair<std::string, size_t> >::handle_t
-DiskTableV1::scanIndex(warp::Interval<std::string> const & rows) const
-{
-    flux::Stream< std::pair<std::string, size_t> >::handle_t p(
-        new IndexScanner(cache, fn, rows)
-        );
-    return p;
-}
 */

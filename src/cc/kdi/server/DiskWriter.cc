@@ -143,6 +143,8 @@ class DiskWriter::Impl
     void addCell(strref_t row, strref_t column, int64_t timestamp,
                  strref_t value, bool isErasure);
 
+    void updateColFamilies(strref_t column);
+
 public:
     explicit Impl(size_t blockSize);
 
@@ -226,9 +228,17 @@ void DiskWriter::Impl::addCell(strref_t row, strref_t column, int64_t timestamp,
         if(t > highestTime) highestTime = t;
     }
 
-/*
+    updateColFamilies(column);
+}
+
+void DiskWriter::Impl::updateColFamilies(strref_t column)
+{
     // Update the column family lookup and mask
-    size_t colFamily = index.pool.getStringOffset(x.getColumnFamily());
+    char const * sep = std::find(column.begin(), column.end(), ':');
+    if(sep == column.end()) return; // No column family
+
+    StringRange fam(column.begin(), sep);
+    size_t colFamily = index.pool.getStringOffset(fam);
     if(colFamilyMasks.count(colFamily) == 1) {
         curColMask |= colFamilyMasks[colFamily];
     } else {
@@ -241,7 +251,6 @@ void DiskWriter::Impl::addCell(strref_t row, strref_t column, int64_t timestamp,
         curColMask |= nextColMask;
         nextColMask = nextColMask << 1;
     }
-*/
 }
 
 void DiskWriter::Impl::writeCellBlock()
