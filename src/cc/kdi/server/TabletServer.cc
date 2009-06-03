@@ -24,13 +24,13 @@
 #include <kdi/server/ConfigReader.h>
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
+#include <kdi/server/TabletConfig.h>
 #include <kdi/server/Fragment.h>
 #include <kdi/server/DirectBlockCache.h>
 #include <kdi/server/Serializer.h>
 #include <kdi/server/Compactor.h>
 #include <kdi/server/LogWriterFactory.h>
 #include <kdi/server/LogWriter.h>
-#include <kdi/server/ConfigSaver.h>
 
 #include <kdi/server/FragmentLoader.h>
 #include <kdi/server/FragmentWriterFactory.h>
@@ -84,10 +84,8 @@ namespace {
         : public warp::Callback
     {
     public:
-        void addPending(PendingFileCPtr const & p)
-        {
-            pending.push_back(p);
-        }
+        explicit HoldPendingCb(PendingFileCPtr const & p) :
+            p(p) {}
         
         virtual void done()
         {
@@ -101,7 +99,7 @@ namespace {
         }
 
     private:        
-        std::vector<PendingFileCPtr> pending;
+        PendingFileCPtr p;
     };
 
 
@@ -152,8 +150,8 @@ namespace {
 
     private:
         TabletServer::LoadSchemaCb * const cb;
-        SchemaReader * const reader;
-        std::string const tableName;
+        SchemaReader *               const reader;
+        std::string                  const tableName;
     };
 
     class ConfigLoader
@@ -167,9 +165,10 @@ namespace {
 
         virtual void run()
         {
+            assert(reader);
+            assert(cb);
+
             try {
-                assert(reader);
-                assert(cb);
                 TabletConfigCPtr cfg = reader->readConfig(tabletName);
                 cb->done(cfg);
             }
@@ -182,8 +181,40 @@ namespace {
 
     private:
         TabletServer::LoadConfigCb * const cb;
-        ConfigReader * const reader;
-        std::string const tabletName;
+        ConfigReader *               const reader;
+        std::string                  const tabletName;
+    };
+
+    class ConfigSaver
+        : public warp::Runnable
+    {
+    public:
+        ConfigSaver(warp::Callback * cb,
+                    ConfigWriter * writer,
+                    TabletConfigCPtr const & config) :
+            cb(cb), writer(writer), config(config) {}
+
+        virtual void run()
+        {
+            assert(cb);
+            assert(writer);
+            assert(config);
+
+            try {
+                writer->writeConfig(config);
+                cb->done();
+            }
+            catch(std::exception const & err) { cb->error(err); }
+            catch(...) {
+                cb->error(std::runtime_error("ConfigSaver: unknown error"));
+            }
+            delete this;
+        }
+
+    private:
+        warp::Callback *    const cb;
+        ConfigWriter *      const writer;
+        TabletConfigCPtr    const config;
     };
 
 }
@@ -550,14 +581,14 @@ public:
             rowCoverage,
             updatedTablets);
 
-        /// Hold on to pending file reference until config is saved
-        std::auto_ptr<HoldPendingCb> cb(new HoldPendingCb);
-        cb->addPending(outFn);
-        TabletConfigVecCPtr configs = table->getTabletConfigs(
-            updatedTablets,
-            server->bits.serverLogDir,
-            server->bits.serverLocation);
-        server->saveConfigs_async(cb.release(), configs);
+        /// Hold on to pending file reference until all configs are saved
+        for(std::vector<Tablet *>::const_iterator i = updatedTablets.begin();
+            i != updatedTablets.end(); ++i)
+        {
+            server->saveConfig_async(
+                new HoldPendingCb(outFn),
+                getTabletConfig(server, table, *i));
+        }
 
         // Kick compactor
         server->wakeCompactor();
@@ -672,8 +703,6 @@ public:
             return;
 
         // Replace fragments
-        std::vector<Tablet *> updatedTablets;
-        std::auto_ptr<HoldPendingCb> cb(new HoldPendingCb);
         for(RangeOutputMap::const_iterator i = output.begin();
             i != output.end(); ++i)
         {
@@ -689,19 +718,20 @@ public:
                     i->second->getName());
             }
 
+            std::vector<Tablet *> updatedTablets;
             table->replaceDiskFragments(
                 j->second, newFragment, groupIndex, i->first,
                 updatedTablets);
 
-            /// Hold on to pending file reference until config is saved
-            cb->addPending(i->second);
+            /// Hold on to pending file reference until all configs are saved
+            for(std::vector<Tablet *>::const_iterator j = updatedTablets.begin();
+                j != updatedTablets.end(); ++j)
+            {
+                server->saveConfig_async(
+                    new HoldPendingCb(i->second),
+                    getTabletConfig(server, table, *j));
+            }
         }
-
-        TabletConfigVecCPtr configs = table->getTabletConfigs(
-            updatedTablets,
-            server->bits.serverLogDir,
-            server->bits.serverLocation);
-        server->saveConfigs_async(cb.release(), configs);
     }
 
 private:
@@ -1181,27 +1211,15 @@ void TabletServer::saveConfig_async(
     warp::Callback * cb, TabletConfigCPtr const & config)
 {
     try {
-        EX_UNIMPLEMENTED_FUNCTION;
-    }
-    catch(std::exception const & ex) { cb->error(ex); }
-    catch(...) {
-        cb->error(std::runtime_error("saveConfig: unknown exception"));
-    }
-}
-
-void TabletServer::saveConfigs_async(
-    warp::Callback * cb, TabletConfigVecCPtr const & configs)
-{
-    try {
         workers->configWorker.submit(
             new ConfigSaver(
                 cb,
                 bits.configWriter,
-                configs));
+                config));
     }
     catch(std::exception const & ex) { cb->error(ex); }
     catch(...) {
-        cb->error(std::runtime_error("saveConfigs: unknown exception"));
+        cb->error(std::runtime_error("saveConfig: unknown exception"));
     }
 }
 

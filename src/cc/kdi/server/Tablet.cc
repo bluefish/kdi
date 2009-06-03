@@ -154,6 +154,8 @@ warp::Runnable * Tablet::setState(TabletState state)
 {
     std::auto_ptr<CbCaller> r;
 
+    this->state = state;
+
     while(!cbHeap.empty())
     {
         if(cbHeap.top().first > state)

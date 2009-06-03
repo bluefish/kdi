@@ -19,6 +19,7 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/server/FileConfigWriter.h>
+#include <kdi/server/TabletConfig.h>
 #include <warp/md5.h>
 #include <warp/strutil.h>
 #include <warp/tuple.h>
@@ -72,13 +73,9 @@ FileConfigWriter::FileConfigWriter(std::string const & configDir) :
     fs::makedirs(configDir);
 }
 
-void FileConfigWriter::writeConfigs(std::vector<TabletConfig> const & configs)
+void FileConfigWriter::writeConfig(TabletConfigCPtr const & config)
 {
-    for(std::vector<TabletConfig>::const_iterator i = configs.begin();
-        i != configs.end(); ++i)
-    {
-        writeConfig(*i);
-    }
+    writeConfig(*config);
 }
 
 void FileConfigWriter::writeConfig(TabletConfig const & cfg)

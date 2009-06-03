@@ -21,13 +21,16 @@
 #ifndef KDI_SERVER_CONFIGWRITER_H
 #define KDI_SERVER_CONFIGWRITER_H
 
-#include <kdi/server/TabletConfig.h>
-#include <vector>
+#include <boost/shared_ptr.hpp>
 
 namespace kdi {
 namespace server {
 
     class ConfigWriter;
+
+    // Forward declarations
+    class TabletConfig;
+    typedef boost::shared_ptr<TabletConfig const> TabletConfigCPtr;
 
 } // namespace server
 } // namespace kdi
@@ -38,7 +41,7 @@ namespace server {
 class kdi::server::ConfigWriter
 {
 public:
-    virtual void writeConfigs(std::vector<TabletConfig> const & configs) = 0;
+    virtual void writeConfig(TabletConfigCPtr const & config) = 0;
 
 protected:
     ~ConfigWriter() {}

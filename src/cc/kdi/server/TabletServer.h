@@ -64,8 +64,6 @@ namespace server {
 
     typedef boost::shared_ptr<std::vector<TabletConfig> const> TabletConfigVecCPtr;
 
-    class ConfigSaver;
-
 } // namespace server
 } // namespace kdi
 
@@ -222,10 +220,6 @@ private:
     /// Save the given TabletConfig and issue a callback when it is
     /// durable.
     void saveConfig_async(warp::Callback * cb, TabletConfigCPtr const & config);
-
-    /// Save a batch of TabletConfigs and issue a callback when it is
-    /// done.
-    void saveConfigs_async(warp::Callback * cb, TabletConfigVecCPtr const & configs);
 
     /// Load the fragments named in the given Tablet config.  The
     /// callback is given a vector of handles to the loaded fragments.

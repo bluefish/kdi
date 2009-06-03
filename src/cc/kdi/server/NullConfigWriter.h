@@ -38,7 +38,7 @@ class kdi::server::NullConfigWriter
     : public kdi::server::ConfigWriter
 {
 public:
-    virtual void writeConfigs(std::vector<TabletConfig> const & configs) {}
+    virtual void writeConfig(TabletConfigCPtr const & config) {}
 };
 
 #endif // KDI_SERVER_NULLCONFIGWRITER_H

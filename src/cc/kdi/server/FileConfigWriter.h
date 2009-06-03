@@ -22,6 +22,7 @@
 #define KDI_SERVER_FILECONFIGWRITER_H
 
 #include <kdi/server/ConfigWriter.h>
+#include <string>
 
 namespace kdi {
 namespace server {
@@ -41,7 +42,7 @@ class kdi::server::FileConfigWriter
 public:
     explicit FileConfigWriter(std::string const & configDir);
 
-    virtual void writeConfigs(std::vector<TabletConfig> const & configs);
+    virtual void writeConfig(TabletConfigCPtr const & config);
 
 private:
     void writeConfig(TabletConfig const & cfg);
