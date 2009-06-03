@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-04-30
+// Created 2009-06-03
 //
 // This file is part of KDI.
 //
@@ -18,50 +18,15 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#include <kdi/server/TableSchema.h>
-#include <kdi/server/misc_util.h>
-#include <kdi/scan_predicate.h>
-#include <kdi/timestamp.h>
-#include <warp/interval.h>
+#include <kdi/server/TabletConfig.h>
+#include <kdi/server/name_util.h>
 
 using namespace kdi::server;
 
 //----------------------------------------------------------------------------
-// TableSchema::Group
+// TabletConfig
 //----------------------------------------------------------------------------
-kdi::ScanPredicate TableSchema::Group::getPredicate() const
+std::string TabletConfig::getTabletName() const
 {
-    ScanPredicate p;
-
-    p.setColumnPredicate(getFamilyColumnSet(families));
-
-    if(maxAge > 0)
-    {
-        p.setTimePredicate(
-            warp::IntervalSet<int64_t>()
-            .add(warp::makeLowerBound(
-                     Timestamp::now().toMicroseconds() - maxAge))
-            );
-    }
-
-    if(maxHistory > 0)
-    {
-        p.setMaxHistory(maxHistory);
-    }
-
-    return p;
-}
-
-//----------------------------------------------------------------------------
-// TableSchema
-//----------------------------------------------------------------------------
-void TableSchema::initDefault(std::string const & tableName)
-{
-    this->tableName = tableName;
-    groups.clear();
-    groups.resize(1);
-
-    /// xxx need to add support for catch-all group.  also, is an
-    /// empty family valid?  ("yes" is a good answer)
-    groups[0].families.push_back("x");
+    return encodeTabletName(tableName, rows.getUpperBound());
 }

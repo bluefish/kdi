@@ -24,10 +24,11 @@
 #include <kdi/server/Fragment.h>
 #include <warp/interval.h>
 #include <warp/Runnable.h>
+#include <warp/heap.h>
 #include <boost/noncopyable.hpp>
-#include <memory>
 #include <string>
 #include <vector>
+#include <cassert>
 
 namespace kdi {
 namespace server {
@@ -65,29 +66,22 @@ class kdi::server::Tablet
     : private boost::noncopyable
 {
 public:
-    class LoadedCb
-    {
-    public:
-        virtual void done() = 0;
-        
-    protected:
-        ~LoadedCb() {}
-    };
-
-public:
-    /// Create a Tablet over the given row interval.  The newly
-    /// created tablet will be in the "loading" state.
-    explicit Tablet(warp::Interval<std::string> const & rows);
+    explicit Tablet(warp::IntervalPoint<std::string> const & lastRow);
     ~Tablet();
 
-    warp::Interval<std::string> const & getRows() const
+    warp::IntervalPoint<std::string> const & getFirstRow() const
     {
-        return rows;
+        return firstRow;
     }
 
-    bool isLoading() const
+    warp::IntervalPoint<std::string> const & getLastRow() const
     {
-        return loading.get();
+        return lastRow;
+    }
+
+    warp::Interval<std::string> getRows() const
+    {
+        return warp::Interval<std::string>(firstRow, lastRow);
     }
 
     size_t getChainLength(int groupIndex) const
@@ -131,15 +125,14 @@ public:
     }
 
     void applySchema(TableSchema const & schema);
-    void deferUntilLoaded(LoadedCb * cb);
-    warp::Runnable * finishLoading();
 
     /// Apply Tablet lower bound from config and make any necessary
     /// placeholder fragments.
     void onConfigLoaded(TabletConfigCPtr const & config);
 
     /// Replace placeholder fragments with real loaded Fragments.
-    void onFragmentsLoaded(std::vector<FragmentCPtr> const & fragments);
+    void onFragmentsLoaded(TableSchema const & schema,
+                           std::vector<FragmentCPtr> const & fragments);
 
     /// Fill in the fragments part of the TabletConfig.
     void getConfigFragments(TabletConfig & cfg) const;
@@ -157,16 +150,22 @@ public:
     warp::Runnable * setState(TabletState state);
 
 private:
-    class Loading;
-
     typedef std::vector<FragmentCPtr> frag_vec;
     typedef std::vector<frag_vec> fragvec_vec;
 
+    typedef std::pair<TabletState,warp::Callback *> state_cb;
+    typedef warp::MinHeap<state_cb> cb_heap;
+
 private:
+    warp::IntervalPoint<std::string> const lastRow;
+    warp::IntervalPoint<std::string> firstRow;
     TabletState state;
-    warp::Interval<std::string> const rows;
     fragvec_vec fragGroups;
-    std::auto_ptr<Loading> loading;
+
+    // Can probably optimize these out later for better memory
+    // efficiency
+    TabletConfigCPtr loadingConfig;
+    cb_heap cbHeap;
 };
 
 #endif // KDI_SERVER_TABLET_H

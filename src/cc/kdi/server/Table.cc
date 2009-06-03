@@ -45,7 +45,7 @@ class Table::TabletLt
     warp::IntervalPointOrder<warp::less> lt;
 
     inline static warp::IntervalPoint<std::string> const &
-    get(Tablet const * x) { return x->getRows().getUpperBound(); }
+    get(Tablet const * x) { return x->getLastRow(); }
 
     inline static warp::IntervalPoint<std::string> const &
     get(warp::IntervalPoint<std::string> const & x) { return x; }
@@ -71,7 +71,7 @@ Tablet * Table::findContainingTablet(strref_t row) const
         return 0;
     
     warp::IntervalPointOrder<warp::less> lt;
-    if(!lt((*i)->getRows().getLowerBound(), row))
+    if(!lt((*i)->getFirstRow(), row))
         return 0;
 
     return *i;
@@ -85,10 +85,19 @@ Tablet * Table::findTablet(warp::IntervalPoint<std::string> const & last) const
         return 0;
     
     warp::IntervalPointOrder<warp::less> lt;
-    if(lt(last, (*i)->getRows().getUpperBound()))
+    if(lt(last, (*i)->getLastRow()))
         return 0;
 
     return *i;
+}
+
+Tablet * Table::getTablet(warp::IntervalPoint<std::string> const & last) const
+{
+    Tablet * t = findTablet(last);
+    if(!t)
+        throw TabletNotLoadedError();
+
+    return t;
 }
 
 void Table::verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const
@@ -151,13 +160,7 @@ Tablet * Table::createTablet(warp::IntervalPoint<std::string> const & lastRow)
             TabletLt()),
         0);
     
-    *i = new Tablet(
-        warp::Interval<std::string>(
-            warp::IntervalPoint<std::string>(
-                std::string(),
-                warp::PT_INFINITE_LOWER_BOUND),
-            lastRow));
-
+    *i = new Tablet(lastRow);
     (*i)->applySchema(schema);
 
     return *i;
@@ -224,7 +227,7 @@ void Table::replaceMemFragments(
             // rows.
             break;
         }
-        else if(lt((*ti)->getRows().getLowerBound(), *ri))
+        else if(lt((*ti)->getFirstRow(), *ri))
         {
             // Track the changed tablet
             updatedTablets.push_back(*ti);
@@ -235,7 +238,7 @@ void Table::replaceMemFragments(
             
             // Move row pointer past end of this tablet
             ri = std::lower_bound(ri, rowCoverage.end(),
-                                  (*ti)->getRows().getUpperBound(),
+                                  (*ti)->getLastRow(),
                                   lt);
         }
         else
@@ -243,7 +246,7 @@ void Table::replaceMemFragments(
             // The found tablet does not contain this row.  Move the
             // row pointer past the beginning of the tablet.
             ri = std::lower_bound(ri, rowCoverage.end(),
-                                  (*ti)->getRows().getLowerBound(),
+                                  (*ti)->getFirstRow(),
                                   lt);
         }
     }
@@ -324,7 +327,7 @@ void Table::getFirstFragmentChain(ScanPredicate const & pred,
         throw TabletNotLoadedError();
     
     warp::IntervalPointOrder<warp::less> lt;
-    if(lt(first, (*i)->getRows().getLowerBound()))
+    if(lt(first, (*i)->getFirstRow()))
         throw TabletNotLoadedError();
 
     // Find mapping from predicate to locality groups
@@ -426,7 +429,7 @@ void Table::addLoadedFragments(warp::Interval<std::string> const & rows,
 {
     Tablet * tablet = findTablet(rows.getUpperBound());
     assert(tablet);
-    assert(rows.getLowerBound() == tablet->getRows().getLowerBound());
+    assert(rows.getLowerBound() == tablet->getFirstRow());
 
     typedef std::vector<std::string> str_vec;
     typedef std::tr1::unordered_set<int> group_set;

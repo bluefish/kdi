@@ -21,38 +21,46 @@
 #include <kdi/server/Tablet.h>
 #include <kdi/server/TableSchema.h>
 #include <kdi/server/TabletConfig.h>
+#include <warp/Callback.h>
+#include <ex/exception.h>
+#include <memory>
 
 using namespace kdi;
 using namespace kdi::server;
 
-//----------------------------------------------------------------------------
-// Tablet::Loading
-//----------------------------------------------------------------------------
-class Tablet::Loading
-    : public warp::Runnable
-{
-public:
-    std::vector<LoadedCb *> callbacks;
+namespace {
 
-    void run()
+    class CbCaller
+        : public warp::Runnable
     {
-        for(std::vector<LoadedCb *>::const_iterator i = callbacks.begin();
-            i != callbacks.end(); ++i)
+    public:
+        void run()
         {
-            (*i)->done();
+            for(std::vector<warp::Callback *>::const_iterator i = cbs.begin();
+                i != cbs.end(); ++i)
+            {
+                (*i)->done();
+            }
+            delete this;
         }
-        delete this;
-    }
-};
 
+        void addCallback(warp::Callback * cb)
+        {
+            cbs.push_back(cb);
+        }
+
+    private:
+        std::vector<warp::Callback *> cbs;
+    };
+
+}
 
 //----------------------------------------------------------------------------
 // Tablet
 //----------------------------------------------------------------------------
-Tablet::Tablet(warp::Interval<std::string> const & rows) :
-    state(TABLET_CONFIG_LOADING),
-    rows(rows),
-    loading(new Loading)
+Tablet::Tablet(warp::IntervalPoint<std::string> const & lastRow) :
+    lastRow(lastRow),
+    state(TABLET_CONFIG_LOADING)
 {
 }
 
@@ -66,23 +74,6 @@ void Tablet::applySchema(TableSchema const & s)
     fragGroups.resize(s.groups.size());
 }
 
-void Tablet::deferUntilLoaded(LoadedCb * cb)
-{
-    assert(loading.get());
-    loading->callbacks.push_back(cb);
-}
-
-warp::Runnable * Tablet::finishLoading()
-{
-    assert(loading.get());
-
-    if(!loading->callbacks.empty())
-        return loading.release();
-
-    loading.reset();
-    return 0;
-}
-
 void Tablet::getConfigFragments(TabletConfig & cfg) const
 {
     size_t n = 0;
@@ -91,10 +82,22 @@ void Tablet::getConfigFragments(TabletConfig & cfg) const
     {
         n += i->size();
     }
+
+    if(loadingConfig)
+        n += loadingConfig->fragments.size();
+
     cfg.fragments.clear();
     cfg.fragments.resize(n);
 
     std::vector<TabletConfig::Fragment>::iterator oi = cfg.fragments.begin();
+
+    if(loadingConfig)
+    {
+        oi = std::copy(loadingConfig->fragments.begin(),
+                       loadingConfig->fragments.end(),
+                       oi);
+    }
+
     for(fragvec_vec::const_iterator i = fragGroups.begin();
         i != fragGroups.end(); ++i)
     {
@@ -105,4 +108,59 @@ void Tablet::getConfigFragments(TabletConfig & cfg) const
             (*j)->getColumnFamilies(oi->families);
         }
     }
+}
+
+void Tablet::onConfigLoaded(TabletConfigCPtr const & config)
+{
+    assert(state == TABLET_CONFIG_LOADING);
+    assert(config->rows.getUpperBound() == lastRow);
+    
+    firstRow = config->rows.getLowerBound();
+    if(!config->fragments.empty())
+        loadingConfig = config;
+}
+
+void Tablet::onFragmentsLoaded(
+    TableSchema const & schema,
+    std::vector<FragmentCPtr> const & fragments)
+{
+    assert(state == TABLET_FRAGMENTS_LOADING);
+    assert(loadingConfig);
+    assert(schema.groups.size() == fragGroups.size());
+
+    // xxx lazy...
+    using namespace ex;
+    if(schema.groups.size() != 1)
+        raise<RuntimeError>("only support single locality group");
+
+    fragGroups[0].insert(
+        fragGroups[0].begin(),
+        fragments.begin(),
+        fragments.end());
+
+    loadingConfig.reset();
+}
+
+void Tablet::deferUntilState(warp::Callback * cb, TabletState state)
+{
+    cbHeap.push(state_cb(state, cb));
+}
+
+warp::Runnable * Tablet::setState(TabletState state)
+{
+    std::auto_ptr<CbCaller> r;
+
+    while(!cbHeap.empty())
+    {
+        if(cbHeap.top().first > state)
+            break;
+
+        if(!r.get())
+            r.reset(new CbCaller);
+
+        r->addCallback(cbHeap.top().second);
+        cbHeap.pop();
+    }
+
+    return r.release();
 }

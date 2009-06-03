@@ -132,6 +132,15 @@ namespace server {
         }
     }
 
+    inline std::string encodeTabletName(
+        strref_t tableName,
+        warp::IntervalPoint<std::string> const & lastRow)
+    {
+        std::string r;
+        encodeTabletName(tableName, lastRow, r);
+        return r;
+    }
+
 } // namespace server
 } // namespace kdi
 

@@ -194,7 +194,7 @@ public:
             assert(tablet->getState() == TABLET_FRAGMENTS_LOADING);
 
             // Apply the loaded Fragments
-            tablet->onFragmentsLoaded(fragments);
+            tablet->onFragmentsLoaded(table->getSchema(), fragments);
             
             // Move to next load state
             warp::Runnable * callbacks = tablet->setState(TABLET_ACTIVE);
@@ -1071,6 +1071,83 @@ void TabletServer::sync_async(SyncCb * cb, int64_t waitForTxn)
     }
 }
 
+void TabletServer::loadSchema_async(
+    LoadSchemaCb * cb, std::string const & tableName)
+{
+    try {
+        EX_UNIMPLEMENTED_FUNCTION;
+    }
+    catch(std::exception const & ex) { cb->error(ex); }
+    catch(...) {
+        cb->error(std::runtime_error("loadSchema: unknown exception"));
+    }
+}
+
+void TabletServer::loadConfig_async(
+    LoadConfigCb * cb, std::string const & tabletName)
+{
+    try {
+        EX_UNIMPLEMENTED_FUNCTION;
+    }
+    catch(std::exception const & ex) { cb->error(ex); }
+    catch(...) {
+        cb->error(std::runtime_error("loadConfig: unknown exception"));
+    }
+}
+
+void TabletServer::replayLogs_async(
+    warp::Callback * cb, std::string const & tabletName,
+    std::string const & logDir)
+{
+    try {
+        EX_UNIMPLEMENTED_FUNCTION;
+    }
+    catch(std::exception const & ex) { cb->error(ex); }
+    catch(...) {
+        cb->error(std::runtime_error("replayLogs: unknown exception"));
+    }
+}
+
+void TabletServer::saveConfig_async(
+    warp::Callback * cb, TabletConfigCPtr const & config)
+{
+    try {
+        EX_UNIMPLEMENTED_FUNCTION;
+    }
+    catch(std::exception const & ex) { cb->error(ex); }
+    catch(...) {
+        cb->error(std::runtime_error("saveConfig: unknown exception"));
+    }
+}
+
+void TabletServer::saveConfigs_async(
+    warp::Callback * cb, TabletConfigVecCPtr const & configs)
+{
+    try {
+        workers->configWorker.submit(
+            new ConfigSaver(
+                cb,
+                bits.configWriter,
+                configs));
+    }
+    catch(std::exception const & ex) { cb->error(ex); }
+    catch(...) {
+        cb->error(std::runtime_error("saveConfigs: unknown exception"));
+    }
+}
+
+void TabletServer::loadFragments_async(
+    LoadFragmentsCb * cb, TabletConfigCPtr const & config)
+{
+    try {
+        EX_UNIMPLEMENTED_FUNCTION;
+    }
+    catch(std::exception const & ex) { cb->error(ex); }
+    catch(...) {
+        cb->error(std::runtime_error("loadFragments: unknown exception"));
+    }
+}
+
 Table * TabletServer::getTable(strref_t tableName) const
 {
     table_map::const_iterator i = tableMap.find(
@@ -1103,16 +1180,6 @@ void TabletServer::wakeSerializer()
 void TabletServer::wakeCompactor()
 {
     workers->compactor.wake();
-}
-
-void TabletServer::saveConfigs_async(
-    warp::Callback * cb, TabletConfigVecCPtr const & configs)
-{
-    workers->configWorker.submit(
-        new ConfigSaver(
-            cb,
-            bits.configWriter,
-            configs));
 }
 
 void TabletServer::logLoop()

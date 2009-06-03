@@ -42,9 +42,8 @@ struct kdi::server::TableSchema
 {
     struct Group
     {
-        std::string name;
-        std::string compressor;
         std::vector<std::string> families;
+        std::string compressor;
         int64_t maxAge;                   // <= 0 means "keep all"
         int64_t maxHistory;               // <= 0 means "keep all"
         size_t diskBlockSize;

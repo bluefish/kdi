@@ -76,10 +76,6 @@ class kdi::server::TabletServer
 public:
     enum { MAX_TXN = 9223372036854775807 };
 
-private:
-    friend class TabletServerLock;
-    mutable boost::mutex serverMutex;
-
 public:
     class ApplyCb
     {
@@ -246,10 +242,7 @@ private:
     void wakeSerializer();
     void wakeCompactor();
 
-
     void logLoop();
-
-    void loadTablets(std::vector<TabletConfig> const & configs);
 
 private:
     struct Commit
@@ -285,6 +278,10 @@ private:
 
     boost::thread_group threads;
     boost::scoped_ptr<Workers> workers;
+
+private:
+    friend class TabletServerLock;
+    mutable boost::mutex serverMutex;
 };
 
 //----------------------------------------------------------------------------
