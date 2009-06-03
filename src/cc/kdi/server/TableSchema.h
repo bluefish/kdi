@@ -21,6 +21,7 @@
 #ifndef KDI_SERVER_TABLESCHEMA_H
 #define KDI_SERVER_TABLESCHEMA_H
 
+#include <boost/shared_ptr.hpp>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,8 @@ namespace kdi {
 namespace server {
 
     struct TableSchema;
+    typedef boost::shared_ptr<TableSchema> TableSchemaPtr;
+    typedef boost::shared_ptr<TableSchema const> TableSchemaCPtr;
 
 } // namespace server
 
@@ -72,6 +75,5 @@ struct kdi::server::TableSchema
     /// Init as a default schema for the given table name.
     void initDefault(std::string const & tableName);
 };
-
 
 #endif // KDI_SERVER_TABLESCHEMA_H

@@ -68,10 +68,14 @@ Tablet::~Tablet()
 {
 }
 
-void Tablet::applySchema(TableSchema const & s)
+void Tablet::applySchema(TableSchema const & schema)
 {
-    assert(fragGroups.empty());
-    fragGroups.resize(s.groups.size());
+    // xxx lazy...
+    using namespace ex;
+    if(schema.groups.size() != 1)
+        raise<RuntimeError>("only support single locality group");
+
+    fragGroups.resize(schema.groups.size());
 }
 
 void Tablet::getConfigFragments(TabletConfig & cfg) const

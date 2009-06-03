@@ -203,6 +203,7 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     // Set up the TabletServer bits
     TabletServer::Bits bits;
     bits.workerPool = &pool;
+    bits.schemaReader = &cfgReader;
     bits.configReader = &cfgReader;
     bits.configWriter = &cfgWriter;
 
@@ -311,6 +312,7 @@ BOOST_AUTO_UNIT_TEST(wrong_column_test)
     TestConfigReader cfgReader(groups);
     NullConfigWriter cfgWriter;
     TabletServer::Bits bits;
+    bits.schemaReader = &cfgReader;
     bits.configReader = &cfgReader;
     bits.configWriter = &cfgWriter;
 

@@ -19,6 +19,8 @@
 //----------------------------------------------------------------------------
 
 #include <kdi/server/TestConfigReader.h>
+#include <kdi/server/TabletConfig.h>
+#include <kdi/server/TableSchema.h>
 #include <kdi/server/name_util.h>
 
 using namespace kdi;
@@ -47,34 +49,23 @@ TestConfigReader::TestConfigReader(char const * const * familyGroups)
     }
 }
 
-void TestConfigReader::readSchemas_async(
-    ReadSchemasCb * cb,
-    std::vector<std::string> const & tableNames)
+TableSchemaCPtr TestConfigReader::readSchema(std::string const & tableName)
 {
-    std::vector<TableSchema> schemas(tableNames.size());
-    for(size_t i = 0; i < tableNames.size(); ++i)
+    TableSchemaPtr p(new TableSchema);
+    p->tableName = tableName;
+    p->groups.resize(groups.size());
+    for(size_t i = 0; i < groups.size(); ++i)
     {
-        schemas[i].tableName = tableNames[i];
-        schemas[i].groups.resize(groups.size());
-        for(size_t j = 0; j < groups.size(); ++j)
-        {
-            schemas[i].groups[j].families = groups[j];
-        }
+        p->groups[i].families = groups[i];
     }
-    cb->done(schemas);
-}
-        
-void TestConfigReader::readConfigs_async(
-    ReadConfigsCb * cb,
-    std::vector<std::string> const & tabletNames)
-{
-    std::vector<TabletConfig> configs(tabletNames.size());
-    for(size_t i = 0; i < tabletNames.size(); ++i)
-    {
-        warp::IntervalPoint<std::string> last;
-        decodeTabletName(tabletNames[i], configs[i].tableName, last);
-        configs[i].rows.unsetLowerBound().setUpperBound(last);
-    }
-    cb->done(configs);
+    return p;
 }
 
+TabletConfigCPtr TestConfigReader::readConfig(std::string const & tabletName)
+{
+    TabletConfigPtr p(new TabletConfig);
+    warp::IntervalPoint<std::string> last;
+    decodeTabletName(tabletName, p->tableName, last);
+    p->rows.unsetLowerBound().setUpperBound(last);
+    return p;
+}

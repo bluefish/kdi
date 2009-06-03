@@ -45,6 +45,7 @@ namespace server {
     // Forward declarations
     class Table;
     class Fragment;
+    class SchemaReader;
     class ConfigReader;
     class ConfigWriter;
     class LogPlayer;
@@ -58,6 +59,7 @@ namespace server {
 
     typedef boost::shared_ptr<Fragment const> FragmentCPtr;
     typedef boost::shared_ptr<CellBuffer const> CellBufferCPtr;
+    typedef boost::shared_ptr<TableSchema const> TableSchemaCPtr;
     typedef boost::shared_ptr<TabletConfig const> TabletConfigCPtr;
 
     typedef boost::shared_ptr<std::vector<TabletConfig> const> TabletConfigVecCPtr;
@@ -104,6 +106,7 @@ public:
         FragmentWriterFactory * fragmentFactory; 
         ConfigWriter          * configWriter;
 
+        SchemaReader          * schemaReader;
         ConfigReader          * configReader;
         LogPlayer             * logPlayer;
         FragmentLoader        * fragmentLoader;
@@ -117,6 +120,7 @@ public:
             fragmentFactory(0),
             configWriter(0),
 
+            schemaReader(0),
             configReader(0),
             logPlayer(0),
             fragmentLoader(0),
@@ -160,11 +164,11 @@ public:
     std::string const & getLogDir() const { return bits.serverLogDir; }
     std::string const & getLocation() const { return bits.serverLocation; }
 
-private:
+public:
     class LoadSchemaCb
     {
     public:
-        virtual void done(TableSchema const & schema) = 0;
+        virtual void done(TableSchemaCPtr const & schema) = 0;
         virtual void error(std::exception const & err) = 0;
     protected:
         ~LoadSchemaCb() {}

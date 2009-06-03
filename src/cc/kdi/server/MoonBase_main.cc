@@ -135,6 +135,7 @@ namespace {
             logFactory.reset(new FileLogWriterFactory(logDir));
 
             TabletServer::Bits bits;
+            bits.schemaReader = configReader.get();
             bits.configReader = configReader.get();
             bits.configWriter = configWriter.get();
             bits.workerPool = workerPool.get();

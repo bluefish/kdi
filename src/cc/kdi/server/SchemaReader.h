@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-04-07
+// Created 2009-06-03
 //
 // This file is part of KDI.
 //
@@ -18,38 +18,35 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_TESTCONFIGREADER_H
-#define KDI_SERVER_TESTCONFIGREADER_H
+#ifndef KDI_SERVER_SCHEMAREADER_H
+#define KDI_SERVER_SCHEMAREADER_H
 
-#include <kdi/server/ConfigReader.h>
-#include <kdi/server/SchemaReader.h>
-#include <vector>
+#include <boost/shared_ptr.hpp>
 #include <string>
 
 namespace kdi {
 namespace server {
 
-    class TestConfigReader;
+    class SchemaReader;
+
+    // Forward declarations
+    class TableSchema;
+    typedef boost::shared_ptr<TableSchema const> TableSchemaCPtr;
 
 } // namespace server
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// TestConfigReader
+// SchemaReader
 //----------------------------------------------------------------------------
-struct kdi::server::TestConfigReader
-    : public kdi::server::ConfigReader,
-      public kdi::server::SchemaReader
+class kdi::server::SchemaReader
 {
 public:
-    TestConfigReader();
-    explicit TestConfigReader(char const * const * familyGroups);
+    /// Read and return the schema for the named Table.
+    virtual TableSchemaCPtr readSchema(std::string const & tableName) = 0;
 
-    virtual TableSchemaCPtr readSchema(std::string const & tableName);
-    virtual TabletConfigCPtr readConfig(std::string const & tabletName);
-
-public:
-    std::vector< std::vector< std::string > > groups;
+protected:
+    ~SchemaReader() {}
 };
 
-#endif // KDI_SERVER_TESTCONFIGREADER_H
+#endif // KDI_SERVER_SCHEMAREADER_H

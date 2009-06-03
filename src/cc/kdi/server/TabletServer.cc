@@ -20,6 +20,7 @@
 
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/CellBuffer.h>
+#include <kdi/server/SchemaReader.h>
 #include <kdi/server/ConfigReader.h>
 #include <kdi/server/Table.h>
 #include <kdi/server/Tablet.h>
@@ -125,6 +126,66 @@ namespace {
         return p;
     }
 
+    class SchemaLoader
+        : public warp::Runnable
+    {
+    public:
+        SchemaLoader(TabletServer::LoadSchemaCb * cb,
+                     SchemaReader * reader,
+                     std::string const & tableName) :
+            cb(cb), reader(reader), tableName(tableName) {}
+
+        virtual void run()
+        {
+            try {
+                assert(reader);
+                assert(cb);
+                TableSchemaCPtr cfg = reader->readSchema(tableName);
+                cb->done(cfg);
+            }
+            catch(std::exception const & err) { cb->error(err); }
+            catch(...) {
+                cb->error(std::runtime_error("SchemaLoader: unknown exception"));
+            }
+            delete this;
+        }
+
+    private:
+        TabletServer::LoadSchemaCb * const cb;
+        SchemaReader * const reader;
+        std::string const tableName;
+    };
+
+    class ConfigLoader
+        : public warp::Runnable
+    {
+    public:
+        ConfigLoader(TabletServer::LoadConfigCb * cb,
+                     ConfigReader * reader,
+                     std::string const & tabletName) :
+            cb(cb), reader(reader), tabletName(tabletName) {}
+
+        virtual void run()
+        {
+            try {
+                assert(reader);
+                assert(cb);
+                TabletConfigCPtr cfg = reader->readConfig(tabletName);
+                cb->done(cfg);
+            }
+            catch(std::exception const & err) { cb->error(err); }
+            catch(...) {
+                cb->error(std::runtime_error("ConfigLoader: unknown exception"));
+            }
+            delete this;
+        }
+
+    private:
+        TabletServer::LoadConfigCb * const cb;
+        ConfigReader * const reader;
+        std::string const tabletName;
+    };
+
 }
 
 //----------------------------------------------------------------------------
@@ -140,13 +201,13 @@ public:
     SchemaLoadedCb(TabletServer * server, std::string const & tableName) :
         server(server), tableName(tableName) {}
 
-    void done(TableSchema const & schema)
+    void done(TableSchemaCPtr const & schema)
     {
         try {
             TabletServerLock serverLock(server);
             Table * table = server->getTable(tableName);
             TableLock tableLock(table);
-            table->applySchema(schema);
+            table->applySchema(*schema);
         }
         catch(std::exception const & ex) { fail(ex); }
         catch(...) { fail(std::runtime_error("unknown exception")); }
@@ -1075,7 +1136,11 @@ void TabletServer::loadSchema_async(
     LoadSchemaCb * cb, std::string const & tableName)
 {
     try {
-        EX_UNIMPLEMENTED_FUNCTION;
+        workers->configWorker.submit(
+            new SchemaLoader(
+                cb,
+                bits.schemaReader,
+                tableName));
     }
     catch(std::exception const & ex) { cb->error(ex); }
     catch(...) {
@@ -1087,7 +1152,11 @@ void TabletServer::loadConfig_async(
     LoadConfigCb * cb, std::string const & tabletName)
 {
     try {
-        EX_UNIMPLEMENTED_FUNCTION;
+        workers->configWorker.submit(
+            new ConfigLoader(
+                cb,
+                bits.configReader,
+                tabletName));
     }
     catch(std::exception const & ex) { cb->error(ex); }
     catch(...) {

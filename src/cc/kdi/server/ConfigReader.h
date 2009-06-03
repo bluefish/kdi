@@ -21,20 +21,20 @@
 #ifndef KDI_SERVER_CONFIGREADER_H
 #define KDI_SERVER_CONFIGREADER_H
 
-#include <kdi/server/TableSchema.h>
-#include <kdi/server/TabletConfig.h>
-#include <vector>
+#include <boost/shared_ptr.hpp>
 #include <string>
-#include <exception>
 
 namespace kdi {
 namespace server {
 
     class ConfigReader;
 
+    // Forward declarations
+    class TabletConfig;
+    typedef boost::shared_ptr<TabletConfig const> TabletConfigCPtr;
+
 } // namespace server
 } // namespace kdi
-
 
 //----------------------------------------------------------------------------
 // ConfigReader
@@ -42,36 +42,11 @@ namespace server {
 class kdi::server::ConfigReader
 {
 public:
-    class ReadSchemasCb
-    {
-    public:
-        virtual void done(std::vector<TableSchema> const & schemas) = 0;
-        virtual void error(std::exception const & err) = 0;
-    protected:
-        ~ReadSchemasCb() {}
-    };
-
-    class ReadConfigsCb
-    {
-    public:
-        virtual void done(std::vector<TabletConfig> const & configs) = 0;
-        virtual void error(std::exception const & err) = 0;
-    protected:
-        ~ReadConfigsCb() {}
-    };
-
-public:
-    virtual void readSchemas_async(
-        ReadSchemasCb * cb,
-        std::vector<std::string> const & tableNames) = 0;
-
-    virtual void readConfigs_async(
-        ReadConfigsCb * cb,
-        std::vector<std::string> const & tabletNames) = 0;
+    /// Read and return the config for the named Tablet.
+    virtual TabletConfigCPtr readConfig(std::string const & tabletName) = 0;
 
 protected:
     ~ConfigReader() {}
 };
-
 
 #endif // KDI_SERVER_CONFIGREADER_H
