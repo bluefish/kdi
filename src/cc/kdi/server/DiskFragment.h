@@ -60,7 +60,8 @@ class kdi::server::DiskFragment
       public boost::enable_shared_from_this<DiskFragment>,
       private boost::noncopyable
 {
-    std::string filename;
+    std::string loadPath;       // Actual path to file
+    std::string filename;       // Logical name (relative to data root)
     kdi::local::CacheRecord indexRec;
     size_t dataSize;
 
