@@ -183,7 +183,7 @@ private:
         {
             if(len + sz > cap)
             {
-                cap = std::max(cap * 2, std::max(sz, 4u<<10));
+                cap = std::max(cap * 2, std::max(len+sz, 4u<<10));
                 boost::scoped_array<char> buf2(new char[cap]);
                 memcpy(buf2.get(), buf.get(), len);
                 buf.swap(buf2);
