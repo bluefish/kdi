@@ -1329,3 +1329,34 @@ When do tablet configs need to be saved?
         ctime when doing periodic check-ins with a master server.  The
         GC just asks the master for the oldest ctime among the
         currently active servers.
+
+
+#----------------------------------------------------------------------------
+# Apply throttling
+#----------------------------------------------------------------------------
+
+Apply chain:
+
+  - Server gets RPC call.  RPC layer has the entire message in memory.
+
+  - RPC interface calls TabletServer's apply_async.
+
+  - apply_async makes a shared copy of the commit data.
+
+  - If the commit can apply immediately:
+  
+    - The shared commit is forwarded to the log worker
+
+    - The shared commit is added to the active mem-chain
+
+  - Otherwise:
+
+    - The shared commit is given to a deferred callback object
+
+  - apply_async returns.  The RPC layer frees or reuses the message
+    buffer.
+
+We need to put a limit on how much data we can have outstanding.
+Blocking on the allocation of the shared commit data seems like a good
+place for that.  Allocate out of a logical pool.  If the pool is full,
+block until space is available.
