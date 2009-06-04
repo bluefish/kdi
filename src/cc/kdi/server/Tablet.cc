@@ -60,6 +60,7 @@ namespace {
 //----------------------------------------------------------------------------
 Tablet::Tablet(warp::IntervalPoint<std::string> const & lastRow) :
     lastRow(lastRow),
+    firstRow(std::string(), warp::PT_INFINITE_LOWER_BOUND),
     state(TABLET_CONFIG_LOADING)
 {
 }

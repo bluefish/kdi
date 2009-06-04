@@ -84,8 +84,10 @@ public:
 
 public:                         // Must hold TableLock
     /// Make sure that the tablets containing all the given rows are
-    /// currently loaded in the table.
-    void verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const;
+    /// currently loaded in the table.  Tablets that are still loading
+    /// are returned in the loadingTablets vector.
+    void verifyTabletsLoaded(std::vector<warp::StringRange> const & rows,
+                             std::vector<Tablet *> & loadingTablets) const;
     
     /// Make sure that the current schema for this table has a place
     /// for each of the given column families.

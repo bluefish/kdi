@@ -211,7 +211,10 @@ BOOST_AUTO_UNIT_TEST(simple_test)
     BOOST_TEST_CHECKPOINT("Create ServerInit");
     TabletServer server(bits);
 
-    BOOST_CHECK(server.findTable("table") == 0);
+    {
+        TabletServerLock lock(&server);
+        BOOST_CHECK(server.findTable("table") == 0);
+    }
 
     // Load a single tablet in table "table"
     BOOST_TEST_CHECKPOINT("Load");
@@ -225,7 +228,11 @@ BOOST_AUTO_UNIT_TEST(simple_test)
 
         BOOST_CHECK_EQUAL(loadCb.succeeded, true);
         BOOST_CHECK_EQUAL(loadCb.errorMsg, "");
-        BOOST_CHECK(server.findTable("table") != 0);
+
+        {
+            TabletServerLock lock(&server);
+            BOOST_CHECK(server.findTable("table") != 0);
+        }
     }
 
     // Write a block of test cells
@@ -257,14 +264,16 @@ BOOST_AUTO_UNIT_TEST(simple_test)
         BOOST_CHECK_EQUAL(syncCb.errorMsg, "");
     }
 
-    // Create a scnner to read the cells back
+    // Create a scanner to read the cells back
     BOOST_TEST_CHECKPOINT("Create Scanner");
     DirectBlockCache testCache;
+    TabletServerLock lock(&server);
     Scanner scanner(
         server.findTable("table"),
         &testCache,
         ScanPredicate(),
         Scanner::SCAN_ANY_TXN);
+    lock.unlock();
 
     BOOST_CHECK(scanner.getLastKey() == 0);
     BOOST_CHECK_EQUAL(scanner.scanContinues(), true);
@@ -332,3 +341,19 @@ BOOST_AUTO_UNIT_TEST(wrong_column_test)
     BOOST_CHECK_EQUAL(applyCb.succeeded, false);
     BOOST_CHECK_EQUAL(applyCb.errorMsg, "UnknownColumnFamilyError");
 }
+
+
+/* Load sequence testing:
+
+
+BOOST_AUTO_UNIT_TEST(load_test)
+{
+    TabletServer::Bits bits;
+
+    TabletServer server(bits);
+
+
+       
+}
+
+ */

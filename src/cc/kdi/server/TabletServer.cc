@@ -261,6 +261,67 @@ namespace {
         TabletConfigCPtr                const config;
     };
 
+    class RetryApplyCb
+        : public warp::Callback
+    {
+    public:
+        RetryApplyCb(TabletServer::ApplyCb * cb,
+                     TabletServer * server,
+                     strref_t tableName,
+                     CellBufferCPtr const & cells,
+                     int64_t commitMaxTxn,
+                     bool waitForSync) :
+            cb(cb),
+            server(server),
+            tableName(tableName.begin(), tableName.end()),
+            cells(cells),
+            commitMaxTxn(commitMaxTxn),
+            waitForSync(waitForSync),
+            count(1)
+        {
+        }
+
+    public:
+        virtual void done()
+        {
+            maybeFinish();
+        }
+
+        virtual void error(std::exception const & err)
+        {
+            maybeFinish();
+        }
+
+        void incrementCount()
+        {
+            boost::mutex::scoped_lock lock(mutex);
+            ++count;
+        }
+
+    private:
+        void maybeFinish()
+        {
+            boost::mutex::scoped_lock lock(mutex);
+            if(--count)
+                return;
+
+            server->apply_async(cb, tableName, cells->getPacked(),
+                                commitMaxTxn, waitForSync);
+            delete this;
+        }
+
+    private:
+        TabletServer::ApplyCb * cb;
+        TabletServer * server;
+        std::string tableName;
+        CellBufferCPtr cells;
+        int64_t commitMaxTxn;
+        bool waitForSync;
+
+        boost::mutex mutex;
+        size_t count;
+    };
+
 }
 
 //----------------------------------------------------------------------------
@@ -1054,44 +1115,36 @@ void TabletServer::apply_async(
         // Find the table
         Table * table = getTable(tableName);
         TableLock tableLock(table);
-
-        // XXX: if the tablets are assigned to this server but still
-        // in the process of being loaded, may want to defer until
-        // they are ready.
-        //
-        // Actually, we can apply the change immediately, but the
-        // sync/confirmation must be deferred until all affected
-        // tablets have been fully loaded and their configs have been
-        // updated to point to our log directory.
-        //
-        // This will keep us from blocking other writers if we get
-        // changes for loading tablets.
-        //
-        // Rather than adding extra complexity to the sync part, we
-        // can just defer the return of this call.  That also has the
-        // nice effect of throttling writers that aren't waiting for a
-        // sync.
-        //
-        // Also, we could consider the tablet "writable" after the log
-        // is loaded but before all the fragments are loaded.
-        //
-        // Problem: if we're replaying the loading tablet's old log,
-        // we need to make sure that this commit is applied after the
-        // log replay.  The old logs could be interleaved with the new
-        // apply.  Not quite sure how to handle log reloading anyway.
-        // Maybe logged data needs to have a commit number associated
-        // with it to allow out of order logging.
-        //
-        // Side question: when scanning, how do we scan only what is
-        // durable?  This could be an important feature for the
-        // fragment garbage collector.  Since we're just keeping a
-        // mem-fragment vector, it wouldn't be too hard to track the
-        // last durable fragment and only merge up to that point.  Or,
-        // if each fragment has its commit number embedded, we could
-        // scan with a max txn equal to the last durable txn.
         
-        // Make sure tablets are loaded
-        table->verifyTabletsLoaded(rows);
+        // Make sure tablets are loaded.
+        std::vector<Tablet *> loadingTablets;
+        table->verifyTabletsLoaded(rows, loadingTablets);
+        if(!loadingTablets.empty())
+        {
+            // Some Tablets are still loading.  We must defer until
+            // all Tablets are loaded.
+            RetryApplyCb * rcb = new RetryApplyCb(
+                cb,
+                this,
+                tableName,
+                commit.cells,
+                commitMaxTxn,
+                waitForSync);
+
+            for(std::vector<Tablet *>::const_iterator i =
+                    loadingTablets.begin();
+                i != loadingTablets.end(); ++i)
+            {
+                rcb->incrementCount();
+                (*i)->deferUntilState(rcb, TABLET_FRAGMENTS_LOADING);
+            }
+
+            // xxx throttle -- keep track of how much data we have
+            // queued up like this... don't want to get overloaded
+
+            rcb->done();
+            return;
+        }
 
         // Make sure columns fit in with current schema
         table->verifyColumnFamilies(families);
@@ -1161,7 +1214,6 @@ void TabletServer::apply_async(
             txnCounter.deferUntilDurable(new DeferredApplyCb(cb), commit.txn);
             return;
         }
-
 
         serverLock.unlock();
 

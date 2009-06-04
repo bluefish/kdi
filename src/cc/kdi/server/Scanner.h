@@ -72,6 +72,14 @@ public:
         // transaction.  If modifications happen while the scanner is
         // mid-row, fail with a ScanConflictError.
         SCAN_LATEST_ROW_TXN,
+
+        // xxx question: when scanning, how do we scan only what is
+        // durable?  This could be an important feature for the
+        // fragment garbage collector.  Since we're just keeping a
+        // mem-fragment vector, it wouldn't be too hard to track the
+        // last durable fragment and only merge up to that point.  Or,
+        // if each fragment has its commit number embedded, we could
+        // scan with a max txn equal to the last durable txn.
     };
 
 public:

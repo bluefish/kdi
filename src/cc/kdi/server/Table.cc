@@ -100,13 +100,22 @@ Tablet * Table::getTablet(warp::IntervalPoint<std::string> const & last) const
     return t;
 }
 
-void Table::verifyTabletsLoaded(std::vector<warp::StringRange> const & rows) const
+void Table::verifyTabletsLoaded(std::vector<warp::StringRange> const & rows,
+                                std::vector<Tablet *> & loadingTablets) const
 {
     for(std::vector<warp::StringRange>::const_iterator i = rows.begin();
         i != rows.end(); ++i)
     {
         Tablet * tablet = findContainingTablet(*i);
         if(!tablet)
+            throw TabletNotLoadedError();
+
+        if(tablet->getState() <= TABLET_CONFIG_SAVING)
+        {
+            if(loadingTablets.empty() || loadingTablets.back() != tablet)
+                loadingTablets.push_back(tablet);
+        }
+        else if(tablet->getState() > TABLET_ACTIVE)
             throw TabletNotLoadedError();
     }
 }
