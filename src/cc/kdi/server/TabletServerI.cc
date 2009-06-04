@@ -280,6 +280,7 @@ void TabletServerI::scan_async(
     }
 
     // Get the table
+    TabletServerLock serverLock(server);
     Table * t = server->findTable(table);
     if(!t)
     {
@@ -296,6 +297,7 @@ void TabletServerI::scan_async(
 
     // Make a scanner
     ScannerPtr scanner(new Scanner(t, cache, pred, m));
+    serverLock.unlock();
 
     // Start the scan
     scanner->scan_async(

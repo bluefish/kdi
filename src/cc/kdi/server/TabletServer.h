@@ -76,7 +76,7 @@ class kdi::server::TabletServer
 public:
     enum { MAX_TXN = 9223372036854775807 };
 
-public:
+public:                         // Callback interfaces
     class ApplyCb
     {
     public:
@@ -98,6 +98,34 @@ public:
     typedef warp::Callback LoadCb;
     typedef warp::Callback UnloadCb;
 
+    class LoadSchemaCb
+    {
+    public:
+        virtual void done(TableSchemaCPtr const & schema) = 0;
+        virtual void error(std::exception const & err) = 0;
+    protected:
+        ~LoadSchemaCb() {}
+    };
+
+    class LoadConfigCb
+    {
+    public:
+        virtual void done(TabletConfigCPtr const & config) = 0;
+        virtual void error(std::exception const & err) = 0;
+    protected:
+        ~LoadConfigCb() {}
+    };
+
+    class LoadFragmentsCb
+    {
+    public:
+        virtual void done(std::vector<FragmentCPtr> const & fragments) = 0;
+        virtual void error(std::exception const & err) = 0;
+    protected:
+        ~LoadFragmentsCb() {}
+    };
+
+public:                         // Server components
     struct Bits
     {
         LogWriterFactory      * logFactory;
@@ -129,10 +157,11 @@ public:
 
     typedef std::vector<std::string> string_vec;
 
-public:
+public:                         // No locks necessary
     explicit TabletServer(Bits const & bits);
     ~TabletServer();
 
+public:                         // Call without locks
     /// Load some tablets.  Tablet names should be given in sorted
     /// order for best performance.
     void load_async(LoadCb * cb, string_vec const & tablets);
@@ -158,50 +187,11 @@ public:
     /// commit number, wait for the last assigned commit instead.
     void sync_async(SyncCb * cb, int64_t waitForTxn);
 
-public:
+public:                         // No lock necessary
     std::string const & getLogDir() const { return bits.serverLogDir; }
     std::string const & getLocation() const { return bits.serverLocation; }
 
-public:
-    class LoadSchemaCb
-    {
-    public:
-        virtual void done(TableSchemaCPtr const & schema) = 0;
-        virtual void error(std::exception const & err) = 0;
-    protected:
-        ~LoadSchemaCb() {}
-    };
-
-    class LoadConfigCb
-    {
-    public:
-        virtual void done(TabletConfigCPtr const & config) = 0;
-        virtual void error(std::exception const & err) = 0;
-    protected:
-        ~LoadConfigCb() {}
-    };
-
-    class LoadFragmentsCb
-    {
-    public:
-        virtual void done(std::vector<FragmentCPtr> const & fragments) = 0;
-        virtual void error(std::exception const & err) = 0;
-    protected:
-        ~LoadFragmentsCb() {}
-    };
-
-
-private:
-    /// Initiate the multi-step sequence for loading a Tablet.  First,
-    /// the Tablet's config is loaded.  If the config specifies a log
-    /// directory, the Tablet's logs will be replayed.  Then the
-    /// Tablet's config will be saved using this server's location and
-    /// log.  Finally, all necessary disk fragments will be loaded.
-    /// When all of this is complete, issue the callback.  This
-    /// routine assumes the Tablet exists and is in the initial
-    /// loading state.
-    // xxx -- void loadTablet_async(warp::Callback * cb, std::string const & tabletName);
-
+private:                        // Call without locks
     /// Load the table schema for a Table.  The callback is given the
     /// loaded TabletSchema object.
     void loadSchema_async(LoadSchemaCb * cb, std::string const & tableName);
@@ -228,15 +218,16 @@ private:
     /// when merged in order.
     void loadFragments_async(LoadFragmentsCb * cb, TabletConfigCPtr const & config);
 
-public:
-    /// Find the tabled Table.  Returns null if the table is not
+public:                         // Must hold TabletServerLock
+
+    /// Find the named Table.  Returns null if the table is not
     /// loaded.
     Table * findTable(strref_t tableName) const;
 
-private:
-    Table * findTableLocked(strref_t tableName) const;
+    /// Get the named Table or throw TableNotLoadedError.
     Table * getTable(strref_t tableName) const;
 
+private:                        // No locks necessary
     void wakeSerializer();
     void wakeCompactor();
 

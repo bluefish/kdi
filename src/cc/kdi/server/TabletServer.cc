@@ -601,7 +601,7 @@ public:
         TabletServerLock serverLock(server);
 
         // Make sure the table still exists
-        Table * table = server->findTableLocked(tableName);
+        Table * table = server->findTable(tableName);
         if(!table)
             return;
 
@@ -734,7 +734,7 @@ public:
         TabletServerLock serverLock(server);
 
         // Make sure the table still exists
-        Table * table = server->findTableLocked(schema.tableName);
+        Table * table = server->findTable(schema.tableName);
         if(!table)
             return;
 
@@ -1285,28 +1285,21 @@ void TabletServer::loadFragments_async(
     }
 }
 
-Table * TabletServer::getTable(strref_t tableName) const
-{
-    table_map::const_iterator i = tableMap.find(
-        tableName.toString());
-    if(i == tableMap.end())
-        throw TableNotLoadedError();
-    return i->second;
-}
 
 Table * TabletServer::findTable(strref_t tableName) const
 {
-    TabletServerLock serverLock(this);
-    return findTableLocked(tableName);
-}
-
-Table * TabletServer::findTableLocked(strref_t tableName) const
-{
-    table_map::const_iterator i = tableMap.find(
-        tableName.toString());
+    table_map::const_iterator i = tableMap.find(tableName.toString());
     if(i != tableMap.end())
         return i->second;
     return 0;
+}
+
+Table * TabletServer::getTable(strref_t tableName) const
+{
+    Table * table = findTable(tableName);
+    if(!table)
+        throw TableNotLoadedError();
+    return table;
 }
 
 void TabletServer::wakeSerializer()
@@ -1389,293 +1382,3 @@ void TabletServer::logLoop()
         }
     }
 }
-
-
-// std::vector<TabletConfig::Fragment>
-// topoMerge(std::vector<TabletConfig::Fragment> const & frags)
-// {
-//     std::vector<TabletConfig::Fragment> out;
-// 
-//     typedef std::vector<TabletConfig::Fragment> frag_vec;
-//     typedef std::vector<std::string> str_vec;
-//     typedef std::tr1::unordered_set<std::string> str_set;
-//     typedef std::tr1::unordered_map<std::string, str_vec> ssv_map;
-//     typedef std::tr1::unordered_map<std::string, str_set> sss_map;
-// 
-//     ssv_map colChains;
-//     sss_map fragCols;
-// 
-//     for(frag_vec::const_iterator f = frags.begin();
-//         f != frags.end(); ++f)
-//     {
-//         for(str_vec::const_iterator c = f->columns.begin();
-//             c != f->columns.end(); ++c)
-//         {
-//             colChains[*c].push_back(f->tableName);
-//             fragCols[f->tableName].insert(*c);
-//         }
-//     }
-// 
-//     //  colChain = {}  # col -> [fn1, fn2, ...]
-//     //  fragCols = {}  # fn -> set(col1, col2, ..)
-//     //
-//     //  for fn, cols in config.fragments:
-//     //     for col in cols.split():
-//     //        colChain.setdefault(col,[]).append(fn)
-//     //        fragCols.setdefault(fn,set()).add(col)
-//     //  
-//     //  for g in groups:
-//     //     chains = [ colChain[c] for c in group.columns if c in colChain ]
-//     //     g.frags = [ loadFrag(fn, fragCols[fn].intersection(group.columns))
-//     //                 for fn in topoMerge(chains) ]
-// 
-// }
-
-#if 0
-
-// This function has been replaced by the async loading chain.  That
-// chain still has some holes in it.  This is reference until those
-// get filled.
-
-namespace {
-    struct Loading
-    {
-        TabletConfig const * config;
-        std::vector<FragmentCPtr> frags;
-
-        Loading() : config(0) {}
-        Loading(TabletConfig const * config) :
-            config(config) {}
-
-        void addLoadedFragment(FragmentCPtr const & frag)
-        {
-            frags.push_back(frag);
-        }
-
-        bool operator<(Loading const & o) const
-        {
-            TabletConfig const & a = *config;
-            TabletConfig const & b = *o.config;
-
-            if(int c = warp::string_compare(a.log, b.log))
-                return c < 0;
-
-            if(int c = warp::string_compare(a.tableName, b.tableName))
-                return c < 0;
-
-            return a.rows.getUpperBound() < b.rows.getUpperBound();
-        }
-
-        struct LogNeq
-        {
-            strref_t log;
-            LogNeq(strref_t log) : log(log) {}
-            bool operator()(Loading const & x) const
-            {
-                return x.config->log != log;
-            }
-        };
-    };
-
-    class LoadCompleteCb
-        : public Tablet::LoadedCb
-    {
-        size_t nPending;
-        boost::mutex mutex;
-        boost::condition cond;
-
-    public:
-        LoadCompleteCb() : nPending(0) {}
-        
-        void increment() { ++nPending; }
-
-        void done()
-        {
-            lock_t lock(mutex);
-            if(!--nPending)
-                cond.notify_one();
-        }
-
-        void wait()
-        {
-            lock_t lock(mutex);
-            while(nPending)
-                cond.wait(lock);
-        }
-    };
-}
-
-void TabletServer::loadTablets(std::vector<TabletConfig> const & configs)
-{
-    // Issues:
-    //   - Tablets may be in mid-load from other callers
-    //   - Tablets may already be loaded on this server
-    //   - Tablets may have logs that need recovering
-    //   - Mutations or scan requests may arrive for tablets that
-    //     are currently loading.  These should be deferred.
-
-    // Stages:
-    //   - Lock server and walk through tablets
-    //   - Partition into 4 disjoint sets:
-    //     A: Already loaded
-    //     B: Currently loading
-    //     C: Not yet loading, needs log recovery
-    //     D: Not yet loading, no log recovery needed
-    //   - We don't care about set A
-    //   - Ask for completion notifications on set B
-    //   - Create inactive (loading) tablets for everything in (C+D)
-    //   - Unlock server
-    //   - For each tablet in C+D:
-    //     - Load each fragment for the tablet
-    //   - For each subset in C with the same log directory:
-    //     - Replay log directory for ranges in the subset
-    //   - For each tablet in C+D:
-    //     - Save new tablet config
-    //   - Sync configs
-    //   - Lock server
-    //   - For each tablet in C+D:
-    //     - Activate tablet
-    //     - Queue completion notifications
-    //   - Unlock server
-    //   - Issue queued completions
-    //   - Complete after all notifications from B
-
-
-    typedef std::vector<Loading> loading_vec;
-
-    loading_vec loading;
-
-    LoadCompleteCb loadCompleteCb;
-
-    TabletServerLock serverLock(this);
-
-    for(std::vector<TabletConfig>::const_iterator i = configs.begin();
-        i != configs.end(); ++i)
-    {
-        Table * table = getTable(i->tableName);
-        TableLock tableLock(table);
-
-        Tablet * tablet = table->findTablet(i->rows.getUpperBound());
-        if(tablet)
-        {
-            if(tablet->isLoading())
-            {
-                loadCompleteCb.increment();
-                tablet->deferUntilLoaded(&loadCompleteCb);
-            }
-            continue;
-        }
-        tablet = table->createTablet(i->rows.getUpperBound());
-        tablet->setLowerBound(i->rows.getLowerBound());
-        loading.push_back(Loading(&*i));
-    }
-
-    serverLock.unlock();
-
-    std::sort(loading.begin(), loading.end());
-
-    LogPlayer::filter_vec replayFilter;
-    for(loading_vec::iterator last, first = loading.begin();
-        first != loading.end(); first = last)
-    {
-        last = std::find_if(
-            first+1, loading.end(),
-            Loading::LogNeq(first->config->log));
-
-        for(loading_vec::iterator i = first; i != last; ++i)
-        {
-            typedef std::vector<TabletConfig::Fragment> fvec;
-            fvec const & frags = i->config->fragments;
-            for(fvec::const_iterator f = frags.begin(); f != frags.end(); ++f)
-            {
-                FragmentCPtr frag = bits.fragmentLoader->load(f->filename);
-                frag = frag->getRestricted(f->families);
-                i->addLoadedFragment(frag);
-            }
-        }
-
-        serverLock.lock();
-        for(loading_vec::iterator i = first; i != last; ++i)
-        {
-            Table * table = getTable(i->config->tableName);
-            TableLock tableLock(table);
-            table->addLoadedFragments(i->config->rows, i->frags);
-        }
-        serverLock.unlock();
-
-        if(first->config->log.empty())
-            continue;
-
-        for(loading_vec::const_iterator i = first;
-            i != last; ++i)
-        {
-            replayFilter.push_back(
-                std::make_pair(
-                    i->config->tableName,
-                    i->config->rows));
-        }
-
-        bits.logPlayer->replay(first->config->log, replayFilter);
-        replayFilter.clear();
-    }
-
-    // Save configs for all loaded tablets
-    {
-        // Init to size of all loaded tablets
-        TabletConfigVecPtr configs(new TabletConfigVec(loading.size()));
-        for(size_t i = 0; i < configs->size(); ++i)
-        {
-            // Set log and location to reference this server
-            (*configs)[i].log = bits.serverLogDir;
-            (*configs)[i].location = bits.serverLocation;
-
-            // Set name and rows from loaded config (assuming no
-            // splits possible?)
-            (*configs)[i].tableName = loading[i].config->tableName;
-            (*configs)[i].rows = loading[i].config->rows;
-        }
-
-        // Get Fragment lists for each Tablet
-        serverLock.lock();
-        for(size_t i = 0; i < configs->size(); ++i)
-        {
-            Table * table = getTable((*configs)[i].tableName);
-            TableLock tableLock(table);
-            Tablet * tablet = table->findTablet((*configs)[i].rows.getUpperBound());
-            tablet->getConfigFragments((*configs)[i]);
-        }
-        serverLock.unlock();
-
-        warp::WaitCallback cb;
-        saveConfigs_async(&cb, configs);
-        cb.wait();
-    }
-        
-    typedef std::vector<warp::Runnable *> callback_vec;
-    callback_vec callbacks;
-
-    serverLock.lock();
-
-    for(loading_vec::const_iterator i = loading.begin();
-        i != loading.end(); ++i)
-    {
-        Table * table = getTable(i->config->tableName);
-        TableLock tableLock(table);
-        Tablet * tablet = table->findTablet(i->config->rows.getUpperBound());
-        warp::Runnable * loadCallback = tablet->finishLoading();
-        if(loadCallback)
-            callbacks.push_back(loadCallback);
-    }
-
-    serverLock.unlock();
-
-    for(callback_vec::const_iterator i = callbacks.begin();
-        i != callbacks.end(); ++i)
-    {
-        (*i)->run();
-    }
-
-    loadCompleteCb.wait();
-}
-
-#endif
