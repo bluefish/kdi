@@ -22,6 +22,7 @@
 #define KDI_SERVER_TABLETSERVER_H
 
 #include <kdi/server/TransactionCounter.h>
+#include <kdi/server/CellBufferAllocator.h>
 #include <warp/syncqueue.h>
 #include <warp/WorkerPool.h>
 #include <warp/Callback.h>
@@ -140,6 +141,7 @@ public:                         // Server components
         warp::WorkerPool      * workerPool;
         std::string             serverLogDir;
         std::string             serverLocation;
+        size_t                  maxBufferSz;
 
         Bits() :
             logFactory(0),
@@ -151,7 +153,8 @@ public:                         // Server components
             logPlayer(0),
             fragmentLoader(0),
 
-            workerPool(0)
+            workerPool(0),
+            maxBufferSz(size_t(512) << 20)
         {}
     };
 
@@ -259,11 +262,11 @@ private:
 private:
     Bits const bits;
 
+    CellBufferAllocator cellAllocator;
     TransactionCounter txnCounter;
     table_map tableMap;
 
     warp::SyncQueue<Commit> logQueue;
-    size_t logPendingSz;
 
     boost::thread_group threads;
     boost::scoped_ptr<Workers> workers;

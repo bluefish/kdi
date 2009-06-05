@@ -1360,3 +1360,12 @@ We need to put a limit on how much data we can have outstanding.
 Blocking on the allocation of the shared commit data seems like a good
 place for that.  Allocate out of a logical pool.  If the pool is full,
 block until space is available.
+
+
+        // Another potential solution: use different adapters for read
+        // and write.  Or have a read/write adapter and a read-only
+        // adapter.  To throttle we just block the caller, which will
+        // eventually block all the threads on the write adapter's
+        // pool.  Clients on the read-only adapter can continue.  I
+        // like this solution as it becomes a detail of the RPC layer,
+        // not the main server logic.

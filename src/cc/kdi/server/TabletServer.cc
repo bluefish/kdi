@@ -305,6 +305,12 @@ namespace {
             if(--count)
                 return;
 
+            // xxx -- this has the potential to deadlock for (very)
+            // large cell buffers.  Also, it's inefficient.  This call
+            // will allocate and verify a new buffer, even though we
+            // already have one.  A better solution would be to make
+            // an internal call that can reuse the shared buffer.
+
             server->apply_async(cb, tableName, cells->getPacked(),
                                 commitMaxTxn, waitForSync);
             delete this;
@@ -946,6 +952,7 @@ public:
 //----------------------------------------------------------------------------
 TabletServer::TabletServer(Bits const & bits) :
     bits(bits),
+    cellAllocator(bits.maxBufferSz),
     workers(new Workers(this))
 {
     threads.create_thread(
@@ -1101,7 +1108,10 @@ void TabletServer::apply_async(
         // Decode and validate cells
         Commit commit;
         tableName.assignTo(commit.tableName);
-        commit.cells.reset(new CellBuffer(packedCells));
+
+        // Allocate buffer space.  This may block, and acts as a
+        // throttling point to avoid write-overload.
+        commit.cells = cellAllocator.allocate(packedCells);
 
         // Get the rows and column families from the commit
         std::vector<warp::StringRange> rows;
@@ -1139,9 +1149,6 @@ void TabletServer::apply_async(
                 (*i)->deferUntilState(rcb, TABLET_FRAGMENTS_LOADING);
             }
 
-            // xxx throttle -- keep track of how much data we have
-            // queued up like this... don't want to get overloaded
-
             rcb->done();
             return;
         }
@@ -1155,40 +1162,6 @@ void TabletServer::apply_async(
         // to commitMaxTxn.
         if(txnCounter.getLastCommit() > commitMaxTxn)
             table->verifyCommitApplies(rows, commitMaxTxn);
-
-        // XXX: How to throttle?
-        //
-        // We don't want to queue up too many heavy-weight objects
-        // while waiting to commit to the log.  It would be bad to
-        // make a full copy of the input data and queue it.  If we got
-        // flooded with mutations we'd either: 1) use way too much
-        // memory if we had a unbounded queue, or 2) block server
-        // threads and starve readers if we have a bounded queue.
-        //
-        // Ideally, we'd leave mutations "on the wire" until we were
-        // ready for them, while allowing read requests to flow
-        // independently.
-        //
-        // If we use the Slice array mapping for the packed cell block
-        // (and the backing buffer stays valid for the life of the AMD
-        // invocation), then we can queue lightweight objects.  Ice
-        // might be smart enough to do flow control for us in this
-        // case.  I'm guessing it has a buffer per connection.  If we
-        // tie up the buffer space, then the writing connection should
-        // stall while allowing other connections to proceed.  Of
-        // course interleaved reads on the same connection will
-        // suffer, but that's not as big of a concern.
-        //
-        // Another potential solution: use different adapters for read
-        // and write.  Or have a read/write adapter and a read-only
-        // adapter.  To throttle we just block the caller, which will
-        // eventually block all the threads on the write adapter's
-        // pool.  Clients on the read-only adapter can continue.  I
-        // like this solution as it becomes a detail of the RPC layer,
-        // not the main server logic.
-        //
-        // Throttle later...
-
 
         // Assign transaction number to commit
         commit.txn = txnCounter.assignCommit();
@@ -1205,7 +1178,6 @@ void TabletServer::apply_async(
         wakeSerializer();
 
         // Push the cells to the log queue
-        logPendingSz += commit.cells->getDataSize();
         logQueue.push(commit);
 
         // Defer response if necessary
@@ -1337,7 +1309,6 @@ void TabletServer::loadFragments_async(
     }
 }
 
-
 Table * TabletServer::findTable(strref_t tableName) const
 {
     table_map::const_iterator i = tableMap.find(tableName.toString());
@@ -1374,8 +1345,6 @@ void TabletServer::logLoop()
     Commit commit;
     while(logQueue.pop(commit))
     {
-        // xxx ?? throttle: block until logger.committedBufferSz < MAX_BUFFER_SIZE
-
         // Start a new log if necessary
         if(!log && bits.logFactory)
             log.reset(bits.logFactory->start().release());
@@ -1387,7 +1356,6 @@ void TabletServer::logLoop()
         // fetch would block or we've written a significant amount of
         // data.
         do {
-            
             commitSz += commit.cells->getDataSize();
             maxTxn = commit.txn;
 
@@ -1411,9 +1379,6 @@ void TabletServer::logLoop()
 
         // Update last durable txn
         warp::Runnable * durableCallbacks = txnCounter.setLastDurable(maxTxn);
-
-        // Update queue sizes
-        logPendingSz -= commitSz;
 
         serverLock.unlock();
 
