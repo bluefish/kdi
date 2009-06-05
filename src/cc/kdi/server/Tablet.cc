@@ -34,7 +34,7 @@ namespace {
         : public warp::Runnable
     {
     public:
-        void run()
+        void run() throw()
         {
             for(std::vector<warp::Callback *>::const_iterator i = cbs.begin();
                 i != cbs.end(); ++i)

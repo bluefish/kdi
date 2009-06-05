@@ -41,7 +41,7 @@ public:
     {
     }
     
-    void done()
+    void done() throw()
     {
         ::kdi::server::ScannerPtr const & scanner = scannerI->scanner;
 
@@ -69,7 +69,7 @@ public:
         delete this;
     }
 
-    void error(std::exception const & err)
+    void error(std::exception const & err) throw()
     {
         cb->ice_exception(err);
         resetUseFlag();

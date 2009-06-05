@@ -82,7 +82,7 @@ namespace {
             
             LoadCb() : complete(false), success(false) {}
             
-            void done()
+            void done() throw()
             {
                 boost::mutex::scoped_lock lock(mutex);
                 complete = true;
@@ -90,7 +90,7 @@ namespace {
                 cond.notify_all();
             }
 
-            void error(std::exception const & ex)
+            void error(std::exception const & ex) throw()
             {
                 boost::mutex::scoped_lock lock(mutex);
                 complete = true;

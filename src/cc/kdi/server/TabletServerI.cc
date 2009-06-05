@@ -43,13 +43,13 @@ public:
     ApplyCb(RpcApplyCbPtr const & cb) :
         cb(cb) {}
 
-    void done(int64_t commitTxn)
+    void done(int64_t commitTxn) throw()
     {
         cb->ice_response(commitTxn);
         delete this;
     }
 
-    void error(std::exception const & err)
+    void error(std::exception const & err) throw()
     {
         // Translate app exceptions to RPC exceptions
         try {
@@ -102,13 +102,13 @@ public:
     SyncCb(RpcSyncCbPtr const & cb) :
         cb(cb) {}
 
-    void done(int64_t scanTxn)
+    void done(int64_t scanTxn) throw()
     {
         cb->ice_response(scanTxn);
         delete this;
     }
 
-    void error(std::exception const & err)
+    void error(std::exception const & err) throw()
     {
         // Should translate app exceptions to RPC exceptions
         cb->ice_exception(err);
@@ -142,7 +142,7 @@ public:
     {
     }
 
-    void done()
+    void done() throw()
     {
         strref_t cells = scanner->getPackedCells();
         ::kdi::rpc::ScanResult result;
@@ -183,7 +183,7 @@ public:
         delete this;
     }
 
-    void error(std::exception const & err)
+    void error(std::exception const & err) throw()
     {
         // Should translate app exceptions to RPC exceptions
         cb->ice_exception(err);

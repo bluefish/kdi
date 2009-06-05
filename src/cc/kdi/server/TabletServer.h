@@ -79,8 +79,8 @@ public:                         // Callback interfaces
     class ApplyCb
     {
     public:
-        virtual void done(int64_t commitTxn) = 0;
-        virtual void error(std::exception const & err) = 0;
+        virtual void done(int64_t commitTxn) throw() = 0;
+        virtual void error(std::exception const & err) throw() = 0;
     protected:
         ~ApplyCb() {}
     };
@@ -88,8 +88,8 @@ public:                         // Callback interfaces
     class SyncCb
     {
     public:
-        virtual void done(int64_t syncTxn) = 0;
-        virtual void error(std::exception const & err) = 0;
+        virtual void done(int64_t syncTxn) throw() = 0;
+        virtual void error(std::exception const & err) throw() = 0;
     protected:
         ~SyncCb() {}
     };
@@ -100,8 +100,8 @@ public:                         // Callback interfaces
     class LoadSchemaCb
     {
     public:
-        virtual void done(TableSchemaCPtr const & schema) = 0;
-        virtual void error(std::exception const & err) = 0;
+        virtual void done(TableSchemaCPtr const & schema) throw() = 0;
+        virtual void error(std::exception const & err) throw() = 0;
     protected:
         ~LoadSchemaCb() {}
     };
@@ -109,8 +109,8 @@ public:                         // Callback interfaces
     class LoadConfigCb
     {
     public:
-        virtual void done(TabletConfigCPtr const & config) = 0;
-        virtual void error(std::exception const & err) = 0;
+        virtual void done(TabletConfigCPtr const & config) throw() = 0;
+        virtual void error(std::exception const & err) throw() = 0;
     protected:
         ~LoadConfigCb() {}
     };
@@ -118,8 +118,8 @@ public:                         // Callback interfaces
     class LoadFragmentsCb
     {
     public:
-        virtual void done(std::vector<FragmentCPtr> const & fragments) = 0;
-        virtual void error(std::exception const & err) = 0;
+        virtual void done(std::vector<FragmentCPtr> const & fragments) throw() = 0;
+        virtual void error(std::exception const & err) throw() = 0;
     protected:
         ~LoadFragmentsCb() {}
     };

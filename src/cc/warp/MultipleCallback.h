@@ -52,8 +52,8 @@ public:
         ++count;
     }
 
-    virtual void done();
-    virtual void error(std::exception const & err);
+    virtual void done() throw();
+    virtual void error(std::exception const & err) throw();
 
 private:
     void maybeFinish();

@@ -27,13 +27,13 @@ using namespace warp;
 //----------------------------------------------------------------------------
 // MultipleCallback
 //----------------------------------------------------------------------------
-void MultipleCallback::done()
+void MultipleCallback::done() throw()
 {
     boost::mutex::scoped_lock lock(mutex);
     maybeFinish();
 }
 
-void MultipleCallback::error(std::exception const & err)
+void MultipleCallback::error(std::exception const & err) throw()
 {
     boost::mutex::scoped_lock lock(mutex);
     errors.push_back(std::string(err.what()));

@@ -27,7 +27,7 @@ namespace warp {
     class Runnable
     {
     public:
-        virtual void run() = 0;
+        virtual void run() throw() = 0;
 
     protected:
         ~Runnable() {}

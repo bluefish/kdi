@@ -40,7 +40,7 @@ public:
     explicit CallbackRunner(int64_t lastDurable) :
         lastDurable(lastDurable) {}
             
-    void run()
+    void run() throw()
     {
         for(std::vector<txn_cb>::const_iterator i = callbacks.begin();
             i != callbacks.end(); ++i)

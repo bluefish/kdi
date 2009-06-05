@@ -86,8 +86,8 @@ public:
     class ScanCb
     {
     public:
-        virtual void done() = 0;
-        virtual void error(std::exception const & err) = 0;
+        virtual void done() throw() = 0;
+        virtual void error(std::exception const & err) throw() = 0;
     protected:
         ~ScanCb() {}
     };

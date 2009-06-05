@@ -90,7 +90,7 @@ namespace {
                 cond.wait(lock);
         }
 
-        void error(std::exception const & ex)
+        void error(std::exception const & ex) throw()
         {
             failure(ex.what());
         }
@@ -101,7 +101,7 @@ namespace {
     {
         int64_t commitTxn;
 
-        void done(int64_t commitTxn)
+        void done(int64_t commitTxn) throw()
         {
             this->commitTxn = commitTxn;
             success();
@@ -113,7 +113,7 @@ namespace {
     {
         int64_t syncTxn;
 
-        void done(int64_t syncTxn)
+        void done(int64_t syncTxn) throw()
         {
             this->syncTxn = syncTxn;
             success();
@@ -123,19 +123,19 @@ namespace {
     struct TestLoadCb
         : public TestCb<TabletServer::LoadCb>
     {
-        void done() { success(); }
+        void done() throw() { success(); }
     };
 
     struct TestUnloadCb
         : public TestCb<TabletServer::UnloadCb>
     {
-        void done() { success(); }
+        void done() throw() { success(); }
     };
 
     struct TestScanCb
         : public TestCb<Scanner::ScanCb>
     {
-        void done() { success(); }
+        void done() throw() { success(); }
     };
 
     std::string getTestCells()

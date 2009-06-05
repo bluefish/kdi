@@ -37,10 +37,10 @@ namespace warp {
     {
     public:
         /// The requested operation completed successfully.
-        virtual void done() = 0;
+        virtual void done() throw() = 0;
         
         /// The requested operation encountered an error.
-        virtual void error(std::exception const & err) = 0;
+        virtual void error(std::exception const & err) throw() = 0;
 
     protected:
         ~Callback() {}

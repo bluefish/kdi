@@ -83,7 +83,7 @@ namespace flux {
                 pool.submit(this);
             }
 
-            void run()
+            void run() throw()
             {
                 lock_t lock(mutex);
                 size_t readMax = std::min(readAhead - readSoFar, readUpTo);

@@ -87,12 +87,12 @@ namespace {
         explicit HoldPendingCb(PendingFileCPtr const & p) :
             p(p) {}
         
-        virtual void done()
+        virtual void done() throw()
         {
             delete this;
         }
 
-        virtual void error(std::exception const & err)
+        virtual void error(std::exception const & err) throw()
         {
             log("ERROR HoldPendingCb: %s", err.what());
             std::terminate();
@@ -110,6 +110,9 @@ namespace {
                                      Table const * table,
                                      Tablet * tablet)
     {
+        assert(tablet->getState() >= TABLET_CONFIG_SAVING &&
+               tablet->getState() <= TABLET_ACTIVE);
+
         TabletConfigPtr p(new TabletConfig);
         
         p->tableName = table->getSchema().tableName;
@@ -130,7 +133,7 @@ namespace {
                      std::string const & tableName) :
             cb(cb), reader(reader), tableName(tableName) {}
 
-        virtual void run()
+        virtual void run() throw()
         {
             try {
                 assert(reader);
@@ -160,7 +163,7 @@ namespace {
                      std::string const & tabletName) :
             cb(cb), reader(reader), tabletName(tabletName) {}
 
-        virtual void run()
+        virtual void run() throw()
         {
             assert(reader);
             assert(cb);
@@ -191,7 +194,7 @@ namespace {
                     TabletConfigCPtr const & config) :
             cb(cb), writer(writer), config(config) {}
 
-        virtual void run()
+        virtual void run() throw()
         {
             assert(cb);
             assert(writer);
@@ -223,7 +226,7 @@ namespace {
                            TabletConfigCPtr const & config) :
             cb(cb), loader(loader), config(config) {}
 
-        virtual void run()
+        virtual void run() throw()
         {
             assert(cb);
             assert(loader);
@@ -279,12 +282,12 @@ namespace {
         }
 
     public:
-        virtual void done()
+        virtual void done() throw()
         {
             maybeFinish();
         }
 
-        virtual void error(std::exception const & err)
+        virtual void error(std::exception const & err) throw()
         {
             maybeFinish();
         }
@@ -340,7 +343,7 @@ public:
     SchemaLoadedCb(TabletServer * server, std::string const & tableName) :
         server(server), tableName(tableName) {}
 
-    void done(TableSchemaCPtr const & schema)
+    void done(TableSchemaCPtr const & schema) throw()
     {
         try {
             TabletServerLock serverLock(server);
@@ -353,7 +356,7 @@ public:
         delete this;
     }
 
-    void error(std::exception const & err)
+    void error(std::exception const & err) throw()
     {
         fail(err);
         delete this;
@@ -379,8 +382,10 @@ public:
     FragmentsLoadedCb(TabletServer * server, std::string const & tabletName) :
         server(server), tabletName(tabletName) {}
 
-    void done(std::vector<FragmentCPtr> const & fragments)
+    void done(std::vector<FragmentCPtr> const & fragments) throw()
     {
+        warp::Runnable * callbacks = 0;
+
         try {
             std::string tableName;
             warp::IntervalPoint<std::string> lastRow;
@@ -397,21 +402,19 @@ public:
             tablet->onFragmentsLoaded(table->getSchema(), fragments);
             
             // Move to next load state
-            warp::Runnable * callbacks = tablet->setState(TABLET_ACTIVE);
-
-            tableLock.unlock();
-            serverLock.unlock();
-
-            // Issue load state callbacks, if any
-            if(callbacks)
-                callbacks->run();
+            callbacks = tablet->setState(TABLET_ACTIVE);
         }
         catch(std::exception const & ex) { fail(ex); }
         catch(...) { fail(std::runtime_error("unknown exception")); }
+
+        // Issue load state callbacks, if any
+        if(callbacks)
+            callbacks->run();
+
         delete this;
     }
 
-    void error(std::exception const & err)
+    void error(std::exception const & err) throw()
     {
         fail(err);
         delete this;
@@ -441,8 +444,10 @@ public:
     ConfigSavedCb(TabletServer * server, TabletConfigCPtr const & config) :
         server(server), config(config) {}
 
-    void done()
+    void done() throw()
     {
+        warp::Runnable * callbacks = 0;
+
         try {
             TabletServerLock serverLock(server);
             Table * table = server->getTable(config->tableName);
@@ -468,21 +473,19 @@ public:
             }
 
             // Move to next load state
-            warp::Runnable * callbacks = tablet->setState(nextState);
-
-            tableLock.unlock();
-            serverLock.unlock();
-
-            // Issue load state callbacks, if any
-            if(callbacks)
-                callbacks->run();
+            callbacks = tablet->setState(nextState);
         }
         catch(std::exception const & ex) { fail(ex); }
         catch(...) { fail(std::runtime_error("unknown exception")); }
+
+        // Issue load state callbacks, if any
+        if(callbacks)
+            callbacks->run();
+
         delete this;
     }
 
-    void error(std::exception const & err)
+    void error(std::exception const & err) throw()
     {
         fail(err);
         delete this;
@@ -512,8 +515,10 @@ public:
     LogReplayedCb(TabletServer * server, TabletConfigCPtr const & config) :
         server(server), config(config) {}
 
-    void done()
+    void done() throw()
     {
+        warp::Runnable * callbacks = 0;
+
         try {
             TabletServerLock serverLock(server);
             Table * table = server->getTable(config->tableName);
@@ -522,26 +527,24 @@ public:
 
             assert(tablet->getState() == TABLET_LOG_REPLAYING);
 
+            // Move to next load state
+            callbacks = tablet->setState(TABLET_CONFIG_SAVING);
+
             // Start the config save
             server->saveConfig_async(new ConfigSavedCb(server, config),
                                      getTabletConfig(server, table, tablet));
-
-            // Move to next load state
-            warp::Runnable * callbacks = tablet->setState(TABLET_CONFIG_SAVING);
-
-            tableLock.unlock();
-            serverLock.unlock();
-
-            // Issue load state callbacks, if any
-            if(callbacks)
-                callbacks->run();
         }
         catch(std::exception const & ex) { fail(ex); }
         catch(...) { fail(std::runtime_error("unknown exception")); }
+
+        // Issue load state callbacks, if any
+        if(callbacks)
+            callbacks->run();
+
         delete this;
     }
 
-    void error(std::exception const & err)
+    void error(std::exception const & err) throw()
     {
         fail(err);
         delete this;
@@ -571,8 +574,10 @@ public:
     ConfigLoadedCb(TabletServer * server, std::string const & tabletName) :
         server(server), tabletName(tabletName) {}
 
-    void done(TabletConfigCPtr const & config)
+    void done(TabletConfigCPtr const & config) throw()
     {
+        warp::Runnable * callbacks = 0;
+
         try {
             std::string tableName;
             warp::IntervalPoint<std::string> lastRow;
@@ -589,12 +594,11 @@ public:
             tablet->onConfigLoaded(config);
 
             // Move to the next load state
-            TabletState nextState;
             if(!config->log.empty())
             {
                 // The config specifies a log directory.  We need to
                 // replay it.
-                nextState = TABLET_LOG_REPLAYING;
+                callbacks = tablet->setState(TABLET_LOG_REPLAYING);
 
                 // Start the log replay
                 server->replayLogs_async(new LogReplayedCb(server, config),
@@ -603,29 +607,24 @@ public:
             else
             {
                 // No log directory.  Move on to config save.
-                nextState = TABLET_CONFIG_SAVING;
+                callbacks = tablet->setState(TABLET_CONFIG_SAVING);
 
                 // Start the config save
                 server->saveConfig_async(new ConfigSavedCb(server, config),
                                          getTabletConfig(server, table, tablet));
             }
-
-            // Move to next load state
-            warp::Runnable * callbacks = tablet->setState(nextState);
-
-            tableLock.unlock();
-            serverLock.unlock();
-
-            // Issue load state callbacks, if any
-            if(callbacks)
-                callbacks->run();
         }
         catch(std::exception const & ex) { fail(ex); }
         catch(...) { fail(std::runtime_error("unknown exception")); }
+        
+        // Issue load state callbacks, if any
+        if(callbacks)
+            callbacks->run();
+
         delete this;
     }
 
-    void error(std::exception const & err)
+    void error(std::exception const & err) throw()
     {
         fail(err);
         delete this;
