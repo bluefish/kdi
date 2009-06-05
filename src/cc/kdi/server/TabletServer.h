@@ -208,10 +208,12 @@ private:                        // Call without locks
     void replayLogs_async(warp::Callback * cb, std::string const & tabletName,
                           std::string const & logDir);
 
+public:
     /// Save the given TabletConfig and issue a callback when it is
     /// durable.
     void saveConfig_async(warp::Callback * cb, TabletConfigCPtr const & config);
 
+private:
     /// Load the fragments named in the given Tablet config.  The
     /// callback is given a vector of handles to the loaded fragments.
     /// The loaded fragment list may not correspond 1:1 with the

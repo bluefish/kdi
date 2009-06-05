@@ -124,6 +124,89 @@ namespace {
         return p;
     }
 
+    class DeferredConfigSaveCb
+        : public warp::Callback
+    {
+    public:
+        DeferredConfigSaveCb(TabletServer * server,
+                             std::string const & tabletName,
+                             PendingFileCPtr const & pending) :
+            server(server),
+            tabletName(tabletName),
+            pending(pending)
+        {
+        }
+        
+        virtual void done() throw()
+        {
+            try {
+                std::string tableName;
+                warp::IntervalPoint<std::string> lastRow;
+                decodeTabletName(tabletName, tableName, lastRow);
+
+                TabletServerLock serverLock(server);
+                Table * table = server->getTable(tableName);
+                TableLock tableLock(table);
+                Tablet * tablet = table->getTablet(lastRow);
+
+                server->saveConfig_async(
+                    new HoldPendingCb(pending),
+                    getTabletConfig(server, table, tablet));
+            }
+            catch(std::exception const & err) { fail(err); }
+            catch(...) { fail(std::runtime_error("unknown exception")); }
+            delete this;
+        }
+
+        virtual void error(std::exception const & err) throw()
+        {
+            fail(err);
+            delete this;
+        }
+
+    private:
+        void fail(std::exception const & err)
+        {
+            log("ERROR DeferredConfigSaveCb: %s", err.what());
+        }
+
+    private:
+        TabletServer *   const server;
+        std::string      const tabletName;
+        PendingFileCPtr  const pending;
+    };
+
+    // Schedule a Tablet for a config save, holding the pending file
+    // until the config is durable.  If the Tablet is currently still
+    // loading, the config save will be deferred until the Tablet is
+    // allowed to save.
+    void scheduleConfigSave(TabletServer * server,
+                            Table * table,
+                            Tablet * tablet,
+                            PendingFileCPtr const & pending)
+    {
+        if(tablet->getState() < TABLET_CONFIG_SAVING)
+        {
+            // Defer save until later
+            tablet->deferUntilState(
+                new DeferredConfigSaveCb(
+                    server,
+                    encodeTabletName(
+                        table->getSchema().tableName,
+                        tablet->getLastRow()),
+                    pending),
+                TABLET_CONFIG_SAVING);
+        }
+        else
+        {
+            // Save now
+            server->saveConfig_async(
+                new HoldPendingCb(pending),
+                getTabletConfig(server, table, tablet));
+        }
+    }
+                        
+
     class SchemaLoader
         : public warp::Runnable
     {
@@ -701,9 +784,7 @@ public:
         for(std::vector<Tablet *>::const_iterator i = updatedTablets.begin();
             i != updatedTablets.end(); ++i)
         {
-            server->saveConfig_async(
-                new HoldPendingCb(outFn),
-                getTabletConfig(server, table, *i));
+            scheduleConfigSave(server, table, *i, outFn);
         }
 
         // Kick compactor
@@ -716,6 +797,7 @@ private:
     size_t schemaVersion;
     int groupIndex;
 };
+
 
 //----------------------------------------------------------------------------
 // TabletServer::SInput
@@ -848,9 +930,7 @@ public:
             for(std::vector<Tablet *>::const_iterator j = updatedTablets.begin();
                 j != updatedTablets.end(); ++j)
             {
-                server->saveConfig_async(
-                    new HoldPendingCb(i->second),
-                    getTabletConfig(server, table, *j));
+                scheduleConfigSave(server, table, *j, i->second);
             }
         }
     }
