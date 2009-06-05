@@ -204,21 +204,20 @@ bool Scanner::startMerge(lock_t & scannerLock)
 //----------------------------------------------------------------------------
 // Scanner -- FragmentEventListener
 //----------------------------------------------------------------------------
-void Scanner::onNewFragment(
-    Interval<string> const & r,
-    Fragment const * f)
+void Scanner::onFragmentEvent(
+    Interval<string> const & affectedRows,
+    FragmentEventType type)
 {
-    // If we're using SCAN_LATEST_ROW_TXN, we should reset the
-    // merge if the range overlaps.
+    if(type == FET_NEW_FRAGMENT)
+    {
+        // If we're using SCAN_LATEST_ROW_TXN, we should reset the
+        // merge if the range overlaps.
 
-    // For now, we don't care.
-}
+        // For now, we don't care.
 
-void Scanner::onReplaceFragments(
-    Interval<string> const & r,
-    vector<Fragment const *> const & f1,
-    Fragment const * f2)
-{
+        return;
+    }
+
     lock_t scannerLock(scannerMutex);
         
     // If we're doing read isolation, we'll need some smartness
@@ -226,7 +225,7 @@ void Scanner::onReplaceFragments(
     // the same row.
 
     // Check to see if we care
-    if(!merge || !r.overlaps(rows))
+    if(!merge || !affectedRows.overlaps(rows))
         return;
 
     // Clear the merge and reopen it later

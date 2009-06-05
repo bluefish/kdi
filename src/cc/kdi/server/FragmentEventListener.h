@@ -29,6 +29,11 @@
 namespace kdi {
 namespace server {
 
+    enum FragmentEventType {
+        FET_NEW_FRAGMENT,
+        FET_FRAGMENTS_REPLACED,
+    };
+
     class FragmentEventListener;
 
 } // namespace server
@@ -40,18 +45,9 @@ namespace server {
 class kdi::server::FragmentEventListener
 {
 public:
-    /// Event: a fragment 'f' has been created for the range 'r'.
-    virtual void onNewFragment(
-        warp::Interval<std::string> const & r,
-        Fragment const * f) = 0;
-
-    /// Event: for the range 'r', all of the fragments in 'f1' have
-    /// been replaced by fragment 'f2'.  Note that 'f2' may be null,
-    /// meaning that the 'f1' fragments have simply been removed.
-    virtual void onReplaceFragments(
-        warp::Interval<std::string> const & r,
-        std::vector<Fragment const *> const & f1,
-        Fragment const * f2) = 0;
+    virtual void onFragmentEvent(
+        warp::Interval<std::string> const & affectedRows,
+        FragmentEventType type) = 0;
 
 protected:
     ~FragmentEventListener() {}

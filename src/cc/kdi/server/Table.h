@@ -22,6 +22,7 @@
 #define KDI_SERVER_TABLE_H
 
 #include <kdi/server/Fragment.h>
+#include <kdi/server/FragmentEventListener.h>
 #include <kdi/server/TableSchema.h>
 #include <kdi/server/CommitRing.h>
 #include <warp/interval.h>
@@ -152,6 +153,16 @@ public:                         // Must hold TableLock
 
     void addLoadedFragments(warp::Interval<std::string> const & rows,
                             std::vector<FragmentCPtr> const & frags);
+
+    void issueFragmentEvent(warp::Interval<std::string> const & affectedRows,
+                            FragmentEventType type)
+    {
+        for(fel_set::const_iterator i = fragmentListeners.begin();
+            i != fragmentListeners.end(); ++i)
+        {
+            (*i)->onFragmentEvent(affectedRows, type);
+        }
+    }
 
 private:
     void getAllMemFrags(std::vector<FragmentCPtr> const & out);

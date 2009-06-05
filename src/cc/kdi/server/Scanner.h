@@ -124,15 +124,9 @@ public:
 
 public: // FragmentEventListener
 
-    virtual void onNewFragment(
-        warp::Interval<std::string> const & r,
-        Fragment const * f);
-
-    virtual void onReplaceFragments(
-        warp::Interval<std::string> const & r,
-        std::vector<Fragment const *> const & f1,
-        Fragment const * f2);
-
+    virtual void onFragmentEvent(
+        warp::Interval<std::string> const & affectedRows,
+        FragmentEventType type);
 
 public: // TabletEventListener
 

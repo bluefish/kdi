@@ -692,7 +692,16 @@ public:
             rowCoverage,
             updatedTablets);
 
-        /// Hold on to pending file reference until all configs are saved
+        // Notify event listeners
+        assert(!rowCoverage.empty());
+        table->issueFragmentEvent(
+            warp::makeInterval(
+                rowCoverage.front(),
+                rowCoverage.back(),
+                true, true),
+            FET_FRAGMENTS_REPLACED);
+
+        // Hold on to pending file reference until all configs are saved
         for(std::vector<Tablet *>::const_iterator i = updatedTablets.begin();
             i != updatedTablets.end(); ++i)
         {
@@ -834,7 +843,12 @@ public:
                 j->second, newFragment, groupIndex, i->first,
                 updatedTablets);
 
-            /// Hold on to pending file reference until all configs are saved
+            // Notify event listeners
+            table->issueFragmentEvent(
+                i->first,
+                FET_FRAGMENTS_REPLACED);
+
+            // Hold on to pending file reference until all configs are saved
             for(std::vector<Tablet *>::const_iterator j = updatedTablets.begin();
                 j != updatedTablets.end(); ++j)
             {
@@ -1026,6 +1040,8 @@ void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
             }
             else if(tablet->getState() > TABLET_ACTIVE)
             {
+                // xxx - could defer and retry for unloading tablets
+
                 // Tablet in an unloading or error state.
                 using namespace ex;
                 raise<RuntimeError>(
@@ -1171,6 +1187,15 @@ void TabletServer::apply_async(
         
         // Add the new fragment to the table's active list
         table->addMemoryFragment(commit.cells);
+
+        // Notify event listeners
+        assert(!rows.empty());
+        table->issueFragmentEvent(
+            warp::makeInterval(
+                rows.front().toString(),
+                rows.back().toString(),
+                true, true),
+            FET_NEW_FRAGMENT);
 
         tableLock.unlock();
 
