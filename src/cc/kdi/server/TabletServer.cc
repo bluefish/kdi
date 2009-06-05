@@ -110,17 +110,14 @@ namespace {
                                      Table const * table,
                                      Tablet * tablet)
     {
-        /// xxx This is nearly the stupidest way we could do this.
+        TabletConfigPtr p(new TabletConfig);
+        
+        p->tableName = table->getSchema().tableName;
+        p->rows = tablet->getRows();
+        tablet->getConfigFragments(*p);
+        p->log = server->getLogDir();
+        p->location = server->getLocation();
 
-        std::vector<Tablet *> v;
-        v.push_back(tablet);
-        
-        TabletConfigVecCPtr configs = table->getTabletConfigs(
-            v,
-            server->getLogDir(),
-            server->getLocation());
-        
-        TabletConfigCPtr p(new TabletConfig((*configs)[0]));
         return p;
     }
 

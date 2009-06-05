@@ -63,8 +63,6 @@ namespace server {
     typedef boost::shared_ptr<TableSchema const> TableSchemaCPtr;
     typedef boost::shared_ptr<TabletConfig const> TabletConfigCPtr;
 
-    typedef boost::shared_ptr<std::vector<TabletConfig> const> TabletConfigVecCPtr;
-
 } // namespace server
 } // namespace kdi
 

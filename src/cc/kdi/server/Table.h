@@ -58,9 +58,6 @@ namespace server {
     class FragmentWriterFactory;
     class RangeFragmentMap;
     class TabletConfig;
-    
-    typedef std::vector<TabletConfig> TabletConfigVec;
-    typedef boost::shared_ptr<TabletConfigVec> TabletConfigVecPtr;
 
 } // namespace server
 
@@ -204,11 +201,6 @@ public:
         int groupIndex,
         warp::Interval<std::string> const & rowRange,
         std::vector<Tablet *> & updatedTablets);
-
-    TabletConfigVecPtr getTabletConfigs(
-        std::vector<Tablet *> & selectedTablets,
-        std::string const & logDir,
-        std::string const & location) const;
 
 private:
     class TabletLt;

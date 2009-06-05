@@ -53,10 +53,6 @@ namespace server {
         }
     };
 
-    typedef std::vector<TabletConfig> TabletConfigVec;
-    typedef boost::shared_ptr<TabletConfigVec> TabletConfigVecPtr;
-    typedef boost::shared_ptr<TabletConfigVec const> TabletConfigVecCPtr;
-
     typedef boost::shared_ptr<TabletConfig> TabletConfigPtr;
     typedef boost::shared_ptr<TabletConfig const> TabletConfigCPtr;
 

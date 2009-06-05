@@ -304,27 +304,6 @@ void Table::replaceDiskFragments(
         schema.tableName, updatedTablets.size() - origSz);
 }
 
-TabletConfigVecPtr Table::getTabletConfigs(
-    std::vector<Tablet *> & selectedTablets,
-    std::string const & logDir,
-    std::string const & location) const
-{
-    TabletConfigVecPtr p(new TabletConfigVec(selectedTablets.size()));
-
-    TabletConfigVec::iterator o = p->begin();
-    for(std::vector<Tablet *>::const_iterator i = selectedTablets.begin();
-        i != selectedTablets.end(); ++i, ++o)
-    {
-        o->tableName = schema.tableName;
-        o->rows = (*i)->getRows();
-        (*i)->getConfigFragments(*o);
-        o->log = logDir;
-        o->location = location;
-    }
-
-    return p;
-}
-
 Table::Table(std::string const & tableName) :
     schemaVersion(0)
 {

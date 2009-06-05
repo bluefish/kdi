@@ -23,6 +23,7 @@
 #include <kdi/server/FragmentMerge.h>
 #include <kdi/server/FragmentWriter.h>
 #include <kdi/server/DirectBlockCache.h>
+#include <kdi/server/PendingFile.h>
 #include <kdi/scan_predicate.h>
 #include <warp/timer.h>
 #include <warp/log.h>
@@ -61,7 +62,10 @@ bool Serializer::doWork()
     while(merge.copyMerged(size_t(-1), size_t(-1), collector))
     {
         if(isCancelled())
+        {
+            log("Serializer: cancelled");
             return false;
+        }
     }
 
     size_t outSz = work->output->getDataSize();

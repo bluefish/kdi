@@ -121,7 +121,10 @@ bool Compactor::compact(TableSchema const & schema, int groupIndex,
         while(merge.copyMerged(size_t(-1), size_t(-1), *writer))
         {
             if(isCancelled())
+            {
+                log("Compactor: cancelled");
                 return false;
+            }
         }
 
         // See if we emitted any new cells for this range
