@@ -832,7 +832,7 @@ public:
                 continue;
 
             FragmentCPtr newFragment;
-            if(!i->second)
+            if(i->second)
             {
                 newFragment = server->bits.fragmentLoader->load(
                     i->second->getName());

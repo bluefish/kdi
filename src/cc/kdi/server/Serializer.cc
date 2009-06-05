@@ -70,7 +70,7 @@ bool Serializer::doWork()
     PendingFileCPtr outputFn = work->output->finish();
 
     log("Serializer: done, output %s, %d row(s), %sB, %.3f sec, %sB/s",
-        outputFn, rows.size(), sizeString(outSz), dt,
+        outputFn->getName(), rows.size(), sizeString(outSz), dt,
         sizeString(size_t(outSz/dt)));
 
     work->done(rows, outputFn);

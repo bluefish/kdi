@@ -37,6 +37,8 @@ using namespace kdi;
 using namespace kdi::server;
 using namespace ex;
 
+using warp::log;
+
 //----------------------------------------------------------------------------
 // Table::TabletLt
 //----------------------------------------------------------------------------
@@ -209,6 +211,10 @@ void Table::replaceMemFragments(
     std::vector<std::string> const & rowCoverage,
     std::vector<Tablet *> & updatedTablets)
 {
+    log("Table %s: replace %d mem frag(s) with %s",
+        schema.tableName, oldFragments.size(),
+        newFragment ? newFragment->getFilename() : "(NOTHING)");
+
     // Make sure the oldFragment list is at the head of the memory
     // chain
     frag_vec & memFrags = groupMemFrags[groupIndex];
@@ -223,6 +229,7 @@ void Table::replaceMemFragments(
                    memFrags.begin() + oldFragments.size());
 
     // Add the new fragment to all covered tablets
+    size_t origSz = updatedTablets.size();
     warp::IntervalPointOrder<warp::less> lt;
     std::vector<std::string>::const_iterator ri = rowCoverage.begin();
     while(ri != rowCoverage.end())
@@ -259,6 +266,9 @@ void Table::replaceMemFragments(
                                   lt);
         }
     }
+
+    log("Table %s: updated %d tablet(s)",
+        schema.tableName, updatedTablets.size() - origSz);
 }
 
 void Table::replaceDiskFragments(
@@ -268,6 +278,12 @@ void Table::replaceDiskFragments(
     warp::Interval<std::string> const & rowRange,
     std::vector<Tablet *> & updatedTablets)
 {
+    log("Table %s: replace %d disk frag(s) with %s",
+        schema.tableName, oldFragments.size(),
+        newFragment ? newFragment->getFilename() : "(NOTHING)");
+
+    size_t origSz = updatedTablets.size();
+
     tablet_vec::const_iterator end = std::upper_bound(
         tablets.begin(), tablets.end(),
         rowRange.getUpperBound(),
@@ -283,6 +299,9 @@ void Table::replaceDiskFragments(
         updatedTablets.push_back(*i);
         (*i)->replaceFragments(oldFragments, newFragment, groupIndex);
     }
+
+    log("Table %s: updated %d tablet(s)",
+        schema.tableName, updatedTablets.size() - origSz);
 }
 
 TabletConfigVecPtr Table::getTabletConfigs(

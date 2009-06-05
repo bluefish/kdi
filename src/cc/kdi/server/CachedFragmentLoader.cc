@@ -52,6 +52,12 @@ FragmentCPtr CachedFragmentLoader::load(std::string const & filename)
 
         // Reset the weak pointer
         wptr = ptr;
+
+        log("CachedFragmentLoader: load %s", filename);
+    }
+    else
+    {
+        log("CachedFragmentLoader: cached load %s", filename);
     }
 
     // Purge stale cache entries if necessary
