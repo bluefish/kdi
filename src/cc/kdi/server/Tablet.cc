@@ -22,11 +22,16 @@
 #include <kdi/server/TableSchema.h>
 #include <kdi/server/TabletConfig.h>
 #include <warp/Callback.h>
+#include <warp/log.h>
+#include <warp/strutil.h>
 #include <ex/exception.h>
 #include <memory>
+#include <limits>
+#include <string>
+#include <algorithm>
 
-using namespace kdi;
 using namespace kdi::server;
+using warp::log;
 
 namespace {
 
@@ -67,6 +72,14 @@ Tablet::Tablet(warp::IntervalPoint<std::string> const & lastRow) :
 
 Tablet::~Tablet()
 {
+}
+
+std::string Tablet::getTabletName() const
+{
+    if(lastRow.isFinite())
+        return warp::reprString(lastRow.getValue());
+    else
+        return "END";
 }
 
 void Tablet::applySchema(TableSchema const & schema)
@@ -170,4 +183,147 @@ warp::Runnable * Tablet::setState(TabletState state)
     }
 
     return r.release();
+}
+
+size_t Tablet::getPartialDataSize(
+    warp::Interval<std::string> const & rows) const
+{
+    size_t totalSz = 0;
+    
+    for(fragvec_vec::const_iterator i = fragGroups.begin();
+        i != fragGroups.end(); ++i)
+    {
+        for(frag_vec::const_iterator j = i->begin();
+            j != i->end(); ++j)
+        {
+            totalSz += (*j)->getPartialDataSize(rows);
+        }
+    }
+
+    return totalSz;
+}
+
+namespace {
+
+    inline void
+    midstr(char const * a, char const * aEnd,
+           char const * b, char const * bEnd,
+           std::string & out)
+    {
+        for(;;)
+        {
+            int av = a != aEnd ? uint8_t(*a++) : 0;
+            int bv = b != bEnd ? uint8_t(*b++) : 256;
+            int mv = (av + bv) / 2;
+            out += char(mv);
+            if(mv != av)
+                break;
+        }
+    }
+
+    inline
+    warp::IntervalPoint<std::string> bisectInterval(
+        warp::IntervalPoint<std::string> const & lo,
+        warp::IntervalPoint<std::string> const & hi)
+    {
+        std::string const & a = lo.getValue();
+        std::string const & b = hi.getValue();
+
+        size_t offset = 0;
+        if(lo.isFinite() && hi.isFinite())
+        {
+            // Offset = first mismatch position
+            if(a.size() < b.size())
+                offset = std::mismatch(a.begin(), a.end(), b.begin()).first
+                    - a.begin();
+            else
+                offset = std::mismatch(b.begin(), b.end(), a.begin()).first
+                    - b.begin();
+        }
+
+        std::string m = a.substr(0,offset);
+        midstr(a.c_str() + offset, a.c_str() + a.size(),
+               b.c_str() + offset, b.c_str() + b.size(),
+               m);
+
+        return warp::IntervalPoint<std::string>(
+            m, warp::PT_INCLUSIVE_UPPER_BOUND);
+    }
+
+}
+
+Tablet * Tablet::maybeSplit()
+{
+    if(state != TABLET_ACTIVE)
+        return 0;
+
+    size_t totalSz = getPartialDataSize(getRows());
+
+    size_t const TABLET_SPLIT_THRESHOLD = size_t(200) << 20;
+    if(totalSz < TABLET_SPLIT_THRESHOLD)
+        return 0;
+
+    log("Splitting tablet: %s", getTabletName());
+
+    typedef warp::Interval<std::string> ival_t;
+    typedef warp::IntervalPoint<std::string> ival_pt_t;
+
+    ival_pt_t lo = getFirstRow();
+    ival_pt_t hi = getLastRow();
+
+    ival_pt_t bestSplit;
+    size_t minDiff = std::numeric_limits<size_t>::max();
+
+    size_t const MAX_ITERATIONS = 100;
+    for(size_t i = 0; i < MAX_ITERATIONS; ++i)
+    {
+        ival_pt_t mid = bisectInterval(lo, hi);
+
+        size_t loSz = getPartialDataSize(ival_t(getFirstRow(), mid));
+        size_t hiSz = getPartialDataSize(ival_t(mid.getAdjacentComplement(),
+                                                getLastRow()));
+
+        size_t diff;
+        if(loSz < hiSz)
+        {
+            lo = mid.getAdjacentComplement();
+            diff = hiSz - loSz;
+        }
+        else
+        {
+            hi = mid;
+            diff = loSz - hiSz;
+        }
+
+        log("Iter %d: mid = %s, loSz = %d (%.2f%%), hiSz = %d (%.2f%%), "
+            "diff = %d (%.3f%%)",
+            i, warp::reprString(mid.getValue()),
+            loSz, loSz*100.0/totalSz,
+            hiSz, hiSz*100.0/totalSz,
+            diff, diff*100.0/totalSz);
+
+        if(diff < minDiff)
+        {
+            minDiff = diff;
+            bestSplit = mid;
+
+            if(diff < totalSz * 0.002)
+                break;
+        }
+    }
+
+    if(minDiff > totalSz * 0.30)
+    {
+        log("Couldn't find a good split");
+        return 0;
+    }
+
+    Tablet * newTablet = new Tablet(bestSplit);
+    newTablet->firstRow = getFirstRow();
+    newTablet->state = TABLET_ACTIVE;
+    newTablet->fragGroups = this->fragGroups;
+
+    this->firstRow = bestSplit.getAdjacentComplement();
+
+    return newTablet;
 }

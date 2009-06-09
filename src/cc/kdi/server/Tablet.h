@@ -69,6 +69,8 @@ public:
     explicit Tablet(warp::IntervalPoint<std::string> const & lastRow);
     ~Tablet();
 
+    std::string getTabletName() const;
+
     warp::IntervalPoint<std::string> const & getFirstRow() const
     {
         return firstRow;
@@ -148,6 +150,15 @@ public:
     /// issued because of the state change, a Runnable object will be
     /// returned.  The caller must ensure that the object is run.
     warp::Runnable * setState(TabletState state);
+
+    /// Decide if the Tablet is large enough to split.  If so, split
+    /// off the lower half of the Tablet and return it.
+    Tablet * maybeSplit();
+
+    /// Get the partial data size from all fragments in this tablet
+    /// over the given row range.
+    size_t getPartialDataSize(
+        warp::Interval<std::string> const & rows) const;
 
 private:
     typedef std::vector<FragmentCPtr> frag_vec;
