@@ -58,6 +58,12 @@ public:
     /// Get the approximate amount of memory used by this buffer.
     size_t getDataSize() const { return data.size(); }
 
+    size_t getPartialDataSize(
+        warp::Interval<std::string> const & rows) const
+    {
+        return getDataSize();
+    }
+
     /// Get the packed cell buffer.
     warp::StringRange getPacked() const { return data; }
 

@@ -54,6 +54,12 @@ public:                         // Fragment API
 
     virtual size_t getDataSize() const { return dataSz; }
 
+    virtual size_t getPartialDataSize(
+        warp::Interval<std::string> const & rows) const
+    {
+        return getDataSize();
+    }
+
     virtual void getColumnFamilies(
         std::vector<std::string> & families) const
     {

@@ -46,6 +46,20 @@ size_t RestrictedFragment::getDataSize() const
     return base->getDataSize();
 }
 
+size_t RestrictedFragment::getPartialDataSize(
+    warp::Interval<std::string> const & rows) const
+{
+    size_t baseSz = base->getPartialDataSize(rows);
+    
+    std::vector<std::string> f;
+    base->getColumnFamilies(f);
+    size_t nBase = f.size();
+    this->getColumnFamilies(f);
+    size_t nRestricted = f.size();
+
+    return baseSz * nRestricted / nBase;
+}
+
 void RestrictedFragment::getColumnFamilies(
     std::vector<std::string> & families) const
 {

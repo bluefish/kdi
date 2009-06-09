@@ -30,7 +30,6 @@
 #include <kdi/scan_predicate.h>
 #include <kdi/server/Fragment.h>
 #include <kdi/local/table_types.h>
-#include <kdi/local/index_cache.h>
 #include <oort/fileio.h>
 
 #include <boost/enable_shared_from_this.hpp>
@@ -62,7 +61,6 @@ class kdi::server::DiskFragment
 {
     std::string loadPath;       // Actual path to file
     std::string filename;       // Logical name (relative to data root)
-    kdi::local::CacheRecord indexRec;
     size_t dataSize;
 
 public:
@@ -71,6 +69,9 @@ public:
 
     virtual std::string getFilename() const;
     virtual size_t getDataSize() const { return dataSize; };
+
+    virtual size_t getPartialDataSize(
+        warp::Interval<std::string> const & rows) const;
 
     virtual void getColumnFamilies(
         std::vector<std::string> & families) const;

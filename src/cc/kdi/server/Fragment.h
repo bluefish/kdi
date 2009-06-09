@@ -22,6 +22,7 @@
 #define KDI_SERVER_FRAGMENT_H
 
 #include <warp/string_range.h>
+#include <warp/interval.h>
 #include <boost/shared_ptr.hpp>
 #include <memory>
 #include <string>
@@ -59,8 +60,16 @@ public:
     /// Get the name of the file backing this Fragment.
     virtual std::string getFilename() const = 0;
 
-    /// Get the approximate size of the data stored in this fragment
+    /// Get the size of all the data stored in this fragment.  This
+    /// should be close to the size of the file on disk backing this
+    /// fragment (if any).
     virtual size_t getDataSize() const = 0;
+
+    /// Get the size of the data in this fragment, restricted to the
+    /// given rows.  This should approximate the amount of that would
+    /// be returned for a scan over the given row range.
+    virtual size_t getPartialDataSize(
+        warp::Interval<std::string> const & rows) const = 0;
 
     /// Get the list of column families contained in this Fragment.
     /// The returned families are in no particular order.

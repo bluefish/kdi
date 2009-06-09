@@ -26,6 +26,7 @@
 #include <kdi/marshal/cell_block.h>
 #include <kdi/local/index_cache.h>
 #include <kdi/local/table_types.h>
+#include <kdi/local/index_cache.h>
 #include <kdi/CellKey.h>
 #include <oort/fileio.h>
 #include <warp/file.h>
@@ -36,6 +37,7 @@
 #include <warp/log.h>
 #include <warp/util.h>
 #include <ex/exception.h>
+#include <algorithm>
 
 using namespace std;
 using namespace ex;
@@ -280,7 +282,6 @@ DiskBlock::makeReader(ScanPredicate const & pred) const
 DiskFragment::DiskFragment(std::string const & filename) :
     loadPath(filename),
     filename(filename),
-    indexRec(IndexCache::getGlobal(), loadPath),
     dataSize(fs::filesize(loadPath))
 {
 }
@@ -289,7 +290,6 @@ DiskFragment::DiskFragment(std::string const & loadPath,
                            std::string const & filename) :
     loadPath(loadPath),
     filename(filename),
-    indexRec(IndexCache::getGlobal(), loadPath),
     dataSize(fs::filesize(loadPath))
 {
 }
@@ -299,11 +299,31 @@ std::string DiskFragment::getFilename() const
     return filename;
 }
 
+size_t DiskFragment::getPartialDataSize(
+    warp::Interval<std::string> const & rows) const
+{
+    CacheRecord indexRec(IndexCache::getGlobal(), loadPath);
+    BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
+
+    RowLt lt;
+    IndexEntryV1 const * lo = std::lower_bound(
+        index->blocks.begin(), index->blocks.end(),
+        rows.getLowerBound(), lt);
+    IndexEntryV1 const * hi = std::upper_bound(
+        lo, index->blocks.end(),
+        rows.getUpperBound(), lt);
+
+    size_t nBlocks = std::max(hi - lo, ptrdiff_t(1));
+    return dataSize * nBlocks / index->blocks.size();
+}
+
 void DiskFragment::getColumnFamilies(
     std::vector<std::string> & families) const
 {
-    families.clear();
+    CacheRecord indexRec(IndexCache::getGlobal(), loadPath);
     BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
+
+    families.clear();
     for(warp::StringOffset const * i = index->colFamilies.begin();
         i != index->colFamilies.end(); ++i)
     {
@@ -319,6 +339,7 @@ FragmentCPtr DiskFragment::getRestricted(
 
 size_t DiskFragment::nextBlock(ScanPredicate const & pred, size_t minBlock) const
 {
+    CacheRecord indexRec(IndexCache::getGlobal(), loadPath);
     BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
 
     uint32_t colFamilyMask = 0;
@@ -398,8 +419,10 @@ nextBlock:
 
 std::auto_ptr<FragmentBlock> DiskFragment::loadBlock(size_t blockAddr) const 
 {
-    warp::FilePtr fp(File::input(loadPath));
+    CacheRecord indexRec(IndexCache::getGlobal(), loadPath);
     BlockIndexV1 const * index = indexRec.cast<BlockIndexV1>();
+
+    warp::FilePtr fp(File::input(loadPath));
     IndexEntryV1 const & idx = index->blocks[blockAddr];
     return std::auto_ptr<FragmentBlock>(new DiskBlock(fp, idx));
 }
