@@ -234,7 +234,7 @@ void Table::replaceMemFragments(
     std::vector<std::string>::const_iterator ri = rowCoverage.begin();
     while(ri != rowCoverage.end())
     {
-        tablet_vec::const_iterator ti = std::lower_bound(
+        tablet_vec::iterator ti = std::lower_bound(
             tablets.begin(), tablets.end(), *ri, TabletLt());
 
         if(ti == tablets.end())
@@ -251,6 +251,22 @@ void Table::replaceMemFragments(
             // Found tablet containing row.  Add the new fragment to
             // it.
             (*ti)->addFragment(newFragment, groupIndex);
+
+            // Split tablet if necessary
+            Tablet * newTablet = (*ti)->maybeSplit();
+            if(newTablet)
+            {
+                // We made a new Tablet.  The split tablet should be
+                // the lower half of the original Tablet, so insert it
+                // before the original Tablet.
+                ti = tablets.insert(ti, newTablet);
+
+                // Track the new Tablet as well.
+                updatedTablets.push_back(*ti);
+
+                // Move iterator back to original Tablet.
+                ++ti;
+            }
             
             // Move row pointer past end of this tablet
             ri = std::lower_bound(ri, rowCoverage.end(),
