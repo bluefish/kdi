@@ -35,6 +35,7 @@
 #include <string>
 #include <vector>
 #include <exception>
+#include <set>
 #include <tr1/unordered_map>
 
 namespace kdi {
@@ -192,7 +193,7 @@ public:                         // No lock necessary
     std::string const & getLogDir() const { return bits.serverLogDir; }
     std::string const & getLocation() const { return bits.serverLocation; }
 
-private:                        // Call without locks
+public:                         // Call without locks
     /// Load the table schema for a Table.  The callback is given the
     /// loaded TabletSchema object.
     void loadSchema_async(LoadSchemaCb * cb, std::string const & tableName);
@@ -208,12 +209,10 @@ private:                        // Call without locks
     void replayLogs_async(warp::Callback * cb, std::string const & tabletName,
                           std::string const & logDir);
 
-public:
     /// Save the given TabletConfig and issue a callback when it is
     /// durable.
     void saveConfig_async(warp::Callback * cb, TabletConfigCPtr const & config);
 
-private:
     /// Load the fragments named in the given Tablet config.  The
     /// callback is given a vector of handles to the loaded fragments.
     /// The loaded fragment list may not correspond 1:1 with the
@@ -229,6 +228,11 @@ public:                         // Must hold TabletServerLock
 
     /// Get the named Table or throw TableNotLoadedError.
     Table * getTable(strref_t tableName) const;
+
+    void addPendingSerialization(int64_t pendingTxn);
+
+public:                         // Call without locks
+    void onSerializationStable(int pendingTxn);
 
 private:                        // No locks necessary
     void wakeSerializer();
@@ -258,6 +262,7 @@ private:
     class CInput;
 
     typedef std::tr1::unordered_map<std::string, Table *> table_map;
+    typedef std::multiset<int64_t> txn_set;
 
 private:
     Bits const bits;
@@ -265,6 +270,7 @@ private:
     CellBufferAllocator cellAllocator;
     TransactionCounter txnCounter;
     table_map tableMap;
+    txn_set pendingTxns;
 
     warp::SyncQueue<Commit> logQueue;
 

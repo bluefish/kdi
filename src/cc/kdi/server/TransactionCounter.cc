@@ -33,62 +33,81 @@ using namespace ex;
 class TransactionCounter::CallbackRunner
     : public warp::Runnable
 {
-    int64_t lastDurable;
     std::vector<txn_cb> callbacks;
+    int64_t lastDurable;
+    int64_t lastStable;
             
 public:
-    explicit CallbackRunner(int64_t lastDurable) :
-        lastDurable(lastDurable) {}
+    CallbackRunner(std::vector<txn_cb> const & callbacks,
+                   int64_t lastDurable,
+                   int64_t lastStable) :
+        callbacks(callbacks),
+        lastDurable(lastDurable),
+        lastStable(lastStable)
+    {
+    }
             
     void run() throw()
     {
         for(std::vector<txn_cb>::const_iterator i = callbacks.begin();
             i != callbacks.end(); ++i)
         {
-            i->second->done(i->first, lastDurable);
+            i->second->done(i->first, lastDurable, lastStable);
         }
         delete this;
     }
-
-    void add(txn_cb const & x)
-    {
-        callbacks.push_back(x);
-    }
 };
 
+//----------------------------------------------------------------------------
+// TransactionCounter::CbHeap
+//----------------------------------------------------------------------------
+void TransactionCounter::CbHeap::deferUntil(TransactionCb * cb, int64_t waitTxn)
+{
+    assert(cb);
+    if(waitTxn <= lastTxn)
+    {
+        raise<ValueError>("wait for past txn: wait=%d, last=%d",
+                          waitTxn, lastTxn);
+    }
+    cbHeap.push(txn_cb(waitTxn, cb));
+}
+
+std::vector<TransactionCounter::txn_cb>
+TransactionCounter::CbHeap::setLast(int64_t txn)
+{
+    std::vector<txn_cb> r;
+
+    assert(txn > lastTxn);
+    lastTxn = txn;
+
+    while(!cbHeap.empty() && cbHeap.top().first <= lastTxn)
+    {
+        r.push_back(cbHeap.top());
+        cbHeap.pop();
+    }
+    return r;
+}
 
 //----------------------------------------------------------------------------
 // TransactionCounter
 //----------------------------------------------------------------------------
 TransactionCounter::TransactionCounter() :
-    lastCommit(0), lastDurable(0)
+    lastCommit(0), durable(0), stable(0)
 {
 }
 
 warp::Runnable * TransactionCounter::setLastDurable(int64_t txn)
 {
-    if(txn > lastDurable)
-        lastDurable = txn;
-
-    if(cbHeap.empty() || cbHeap.top().first > lastDurable)
+    std::vector<txn_cb> cbs = durable.setLast(txn);
+    if(cbs.empty())
         return 0;
-
-    std::auto_ptr<CallbackRunner> r(new CallbackRunner(lastDurable));
-    while(!cbHeap.empty() && cbHeap.top().first <= lastDurable)
-    {
-        r->add(cbHeap.top());
-        cbHeap.pop();
-    }
-    return r.release();
+    return new CallbackRunner(cbs, durable.getLast(), stable.getLast());
 }
-        
-void TransactionCounter::deferUntilDurable(DurableCb * cb, int64_t waitTxn)
+
+warp::Runnable * TransactionCounter::setLastStable(int64_t txn)
 {
-    EX_CHECK_NULL(cb);
-    if(waitTxn <= lastDurable)
-        raise<ValueError>("wait for past txn: wait=%d, durable=%d",
-                          waitTxn, lastDurable);
-
-    cbHeap.push(txn_cb(waitTxn, cb));
+    std::vector<txn_cb> cbs = stable.setLast(txn);
+    if(cbs.empty())
+        return 0;
+    return new CallbackRunner(cbs, durable.getLast(), stable.getLast());
 }
-

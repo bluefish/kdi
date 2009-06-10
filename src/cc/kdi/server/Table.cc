@@ -39,6 +39,25 @@ using namespace ex;
 
 using warp::log;
 
+namespace {
+
+    struct FirstEq
+    {
+        template <class A, class B, class C>
+        bool operator()(A const & a, std::pair<B,C> const & b) const
+        {
+            return a == b.first;
+        }
+
+        template <class A, class B, class C>
+        bool operator()(std::pair<A,B> const & a, B const & b) const
+        {
+            return a.first == b;
+        }
+    };
+    
+}
+
 //----------------------------------------------------------------------------
 // Table::TabletLt
 //----------------------------------------------------------------------------
@@ -217,11 +236,11 @@ void Table::replaceMemFragments(
 
     // Make sure the oldFragment list is at the head of the memory
     // chain
-    frag_vec & memFrags = groupMemFrags[groupIndex];
+    memfrag_vec & memFrags = groupMemFrags[groupIndex];
     if(memFrags.size() < oldFragments.size())
         return;
     if(!std::equal(oldFragments.begin(), oldFragments.end(),
-                   memFrags.begin()))
+                   memFrags.begin(), FirstEq()))
         return;
 
     // Remove the old memory fragments
@@ -362,9 +381,7 @@ void Table::getFirstFragmentChain(ScanPredicate const & pred,
         gi != predGroups.end(); ++gi)
     {
         (*i)->getFragments(chain, *gi);
-        chain.insert(chain.end(),
-                     groupMemFrags[*gi].begin(),
-                     groupMemFrags[*gi].end());
+        getMemFragments(*gi, chain);
     }
     rows = (*i)->getRows();
 }
@@ -419,7 +436,7 @@ void Table::getPredicateGroups(ScanPredicate const & pred, std::vector<int> & ou
     out.erase(std::unique(out.begin(), out.end()), out.end());
 }
 
-void Table::addMemoryFragment(FragmentCPtr const & frag)
+void Table::addMemoryFragment(FragmentCPtr const & frag, int64_t txn)
 {
     typedef std::vector<std::string> str_vec;
     typedef std::tr1::unordered_set<int> group_set;
@@ -443,7 +460,9 @@ void Table::addMemoryFragment(FragmentCPtr const & frag)
         i != fragGroups.end(); ++i)
     {
         groupMemFrags[*i].push_back(
-            frag->getRestricted(schema.groups[*i].families));
+            memfrag(
+                frag->getRestricted(schema.groups[*i].families),
+                txn));
     }
 }
 
@@ -490,7 +509,6 @@ void Table::addLoadedFragments(warp::Interval<std::string> const & rows,
 void Table::applySchema(TableSchema const & s)
 {
     typedef std::vector<std::string> str_vec;
-    typedef std::vector<FragmentCPtr> frag_vec;
 
     // Bump schema version
     ++schemaVersion;
@@ -513,8 +531,8 @@ void Table::applySchema(TableSchema const & s)
     }
 
     // Rebuild memory fragment chains
-    frag_vec oldMemFrags;
-    for(fragvec_vec::const_iterator i = groupMemFrags.begin();
+    memfrag_vec oldMemFrags;
+    for(memfragvec_vec::const_iterator i = groupMemFrags.begin();
         i != groupMemFrags.end(); ++i)
     {
         // XXX instead of tightening the restrictions, we could
@@ -525,10 +543,10 @@ void Table::applySchema(TableSchema const & s)
     }
     groupMemFrags.clear();
     groupMemFrags.resize(schema.groups.size());
-    for(frag_vec::const_iterator i = oldMemFrags.begin();
+    for(memfrag_vec::const_iterator i = oldMemFrags.begin();
         i != oldMemFrags.end(); ++i)
     {
-        addMemoryFragment(*i);
+        addMemoryFragment(i->first, i->second);
     }
     oldMemFrags.clear();
 
@@ -540,18 +558,44 @@ void Table::applySchema(TableSchema const & s)
     }
 }
 
-std::vector<FragmentCPtr> const & Table::getMemFragments(int groupIndex) const
+void Table::getMemFragments(int groupIndex, std::vector<FragmentCPtr> & out) const
 {
-    return groupMemFrags[groupIndex];
+    memfrag_vec const & f = groupMemFrags[groupIndex];
+    for(memfrag_vec::const_iterator i = f.begin(); i != f.end(); ++i)
+        out.push_back(i->first);
 }
 
 size_t Table::getMemSize(int groupIndex) const
 {
     size_t sum = 0;
-    frag_vec const & f = groupMemFrags[groupIndex];
-    for(frag_vec::const_iterator i = f.begin(); i != f.end(); ++i)
+    memfrag_vec const & f = groupMemFrags[groupIndex];
+    for(memfrag_vec::const_iterator i = f.begin(); i != f.end(); ++i)
     {
-        sum += (*i)->getDataSize();
+        sum += i->first->getDataSize();
     }
     return sum;
+}
+
+int64_t Table::getEarliestMemCommit(int groupIndex) const
+{
+    memfrag_vec const & f = groupMemFrags[groupIndex];
+    if(f.empty())
+        return rowCommits.getMaxCommit();
+    else
+        return f.front().second;
+}
+
+int64_t Table::getEarliestMemCommit() const
+{
+    int64_t minCommit = rowCommits.getMaxCommit();
+    for(memfragvec_vec::const_iterator i = groupMemFrags.begin();
+        i != groupMemFrags.end(); ++i)
+    {
+        if(i->empty())
+            continue;
+
+        if(i->front().second < minCommit)
+            minCommit = i->front().second;
+    }
+    return minCommit;
 }

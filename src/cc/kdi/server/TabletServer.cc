@@ -45,6 +45,7 @@
 #include <warp/call_or_die.h>
 #include <warp/functional.h>
 #include <warp/log.h>
+#include <warp/fs.h>
 #include <boost/scoped_ptr.hpp>
 #include <boost/bind.hpp>
 #include <algorithm>
@@ -54,29 +55,55 @@ using namespace kdi::server;
 using warp::log;
 
 namespace {
-    typedef boost::mutex::scoped_lock lock_t;
+
+    void deleteLogFile(std::string const & fn)
+    {
+        log("Deleting log file: %s", fn);
+        warp::fs::remove(fn);
+    }
+    
+    class DeleteLogFileCb
+        : public TransactionCounter::TransactionCb
+    {
+        std::string fn;
+
+    public:
+        explicit DeleteLogFileCb(std::string const & fn) : fn(fn) {}
+        void done(int64_t waitTxn, int64_t lastDurableTxn,
+                  int64_t lastStableTxn)
+        {
+            deleteLogFile(fn);
+            delete this;
+        }
+    };
 
     class DeferredApplyCb
-        : public TransactionCounter::DurableCb
+        : public TransactionCounter::TransactionCb
     {
         TabletServer::ApplyCb * cb;
 
     public:
         explicit DeferredApplyCb(TabletServer::ApplyCb * cb) : cb(cb) {}
-        void done(int64_t waitTxn, int64_t lastDurableTxn) {
+        void done(int64_t waitTxn, int64_t lastDurableTxn,
+                  int64_t lastStableTxn)
+        {
             cb->done(waitTxn);
+            delete this;
         }
     };
 
     class DeferredSyncCb
-        : public TransactionCounter::DurableCb
+        : public TransactionCounter::TransactionCb
     {
         TabletServer::SyncCb * cb;
 
     public:
         explicit DeferredSyncCb(TabletServer::SyncCb * cb) : cb(cb) {}
-        void done(int64_t waitTxn, int64_t lastDurableTxn) {
+        void done(int64_t waitTxn, int64_t lastDurableTxn,
+                  int64_t lastStableTxn)
+        {
             cb->done(lastDurableTxn);
+            delete this;
         }
     };
 
@@ -86,7 +113,7 @@ namespace {
     public:
         explicit HoldPendingCb(PendingFileCPtr const & p) :
             p(p) {}
-        
+
         virtual void done() throw()
         {
             delete this;
@@ -96,10 +123,41 @@ namespace {
         {
             log("ERROR HoldPendingCb: %s", err.what());
             std::terminate();
+            delete this;
         }
 
-    private:        
+    private:
         PendingFileCPtr p;
+    };
+
+    class SerializationStableCb
+        : public warp::Callback
+    {
+    public:
+        SerializationStableCb(TabletServer * server,
+                              int64_t pendingTxn,
+                              PendingFileCPtr const & pendingFile) :
+            server(server),
+            pendingTxn(pendingTxn),
+            pendingFile(pendingFile) {}
+
+        virtual void done() throw()
+        {
+            server->onSerializationStable(pendingTxn);
+            delete this;
+        }
+
+        virtual void error(std::exception const & err) throw()
+        {
+            log("ERROR SerializationStableCb: %s", err.what());
+            std::terminate();
+            delete this;
+        }
+
+    private:
+        TabletServer * server;
+        int64_t pendingTxn;
+        PendingFileCPtr pendingFile;
     };
 
 
@@ -114,7 +172,7 @@ namespace {
                tablet->getState() <= TABLET_ACTIVE);
 
         TabletConfigPtr p(new TabletConfig);
-        
+
         p->tableName = table->getSchema().tableName;
         p->rows = tablet->getRows();
         tablet->getConfigFragments(*p);
@@ -128,15 +186,15 @@ namespace {
         : public warp::Callback
     {
     public:
-        DeferredConfigSaveCb(TabletServer * server,
-                             std::string const & tabletName,
-                             PendingFileCPtr const & pending) :
+        DeferredConfigSaveCb(warp::Callback * cb,
+                             TabletServer * server,
+                             std::string const & tabletName) :
+            cb(cb),
             server(server),
-            tabletName(tabletName),
-            pending(pending)
+            tabletName(tabletName)
         {
         }
-        
+
         virtual void done() throw()
         {
             try {
@@ -150,8 +208,7 @@ namespace {
                 Tablet * tablet = table->getTablet(lastRow);
 
                 server->saveConfig_async(
-                    new HoldPendingCb(pending),
-                    getTabletConfig(server, table, tablet));
+                    cb, getTabletConfig(server, table, tablet));
             }
             catch(std::exception const & err) { fail(err); }
             catch(...) { fail(std::runtime_error("unknown exception")); }
@@ -168,44 +225,44 @@ namespace {
         void fail(std::exception const & err)
         {
             log("ERROR DeferredConfigSaveCb: %s", err.what());
+            cb->error(err);
         }
 
     private:
+        warp::Callback * const cb;
         TabletServer *   const server;
         std::string      const tabletName;
-        PendingFileCPtr  const pending;
     };
 
     // Schedule a Tablet for a config save, holding the pending file
     // until the config is durable.  If the Tablet is currently still
     // loading, the config save will be deferred until the Tablet is
     // allowed to save.
-    void scheduleConfigSave(TabletServer * server,
+    void scheduleConfigSave(warp::Callback * cb,
+                            TabletServer * server,
                             Table * table,
-                            Tablet * tablet,
-                            PendingFileCPtr const & pending)
+                            Tablet * tablet)
     {
         if(tablet->getState() < TABLET_CONFIG_SAVING)
         {
             // Defer save until later
             tablet->deferUntilState(
                 new DeferredConfigSaveCb(
+                    cb,
                     server,
                     encodeTabletName(
                         table->getSchema().tableName,
-                        tablet->getLastRow()),
-                    pending),
+                        tablet->getLastRow())),
                 TABLET_CONFIG_SAVING);
         }
         else
         {
             // Save now
             server->saveConfig_async(
-                new HoldPendingCb(pending),
-                getTabletConfig(server, table, tablet));
+                cb, getTabletConfig(server, table, tablet));
         }
     }
-                        
+
 
     class SchemaLoader
         : public warp::Runnable
@@ -328,7 +385,7 @@ namespace {
                     frag = frag->getRestricted(f->families);
                     loaded.push_back(frag);
                 }
-                
+
                 cb->done(loaded);
             }
             catch(std::exception const & err) { cb->error(err); }
@@ -421,7 +478,7 @@ class TabletServer::SchemaLoadedCb
 {
     TabletServer * server;
     std::string tableName;
-    
+
 public:
     SchemaLoadedCb(TabletServer * server, std::string const & tableName) :
         server(server), tableName(tableName) {}
@@ -483,7 +540,7 @@ public:
 
             // Apply the loaded Fragments
             tablet->onFragmentsLoaded(table->getSchema(), fragments);
-            
+
             // Move to next load state
             callbacks = tablet->setState(TABLET_ACTIVE);
         }
@@ -665,7 +722,7 @@ public:
             std::string tableName;
             warp::IntervalPoint<std::string> lastRow;
             decodeTabletName(tabletName, tableName, lastRow);
-            
+
             TabletServerLock serverLock(server);
             Table * table = server->getTable(tableName);
             TableLock tableLock(table);
@@ -699,7 +756,7 @@ public:
         }
         catch(std::exception const & ex) { fail(ex); }
         catch(...) { fail(std::runtime_error("unknown exception")); }
-        
+
         // Issue load state callbacks, if any
         if(callbacks)
             callbacks->run();
@@ -744,23 +801,21 @@ public:
     virtual void done(std::vector<std::string> const & rowCoverage,
                       PendingFileCPtr const & outFn)
     {
-        TabletServerLock serverLock(server);
+        // Open new fragment
+        FragmentCPtr newFrag = server->bits.fragmentLoader->load(outFn->getName());
 
-        // Make sure the table still exists
+        TabletServerLock serverLock(server);
         Table * table = server->findTable(tableName);
         if(!table)
             return;
-
-        // Lock table, release server
         TableLock tableLock(table);
-        serverLock.unlock();
-
-        // Make sure table schema hasn't changed
         if(table->getSchemaVersion() != schemaVersion)
             return;
 
-        // Open new fragment
-        FragmentCPtr newFrag = server->bits.fragmentLoader->load(outFn->getName());
+        int64_t pendingTxn = table->getEarliestMemCommit() - 1;
+        server->addPendingSerialization(pendingTxn);
+
+        serverLock.unlock();
 
         // Replace fragments
         std::vector<Tablet *> updatedTablets;
@@ -780,12 +835,21 @@ public:
                 true, true),
             FET_FRAGMENTS_REPLACED);
 
+        tableLock.unlock();
+
+        SerializationStableCb * cb =
+            new SerializationStableCb(server, pendingTxn, outFn);
+        warp::MultipleCallback * mcb = new warp::MultipleCallback(cb);
+
         // Hold on to pending file reference until all configs are saved
         for(std::vector<Tablet *>::const_iterator i = updatedTablets.begin();
             i != updatedTablets.end(); ++i)
         {
-            scheduleConfigSave(server, table, *i, outFn);
+            mcb->incrementCount();
+            scheduleConfigSave(mcb, server, table, *i);
         }
+
+        mcb->done();
 
         // Kick compactor
         server->wakeCompactor();
@@ -837,9 +901,9 @@ public:
                 size_t memSize = table->getMemSize(j);
                 //xxx int64_t txn = table->getEarliestMemCommit(j);
                 size_t logSize = 0; // xxx: server->getLogSize(txn);
-            
+
                 float score = memSize + logSize * 0.1f;
-            
+
                 if(!haveMax || score > maxScore)
                 {
                     haveMax = true;
@@ -858,9 +922,9 @@ public:
         Table * table = maxIt->second;
         TableLock tableLock(table);
         TableSchema const & schema = table->getSchema();
-    
+
         ptr.reset(new SWork(server, maxIt->first, table->getSchemaVersion(), maxGroup));
-        ptr->fragments = table->getMemFragments(maxGroup);
+        table->getMemFragments(maxGroup, ptr->fragments);
         ptr->predicate = schema.groups[maxGroup].getPredicate();
         ptr->output.reset(
             server->bits.fragmentFactory->start(
@@ -869,7 +933,7 @@ public:
         return ptr;
     }
 
-private:    
+private:
     TabletServer * const server;
 };
 
@@ -930,7 +994,8 @@ public:
             for(std::vector<Tablet *>::const_iterator j = updatedTablets.begin();
                 j != updatedTablets.end(); ++j)
             {
-                scheduleConfigSave(server, table, *j, i->second);
+                scheduleConfigSave(new HoldPendingCb(i->second),
+                                   server, table, *j);
             }
         }
     }
@@ -985,7 +1050,7 @@ public:
         // Build a work unit
         Table * table = maxIt->second;
         TableLock tableLock(table);
-        
+
         ptr.reset(new CWork(server, table->getSchemaVersion()));
         ptr->schema = table->getSchema();
         ptr->groupIndex = maxGroup;
@@ -1217,7 +1282,7 @@ void TabletServer::apply_async(
         // Find the table
         Table * table = getTable(tableName);
         TableLock tableLock(table);
-        
+
         // Make sure tablets are loaded.
         std::vector<Tablet *> loadingTablets;
         table->verifyTabletsLoaded(rows, loadingTablets);
@@ -1257,12 +1322,12 @@ void TabletServer::apply_async(
 
         // Assign transaction number to commit
         commit.txn = txnCounter.assignCommit();
-        
+
         // Update latest transaction number for all affected rows
         table->updateRowCommits(rows, commit.txn);
-        
+
         // Add the new fragment to the table's active list
-        table->addMemoryFragment(commit.cells);
+        table->addMemoryFragment(commit.cells, commit.txn);
 
         // Notify event listeners
         assert(!rows.empty());
@@ -1309,7 +1374,7 @@ void TabletServer::sync_async(SyncCb * cb, int64_t waitForTxn)
         // Clip waitForTxn to the last committed transaction
         if(waitForTxn > txnCounter.getLastCommit())
             waitForTxn = txnCounter.getLastCommit();
-        
+
         // Get the last durable transaction
         int64_t syncTxn = txnCounter.getLastDurable();
 
@@ -1319,7 +1384,7 @@ void TabletServer::sync_async(SyncCb * cb, int64_t waitForTxn)
             txnCounter.deferUntilDurable(new DeferredSyncCb(cb), waitForTxn);
             return;
         }
-        
+
         serverLock.unlock();
 
         // Callback now
@@ -1426,6 +1491,53 @@ Table * TabletServer::getTable(strref_t tableName) const
     return table;
 }
 
+void TabletServer::addPendingSerialization(int64_t pendingTxn)
+{
+    pendingTxns.insert(pendingTxn);
+}
+
+void TabletServer::onSerializationStable(int pendingTxn)
+{
+    TabletServerLock serverLock(this);
+
+    txn_set::iterator i = pendingTxns.find(pendingTxn);
+    assert(i != pendingTxns.end());
+    pendingTxns.erase(i);
+
+    // Find the min stable transaction
+    bool haveMin = false;
+    int64_t minTxn = 0;
+    if(pendingTxns.empty())
+    {
+        for(table_map::const_iterator i = tableMap.begin();
+            i != tableMap.end(); ++i)
+        {
+            Table * table = i->second;
+            TableLock tableLock(table);
+
+            int64_t txn = table->getEarliestMemCommit() - 1;
+            if(!haveMin || txn < minTxn)
+            {
+                haveMin = true;
+                minTxn = txn;
+            }
+        }
+    }
+    else
+    {
+        haveMin = true;
+        minTxn = *pendingTxns.begin();
+    }
+
+    warp::Runnable * callbacks = 0;
+
+    if(minTxn > txnCounter.getLastStable())
+        callbacks = txnCounter.setLastStable(minTxn);
+
+    if(callbacks)
+        bits.workerPool->submit(callbacks);
+}
+
 void TabletServer::wakeSerializer()
 {
     workers->serializer.wake();
@@ -1441,14 +1553,17 @@ void TabletServer::logLoop()
     size_t const GROUP_COMMIT_LIMIT = size_t(4) << 20;
     size_t const LOG_SIZE_LIMIT = size_t(128) << 20;
 
-    boost::scoped_ptr<LogWriter> log;
+    boost::scoped_ptr<LogWriter> logWriter;
 
     Commit commit;
     while(logQueue.pop(commit))
     {
         // Start a new log if necessary
-        if(!log && bits.logFactory)
-            log.reset(bits.logFactory->start().release());
+        if(!logWriter && bits.logFactory)
+        {
+            log("Starting new log file");
+            logWriter.reset(bits.logFactory->start().release());
+        }
 
         size_t commitSz = 0;
         int64_t maxTxn;
@@ -1461,8 +1576,8 @@ void TabletServer::logLoop()
             maxTxn = commit.txn;
 
             // Log the commit to disk
-            if(log)
-                log->writeCells(
+            if(logWriter)
+                logWriter->writeCells(
                     commit.tableName, commit.cells->getPacked());
 
             // Release the cells
@@ -1473,8 +1588,8 @@ void TabletServer::logLoop()
 
         // Sync log to disk.  After this, commits up to maxTxn are
         // durable.
-        if(log)
-            log->sync();
+        if(logWriter)
+            logWriter->sync();
 
         TabletServerLock serverLock(this);
 
@@ -1488,15 +1603,31 @@ void TabletServer::logLoop()
             bits.workerPool->submit(durableCallbacks);
 
         // Roll log if it's big enough
-        if(log && log->getDiskSize() >= LOG_SIZE_LIMIT)
+        if(logWriter && logWriter->getDiskSize() >= LOG_SIZE_LIMIT)
         {
-            std::string logFn = log->finish();
-            log.reset();
+            std::string logFn = logWriter->finish();
+            logWriter.reset();
 
-            /// XXX track the new log file so we can clean it up when
-            /// it is no longer needed
-            //if(bits.logTracker)
-            //    bits.logTracker->addLogFile(logFn, maxTxn);
+            log("Finished log file: %s", logFn);
+
+            serverLock.lock();
+
+            /// We can delete the log file after the last commit in
+            /// the file is stable (serialized + all configs synced)
+            
+            if(txnCounter.getLastStable() >= maxTxn)
+            {
+                // We can delete now
+                deleteLogFile(logFn);
+            }
+            else
+            {
+                // Delete later
+                txnCounter.deferUntilStable(
+                    new DeleteLogFileCb(logFn), maxTxn);
+            }
+
+            serverLock.unlock();
         }
     }
 }

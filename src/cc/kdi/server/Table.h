@@ -146,7 +146,7 @@ public:                         // Must hold TableLock
                                std::vector<FragmentCPtr> & chain,
                                warp::Interval<std::string> & rows) const;
 
-    void addMemoryFragment(FragmentCPtr const & frag);
+    void addMemoryFragment(FragmentCPtr const & frag, int64_t txn);
 
     void addLoadedFragments(warp::Interval<std::string> const & rows,
                             std::vector<FragmentCPtr> const & frags);
@@ -181,9 +181,20 @@ public:
             return TABLE_ACTIVE;
     }
 
-    std::vector<FragmentCPtr> const & getMemFragments(int groupIndex) const;
+    /// Append the mem fragment list for the given group to the output
+    /// list.
+    void getMemFragments(
+        int groupIndex, std::vector<FragmentCPtr> & out) const;
+
     size_t getMemSize(int groupIndex) const;
+
+    /// Get the earliest commit in the given group that is still in
+    /// memory (not yet serialized).
     int64_t getEarliestMemCommit(int groupIndex) const;
+
+    /// Get the earliest commit in any group that is still in memory
+    /// (not yet serialized).
+    int64_t getEarliestMemCommit() const;
 
     size_t getMaxDiskChainLength(int groupIndex) const;
     void getCompactionSet(int groupIndex, RangeFragmentMap & compactionSet) const;
@@ -206,7 +217,10 @@ private:
     class TabletLt;
 
     typedef std::vector<FragmentCPtr> frag_vec;
-    typedef std::vector<frag_vec> fragvec_vec;
+
+    typedef std::pair<FragmentCPtr,int64_t> memfrag;
+    typedef std::vector<memfrag> memfrag_vec;
+    typedef std::vector<memfrag_vec> memfragvec_vec;
 
     typedef std::vector<Tablet *> tablet_vec;
     typedef warp::HashMap<std::string, int, warp::HsiehHash> group_map;
@@ -222,7 +236,7 @@ private:
     size_t schemaVersion;
     CommitRing rowCommits;
 
-    fragvec_vec groupMemFrags;
+    memfragvec_vec groupMemFrags;
 
     group_map groupIndex;
 

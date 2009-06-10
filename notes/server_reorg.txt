@@ -1369,3 +1369,33 @@ block until space is available.
         // pool.  Clients on the read-only adapter can continue.  I
         // like this solution as it becomes a detail of the RPC layer,
         // not the main server logic.
+
+
+#----------------------------------------------------------------------------
+# Commit stages
+#----------------------------------------------------------------------------
+
+Committed:  assigned commit transaction, pushed to log queue, added to
+            table mem-frag chain(s)
+
+Durable:    written to log file and synced to disk
+
+Serialized: written to a disk fragment and served from there
+
+Stable:     serialized, plus config containing disk fragment has been
+            written
+
+
+   Committed  --> Serialized  -->  Stable
+            \
+             \--> Durable
+
+The Durable path is independent of the Serialized/Stable path.
+Usually a commit will become Durable before it is Stable, but that
+isn't always the case.
+
+A commit may be acknowledged as sync'ed after it is either Durable or
+Stable.
+
+The log file for a commit is no longer needed after the commit is
+Stable.
