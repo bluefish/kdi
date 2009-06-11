@@ -24,6 +24,7 @@
 #include <warp/Callback.h>
 #include <warp/log.h>
 #include <warp/strutil.h>
+#include <warp/string_median.h>
 #include <ex/exception.h>
 #include <memory>
 #include <limits>
@@ -203,53 +204,105 @@ size_t Tablet::getPartialDataSize(
     return totalSz;
 }
 
-namespace {
 
-    inline void
-    midstr(char const * a, char const * aEnd,
-           char const * b, char const * bEnd,
-           std::string & out)
-    {
-        for(;;)
-        {
-            int av = a != aEnd ? uint8_t(*a++) : 0;
-            int bv = b != bEnd ? uint8_t(*b++) : 256;
-            int mv = (av + bv) / 2;
-            out += char(mv);
-            if(mv != av)
-                break;
-        }
-    }
+namespace {
 
     inline
     warp::IntervalPoint<std::string> bisectInterval(
         warp::IntervalPoint<std::string> const & lo,
         warp::IntervalPoint<std::string> const & hi)
     {
-        std::string const & a = lo.getValue();
-        std::string const & b = hi.getValue();
+        using namespace warp;
+        using std::string;
 
-        size_t offset = 0;
-        if(lo.isFinite() && hi.isFinite())
+        if(lo.isFinite())
         {
-            // Offset = first mismatch position
-            if(a.size() < b.size())
-                offset = std::mismatch(a.begin(), a.end(), b.begin()).first
-                    - a.begin();
+            if(hi.isFinite())
+                return IntervalPoint<string>(
+                    string_median(lo.getValue(), hi.getValue()),
+                    PT_INCLUSIVE_UPPER_BOUND);
             else
-                offset = std::mismatch(b.begin(), b.end(), a.begin()).first
-                    - b.begin();
+            {
+                string const & loString = lo.getValue();
+                string hiString;
+                while(hiString.size() <= loString.size())
+                    hiString += '\xff';
+
+                return IntervalPoint<string>(
+                    string_median(loString, hiString),
+                    PT_INCLUSIVE_UPPER_BOUND);
+            }
         }
-
-        std::string m = a.substr(0,offset);
-        midstr(a.c_str() + offset, a.c_str() + a.size(),
-               b.c_str() + offset, b.c_str() + b.size(),
-               m);
-
-        return warp::IntervalPoint<std::string>(
-            m, warp::PT_INCLUSIVE_UPPER_BOUND);
+        else
+        {
+            if(hi.isFinite())
+                return IntervalPoint<string>(
+                    string_median("", hi.getValue()),
+                    PT_INCLUSIVE_UPPER_BOUND);
+            else
+                return IntervalPoint<string>(
+                    "\x7f", PT_INCLUSIVE_UPPER_BOUND);
+        }
     }
 
+}
+
+#include <sstream>
+#include <warp/repr.h>
+
+namespace {
+
+    template <class T>
+    class ReprWrapper
+    {
+        T const & valueRef;
+
+    public:
+        explicit ReprWrapper(T const & t) : valueRef(t) {}
+        T const & operator*() const { return valueRef; }
+        T const * operator->() const { return &valueRef; }
+    };
+
+    template <class T>
+    ReprWrapper<T> repr(T const & t)
+    {
+        return ReprWrapper<T>(t);
+    }
+
+    template <class T>
+    std::string reprStr(T const & t)
+    {
+        std::ostringstream oss;
+        oss << repr(t);
+        return oss.str();
+    }
+
+    std::ostream & operator<<(std::ostream & o, ReprWrapper<std::string> const & x)
+    {
+        return o << '"' << warp::ReprEscape(*x) << '"';
+    }
+
+    template <class T>
+    std::ostream & operator<<(std::ostream & o, ReprWrapper<warp::IntervalPoint<T> > const & x)
+    {
+        switch(x->getType())
+        {
+            case warp::PT_INFINITE_LOWER_BOUND:  return o << "<<";
+            case warp::PT_EXCLUSIVE_UPPER_BOUND: return o << repr(x->getValue()) << ')';
+            case warp::PT_INCLUSIVE_LOWER_BOUND: return o << '[' << repr(x->getValue());
+            case warp::PT_POINT:                 return o << repr(x->getValue());
+            case warp::PT_INCLUSIVE_UPPER_BOUND: return o << repr(x->getValue()) << ']';
+            case warp::PT_EXCLUSIVE_LOWER_BOUND: return o << '(' << repr(x->getValue());
+            case warp::PT_INFINITE_UPPER_BOUND:  return o << ">>";
+            default:                             return o << "<?>";
+        }
+    }
+
+    template <class T>
+    std::ostream & operator<<(std::ostream & o, ReprWrapper<warp::Interval<T> > const & x)
+    {
+        return o << repr(x->getLowerBound()) << ' ' << repr(x->getUpperBound());
+    }
 }
 
 Tablet * Tablet::maybeSplit()
@@ -263,7 +316,7 @@ Tablet * Tablet::maybeSplit()
     if(totalSz < TABLET_SPLIT_THRESHOLD)
         return 0;
 
-    log("Splitting tablet: %s", getTabletName());
+    log("Splitting tablet: %s, rows=%s", getTabletName(), repr(getRows()));
 
     typedef warp::Interval<std::string> ival_t;
     typedef warp::IntervalPoint<std::string> ival_pt_t;
@@ -271,59 +324,78 @@ Tablet * Tablet::maybeSplit()
     ival_pt_t lo = getFirstRow();
     ival_pt_t hi = getLastRow();
 
-    ival_pt_t bestSplit;
-    size_t minDiff = std::numeric_limits<size_t>::max();
+    struct split
+    {
+        ival_pt_t mid;
+        size_t loSz;
+        size_t hiSz;
+        size_t diff;
+    };
+
+    split best;
+    best.diff = std::numeric_limits<size_t>::max();
 
     size_t const MAX_ITERATIONS = 100;
-    for(size_t i = 0; i < MAX_ITERATIONS; ++i)
-    {
-        ival_pt_t mid = bisectInterval(lo, hi);
-
-        size_t loSz = getPartialDataSize(ival_t(getFirstRow(), mid));
-        size_t hiSz = getPartialDataSize(ival_t(mid.getAdjacentComplement(),
-                                                getLastRow()));
-
-        size_t diff;
-        if(loSz < hiSz)
+    size_t iter = 0;
+    try {
+        while(++iter <= MAX_ITERATIONS)
         {
-            lo = mid.getAdjacentComplement();
-            diff = hiSz - loSz;
-        }
-        else
-        {
-            hi = mid;
-            diff = loSz - hiSz;
-        }
+            split s;
+            s.mid = bisectInterval(lo, hi);
 
-        log("Iter %d: mid = %s, loSz = %d (%.2f%%), hiSz = %d (%.2f%%), "
-            "diff = %d (%.3f%%)",
-            i, warp::reprString(mid.getValue()),
-            loSz, loSz*100.0/totalSz,
-            hiSz, hiSz*100.0/totalSz,
-            diff, diff*100.0/totalSz);
+            //log("Iter %d: bisect %s %s : %s", iter, repr(lo), repr(hi), repr(s.mid));
 
-        if(diff < minDiff)
-        {
-            minDiff = diff;
-            bestSplit = mid;
+            s.loSz = getPartialDataSize(ival_t(getFirstRow(), s.mid));
+            s.hiSz = getPartialDataSize(ival_t(s.mid.getAdjacentComplement(),
+                                               getLastRow()));
+            if(s.loSz < s.hiSz)
+            {
+                lo = s.mid.getAdjacentComplement();
+                s.diff = s.hiSz - s.loSz;
+            }
+            else
+            {
+                hi = s.mid;
+                s.diff = s.loSz - s.hiSz;
+            }
 
-            if(diff < totalSz * 0.002)
-                break;
+            //log("Iter %d: mid = %s, loSz = %d (%.2f%%), hiSz = %d (%.2f%%), "
+            //    "diff = %d (%.3f%%)",
+            //    iter, repr(s.mid),
+            //    s.loSz, s.loSz*100.0/totalSz,
+            //    s.hiSz, s.hiSz*100.0/totalSz,
+            //    s.diff, s.diff*100.0/totalSz);
+
+            if(s.diff < best.diff)
+            {
+                best = s;
+                if(best.diff < totalSz * 0.002)
+                    break;
+            }
         }
     }
+    catch(warp::no_median_error const &) {
+        log("Split: no median");
+    }
 
-    if(minDiff > totalSz * 0.30)
+    log("Best split after %d iteration(s): lo=%s, mid=%s, hi=%s, loSz=%d (%.2f%%), hiSz=%d (%.2f%%), diff=%d (%.3f%%)",
+        iter, repr(getFirstRow()), repr(best.mid), repr(getLastRow()),
+        best.loSz, best.loSz*100.0/totalSz,
+        best.hiSz, best.hiSz*100.0/totalSz,
+        best.diff, best.diff*100.0/totalSz);
+
+    if(best.diff > totalSz * 0.30 || best.loSz > totalSz * 0.60)
     {
         log("Couldn't find a good split");
         return 0;
     }
 
-    Tablet * newTablet = new Tablet(bestSplit);
+    Tablet * newTablet = new Tablet(best.mid);
     newTablet->firstRow = getFirstRow();
     newTablet->state = TABLET_ACTIVE;
     newTablet->fragGroups = this->fragGroups;
 
-    this->firstRow = bestSplit.getAdjacentComplement();
+    this->firstRow = best.mid.getAdjacentComplement();
 
     return newTablet;
 }
