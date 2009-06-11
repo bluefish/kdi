@@ -46,6 +46,7 @@
 #include <warp/functional.h>
 #include <warp/log.h>
 #include <warp/fs.h>
+#include <warp/timer.h>
 #include <boost/scoped_ptr.hpp>
 #include <boost/bind.hpp>
 #include <algorithm>
@@ -1554,6 +1555,7 @@ void TabletServer::logLoop()
     size_t const LOG_SIZE_LIMIT = size_t(128) << 20;
 
     boost::scoped_ptr<LogWriter> logWriter;
+    warp::WallTimer logTimer;
 
     Commit commit;
     while(logQueue.pop(commit))
@@ -1563,6 +1565,7 @@ void TabletServer::logLoop()
         {
             log("Starting new log file");
             logWriter.reset(bits.logFactory->start().release());
+            logTimer.reset();
         }
 
         size_t commitSz = 0;
@@ -1605,10 +1608,14 @@ void TabletServer::logLoop()
         // Roll log if it's big enough
         if(logWriter && logWriter->getDiskSize() >= LOG_SIZE_LIMIT)
         {
+            size_t logSz = logWriter->getDiskSize();
             std::string logFn = logWriter->finish();
+            double dt = logTimer.getElapsed();
             logWriter.reset();
 
-            log("Finished log file: %s", logFn);
+            log("Finished log file: %s (%sB, %.3f sec, %sB/s)",
+                logFn, warp::sizeString(logSz), dt,
+                warp::sizeString(size_t(logSz / dt)));
 
             serverLock.lock();
 
