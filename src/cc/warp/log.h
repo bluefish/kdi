@@ -24,6 +24,11 @@
 
 #include <warp/string_range.h>
 #include <boost/format.hpp>
+#include <boost/preprocessor/repetition.hpp>
+
+#ifndef WARP_LOG_MAX_PARAMS
+#  define WARP_LOG_MAX_PARAMS 15
+#endif
 
 namespace warp {
     
@@ -32,79 +37,26 @@ namespace warp {
     /// message should not contain newlines.
     void log(strref_t msg);
 
-    /// Log a line with argument substitution.
-    template <class A1>
-    void log(char const * fmt, A1 const & a1)
-    {
-        log((boost::format(fmt) % a1).str());
+    /// Log with parameter substitution for 1 to WARP_LOG_MAX_PARAMS
+    /// arguments
+    #undef WARP_LOG_N_PARAM
+    #undef WARP_LOG_CAT_N
+    #define WARP_LOG_CAT_N(z,n,data) BOOST_PP_CAT(data,n)
+    #define WARP_LOG_N_PARAM(z,n,unused)                        \
+                                                                \
+    template <BOOST_PP_ENUM_PARAMS(n, class A)>                 \
+    void log(char const * fmt,                                  \
+             BOOST_PP_ENUM_BINARY_PARAMS(n, A, const & a)       \
+             )                                                  \
+    {                                                           \
+        log((boost::format(fmt)                                 \
+             BOOST_PP_REPEAT(n, WARP_LOG_CAT_N, % a)            \
+            ).str());                                           \
     }
-
-    /// Log a line with argument substitution.
-    template <class A1, class A2>
-    void log(char const * fmt, A1 const & a1, A2 const & a2)
-    {
-        log((boost::format(fmt) % a1 % a2).str());
-    }
-
-    /// Log a line with argument substitution.
-    template <class A1, class A2, class A3>
-    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3)
-    {
-        log((boost::format(fmt) % a1 % a2 % a3).str());
-    }
-
-    /// Log a line with argument substitution.
-    template <class A1, class A2, class A3, class A4>
-    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3,
-             A4 const & a4)
-    {
-        log((boost::format(fmt) % a1 % a2 % a3 % a4).str());
-    }
-
-    /// Log a line with argument substitution.
-    template <class A1, class A2, class A3, class A4, class A5>
-    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3,
-             A4 const & a4, A5 const & a5)
-    {
-        log((boost::format(fmt) % a1 % a2 % a3 % a4 % a5).str());
-    }
-
-    /// Log a line with argument substitution.
-    template <class A1, class A2, class A3, class A4, class A5, class A6>
-    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3,
-             A4 const & a4, A5 const & a5, A6 const & a6)
-    {
-        log((boost::format(fmt) % a1 % a2 % a3 % a4 % a5 % a6).str());
-    }
-
-    /// Log a line with argument substitution.
-    template <class A1, class A2, class A3, class A4, class A5, class A6,
-              class A7>
-    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3,
-             A4 const & a4, A5 const & a5, A6 const & a6, A7 const & a7)
-    {
-        log((boost::format(fmt) % a1 % a2 % a3 % a4 % a5 % a6 % a7).str());
-    }
-
-    /// Log a line with argument substitution.
-    template <class A1, class A2, class A3, class A4, class A5, class A6,
-              class A7, class A8>
-    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3,
-             A4 const & a4, A5 const & a5, A6 const & a6, A7 const & a7,
-             A8 const & a8)
-    {
-        log((boost::format(fmt) % a1 % a2 % a3 % a4 % a5 % a6 % a7 % a8).str());
-    }
-
-    /// Log a line with argument substitution.
-    template <class A1, class A2, class A3, class A4, class A5, class A6,
-              class A7, class A8, class A9>
-    void log(char const * fmt, A1 const & a1, A2 const & a2, A3 const & a3,
-             A4 const & a4, A5 const & a5, A6 const & a6, A7 const & a7,
-             A8 const & a8, A9 const & a9)
-    {
-        log((boost::format(fmt) % a1 % a2 % a3 % a4 % a5 % a6 % a7 % a8 % a9).str());
-    }
+    BOOST_PP_REPEAT_FROM_TO(1, BOOST_PP_ADD(WARP_LOG_MAX_PARAMS, 1),
+                            WARP_LOG_N_PARAM, ~)
+    #undef WARP_LOG_N_PARAM
+    #undef WARP_LOG_CAT_N
 
 } // namespace warp
 
