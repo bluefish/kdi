@@ -1,6 +1,6 @@
 //---------------------------------------------------------- -*- Mode: C++ -*-
 // Copyright (C) 2009 Josh Taylor (Kosmix Corporation)
-// Created 2009-04-28
+// Created 2009-06-11
 //
 // This file is part of KDI.
 //
@@ -18,34 +18,37 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 //----------------------------------------------------------------------------
 
-#ifndef KDI_SERVER_FILECONFIGWRITER_H
-#define KDI_SERVER_FILECONFIGWRITER_H
+#ifndef KDI_SERVER_FILECONFIGREADER_H
+#define KDI_SERVER_FILECONFIGREADER_H
 
-#include <kdi/server/ConfigWriter.h>
-#include <string>
+#include <kdi/server/ConfigReader.h>
+#include <vector>
 
 namespace kdi {
 namespace server {
 
-    class FileConfigWriter;
+    class FileConfigReader;
 
 } // namespace server
 } // namespace kdi
 
 //----------------------------------------------------------------------------
-// FileConfigWriter
+// FileConfigReader
 //----------------------------------------------------------------------------
-class kdi::server::FileConfigWriter
-    : public kdi::server::ConfigWriter
+class kdi::server::FileConfigReader
+    : public kdi::server::ConfigReader
 {
 public:
-    explicit FileConfigWriter(std::string const & configDir);
-    virtual void writeConfig(TabletConfigCPtr const & config);
+    explicit FileConfigReader(std::string const & configDir);
 
-    static std::string getConfigFilename(std::string const & tabletName);
+    virtual TabletConfigCPtr readConfig(std::string const & tabletName);
+
+    std::vector<TabletConfigCPtr> readAllConfigs();
+    std::vector<std::string> readAllNames();
 
 private:
     std::string const configDir;
 };
 
-#endif // KDI_SERVER_FILECONFIGWRITER_H
+
+#endif // KDI_SERVER_FILECONFIGREADER_H

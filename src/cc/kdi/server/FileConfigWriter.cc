@@ -20,6 +20,7 @@
 
 #include <kdi/server/FileConfigWriter.h>
 #include <kdi/server/TabletConfig.h>
+#include <kdi/server/name_util.h>
 #include <warp/md5.h>
 #include <warp/strutil.h>
 #include <warp/tuple.h>
@@ -36,19 +37,6 @@ using namespace warp;
 using boost::format;
 
 namespace {
-
-    std::string getConfigFilename(TabletConfig const & cfg)
-    {
-        std::ostringstream last;
-        last << cfg.rows.getUpperBound();
-        
-        std::ostringstream fn;
-        fn << replace(cfg.tableName, "/", ".");
-        fn << '.';
-        fn << md5HexDigest(last.str());
-
-        return fn.str();
-    }
 
     void setBound(IntervalPoint<std::string> const & pt,
                   std::string const & name,
@@ -75,12 +63,7 @@ FileConfigWriter::FileConfigWriter(std::string const & configDir) :
 
 void FileConfigWriter::writeConfig(TabletConfigCPtr const & config)
 {
-    writeConfig(*config);
-}
-
-void FileConfigWriter::writeConfig(TabletConfig const & cfg)
-{
-    std::string fn = getConfigFilename(cfg);
+    std::string fn = getConfigFilename(config->getTabletName());
     std::string outPath = fs::resolve(configDir, fn);
     std::string tmpPath = fs::resolve(configDir, fn + "-$(UNIQUE)");
 
@@ -88,21 +71,21 @@ void FileConfigWriter::writeConfig(TabletConfig const & cfg)
     tie(out, tmpPath) = File::openUnique(tmpPath);
 
     Config x;
-    x.set("table", cfg.tableName);
-    setBound(cfg.rows.getLowerBound(), "min", x);
-    setBound(cfg.rows.getUpperBound(), "max", x);
-    x.set("log", cfg.log);
-    x.set("location", cfg.location);
+    x.set("table", config->tableName);
+    setBound(config->rows.getLowerBound(), "min", x);
+    setBound(config->rows.getUpperBound(), "max", x);
+    x.set("log", config->log);
+    x.set("location", config->location);
     
-    for(size_t i = 0; i < cfg.fragments.size(); ++i)
+    for(size_t i = 0; i < config->fragments.size(); ++i)
     {
         x.set(str(format("frag.i%d.filename") % i),
-              cfg.fragments[i].filename);
+              config->fragments[i].filename);
 
-        for(size_t j = 0; j < cfg.fragments[i].families.size(); ++j)
+        for(size_t j = 0; j < config->fragments[i].families.size(); ++j)
         {
-            x.set(str(format("frag.i%d.column.i%d") % i % j),
-                  cfg.fragments[i].families[j]);
+            x.set(str(format("frag.i%d.family.i%d") % i % j),
+                  config->fragments[i].families[j]);
         }
     }  
 
@@ -110,4 +93,23 @@ void FileConfigWriter::writeConfig(TabletConfig const & cfg)
     out->close();
     
     fs::rename(tmpPath, outPath, true);
+}
+
+std::string FileConfigWriter::getConfigFilename(
+    std::string const & tabletName)
+{
+    std::string tableName;
+    warp::IntervalPoint<std::string> lastRow;
+
+    decodeTabletName(tabletName, tableName, lastRow);
+
+    std::ostringstream last;
+    last << lastRow;
+
+    std::ostringstream fn;
+    fn << replace(tableName, "/", ".");
+    fn << '.';
+    fn << md5HexDigest(last.str());
+
+    return fn.str();
 }
