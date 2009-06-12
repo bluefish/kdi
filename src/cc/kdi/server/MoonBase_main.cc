@@ -25,6 +25,7 @@
 #include <warp/filestream.h>
 #include <warp/fs.h>
 #include <warp/log.h>
+#include <warp/strutil.h>
 #include <ex/exception.h>
 #include <Ice/Ice.h>
 #include <boost/scoped_ptr.hpp>
@@ -35,6 +36,7 @@
 #include <kdi/server/TestConfigReader.h>
 #include <kdi/server/DirectBlockCache.h>
 #include <kdi/server/FileConfigWriter.h>
+#include <kdi/server/FileConfigReader.h>
 #include <kdi/server/DiskWriterFactory.h>
 #include <kdi/server/CachedFragmentLoader.h>
 #include <kdi/server/DiskLoader.h>
@@ -60,8 +62,9 @@ namespace {
         : private boost::noncopyable
     {
         boost::scoped_ptr<FileTracker> fragFileTracker;
-        boost::scoped_ptr<TestConfigReader> configReader;
         boost::scoped_ptr<FileConfigWriter> configWriter;
+        boost::scoped_ptr<FileConfigReader> configReader;
+        boost::scoped_ptr<TestConfigReader> schemaReader;
         boost::scoped_ptr<warp::WorkerPool> workerPool;
         boost::scoped_ptr<TabletServer> server;
         boost::scoped_ptr<DirectBlockCache> cache;
@@ -123,9 +126,10 @@ namespace {
             fragFileTracker.reset(new FileTracker(dataRoot));
 
             workerPool.reset(new WorkerPool(4, "Pool", true));
-            char const *groups[] = { "group", 0, 0 };
-            configReader.reset(new TestConfigReader(groups));
             configWriter.reset(new FileConfigWriter(configDir));
+            configReader.reset(new FileConfigReader(configDir));
+            char const *groups[] = { "group", 0, 0 };
+            schemaReader.reset(new TestConfigReader(groups));
             fragmentFactory.reset(
                 new DiskWriterFactory(dataRoot, fragFileTracker.get()));
 
@@ -135,7 +139,7 @@ namespace {
             logFactory.reset(new FileLogWriterFactory(logDir));
 
             TabletServer::Bits bits;
-            bits.schemaReader = configReader.get();
+            bits.schemaReader = schemaReader.get();
             bits.configReader = configReader.get();
             bits.configWriter = configWriter.get();
             bits.workerPool = workerPool.get();
@@ -148,10 +152,17 @@ namespace {
             server.reset(new TabletServer(bits));
             cache.reset(new DirectBlockCache);
 
-            log("Loading: foo!");
+            log("Reading configs");
+            std::vector<std::string> tablets = configReader->readAllNames();
+            std::sort(tablets.begin(), tablets.end());
+            for(std::vector<std::string>::const_iterator i = tablets.begin();
+                i != tablets.end(); ++i)
+            {
+                log("Found tablet: %s", warp::reprString(*i));
+            }
+            
+            log("Loading %d tablet(s)", tablets.size());
             LoadCb cb;
-            std::vector<std::string> tablets;
-            tablets.push_back("foo!");
             server->load_async(&cb, tablets);
             cb.wait();
             log("Loaded.");
@@ -163,6 +174,7 @@ namespace {
             server.reset();
             cachedLoader.reset();
             diskLoader.reset();
+            schemaReader.reset();
             configReader.reset();
             configWriter.reset();
             fragmentFactory.reset();
