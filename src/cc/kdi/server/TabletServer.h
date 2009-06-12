@@ -27,6 +27,7 @@
 #include <warp/WorkerPool.h>
 #include <warp/Callback.h>
 #include <warp/util.h>
+#include <warp/interval.h>
 #include <kdi/strref.h>
 #include <boost/shared_ptr.hpp>
 #include <boost/scoped_ptr.hpp>
@@ -193,7 +194,7 @@ public:                         // No lock necessary
     std::string const & getLogDir() const { return bits.serverLogDir; }
     std::string const & getLocation() const { return bits.serverLocation; }
 
-public:                         // Call without locks
+public:                         // No locks necessary
     /// Load the table schema for a Table.  The callback is given the
     /// loaded TabletSchema object.
     void loadSchema_async(LoadSchemaCb * cb, std::string const & tableName);
@@ -203,11 +204,14 @@ public:                         // Call without locks
     void loadConfig_async(LoadConfigCb * cb, std::string const & tabletName);
 
     /// Replay the logs from the given log dir and apply commits for
-    /// the named Tablet.  This routine assumes the named Tablet
-    /// exists and is in the TABLET_LOG_REPLAYING state.  The callback
-    /// is issued when the log replay has completed.
-    void replayLogs_async(warp::Callback * cb, std::string const & tabletName,
-                          std::string const & logDir);
+    /// the named table in the given row range.  This routine assumes
+    /// the Tablet covering the row range exist and are in the
+    /// TABLET_LOG_REPLAYING state.  The callback is issued when the
+    /// log replay has completed.
+    void replayLogs_async(warp::Callback * cb,
+                          std::string const & logDir,
+                          std::string const & tableName,
+                          warp::Interval<std::string> const & rows);
 
     /// Save the given TabletConfig and issue a callback when it is
     /// durable.

@@ -326,6 +326,40 @@ namespace {
         std::string                  const tabletName;
     };
 
+                
+    class LogReplayer
+        : public warp::Runnable
+    {
+    public:
+        LogReplayer(warp::Callback * cb,
+                    TabletServer * server,
+                    std::string const & logDir,
+                    std::string const & tableName,
+                    warp::Interval<std::string> const & rows) :
+            cb(cb),
+            server(server),
+            logDir(logDir),
+            tableName(tableName),
+            rows(rows)
+        {
+        }
+
+        virtual void run() throw()
+        {
+            log("ERROR ignoring log replay: logDir=%s, table=%s, rows=%s",
+                logDir, tableName, rows);
+            cb->done();
+        }
+
+    private:
+        warp::Callback *              const cb;
+        TabletServer *                const server;
+        std::string                   const logDir;
+        std::string                   const tableName;
+        warp::Interval<std::string>   const rows;
+    };
+
+
     class ConfigSaver
         : public warp::Runnable
     {
@@ -743,7 +777,8 @@ public:
 
                 // Start the log replay
                 server->replayLogs_async(new LogReplayedCb(server, config),
-                                         tabletName, config->log);
+                                         config->log, tableName,
+                                         tablet->getRows());
             }
             else
             {
@@ -1432,11 +1467,19 @@ void TabletServer::loadConfig_async(
 }
 
 void TabletServer::replayLogs_async(
-    warp::Callback * cb, std::string const & tabletName,
-    std::string const & logDir)
+    warp::Callback * cb,
+    std::string const & logDir,
+    std::string const & tableName,
+    warp::Interval<std::string> const & rows)
 {
     try {
-        EX_UNIMPLEMENTED_FUNCTION;
+        workers->fragmentWorkers.submit(
+            new LogReplayer(
+                cb,
+                this,
+                logDir,
+                tableName,
+                rows));
     }
     catch(std::exception const & ex) { cb->error(ex); }
     catch(...) {
