@@ -784,23 +784,17 @@ class NetTable::Impl
         if(ua.port)
             port.assign(ua.port.begin(), ua.port.end());
 
-        try {
-            // Get TableManager
-            details::TableManagerPrx mgr =
-                details::TableManagerPrx::checkedCast(
-                    getCommunicator()->stringToProxy(
-                        (format("TableManager:tcp -h %s -p %s")
-                         % host % port).str()
-                        )
-                    );
+        // Get TableManager
+        details::TableManagerPrx mgr =
+            details::TableManagerPrx::checkedCast(
+                getCommunicator()->stringToProxy(
+                    (format("TableManager:tcp -h %s -p %s")
+                     % host % port).str()
+                    )
+                );
 
-            // Get Table
-            table = mgr->openTable(fs::path(uri));
-        }
-        catch(Ice::Exception const & ex) {
-            raise<RuntimeError>("couldn't open net table %s (%s:%s): %s",
-                                uri, host, port, ex);
-        }
+        // Get Table
+        table = mgr->openTable(fs::path(uri));
     }
 
 public:
@@ -808,7 +802,31 @@ public:
         uri(uri),
         cellBuilder(&builder)
     {
-        reopen();
+        for(int attempt = 0;;)
+        {
+            try {
+                reopen();
+                break;
+            }
+            catch(Ice::SocketException const & ex) {
+                log("connection error on %s: %s", uri, ex);
+            }
+            catch(Ice::TimeoutException const & ex) {
+                log("timeout error on %s: %s", uri, ex);
+            }
+            catch(Ice::Exception const & ex) {
+                log("ICE error on %s: %s", uri, ex);
+            }
+
+            if(++attempt >= MAX_CONNECTION_ATTEMPTS)
+                raise<RuntimeError>("couldn't open net table: %s", uri);
+
+            int sleepTime = RETRY_WAIT_SECONDS;
+            log("will retry in %d seconds (attempt %d of %d)",
+                sleepTime, attempt, MAX_CONNECTION_ATTEMPTS);
+
+            sleep(sleepTime);
+        }
     }
 
     ~Impl()
