@@ -108,27 +108,36 @@ namespace {
         }
     };
 
-    class HoldPendingCb
+    class CompactionStableCb
         : public warp::Callback
     {
     public:
-        explicit HoldPendingCb(PendingFileCPtr const & p) :
-            p(p) {}
+        CompactionStableCb(TabletServer * server,
+                           std::vector<FragmentCPtr> const & oldFragments,
+                           PendingFileCPtr const & pendingFile) :
+            server(server),
+            oldFragments(oldFragments),
+            pendingFile(pendingFile)
+        {
+        }
 
         virtual void done() throw()
         {
+            server->onCompactionStable(oldFragments);
             delete this;
         }
 
         virtual void error(std::exception const & err) throw()
         {
-            log("ERROR HoldPendingCb: %s", err.what());
+            log("ERROR CompactionStableCb: %s", err.what());
             std::terminate();
             delete this;
         }
 
     private:
-        PendingFileCPtr p;
+        TabletServer * server;
+        std::vector<FragmentCPtr> oldFragments;
+        PendingFileCPtr pendingFile;
     };
 
     class SerializationStableCb
@@ -1000,40 +1009,54 @@ public:
         if(table->getSchemaVersion() != schemaVersion)
             return;
 
+        warp::MultipleCallback * mcb = new warp::MultipleCallback;
+
         // Replace fragments
         for(RangeOutputMap::const_iterator i = output.begin();
             i != output.end(); ++i)
         {
+            warp::Interval<std::string> const & rows = i->first;
+            PendingFileCPtr const & pendingOutput = i->second;
+
             RangeFragmentMap::const_iterator j =
-                compactionSet.rangeMap.find(i->first);
+                compactionSet.rangeMap.find(rows);
             if(j == compactionSet.end())
                 continue;
 
+            std::vector<FragmentCPtr> const & oldFragments = j->second;
+
             FragmentCPtr newFragment;
-            if(i->second)
+            if(pendingOutput)
             {
                 newFragment = server->bits.fragmentLoader->load(
-                    i->second->getName());
+                    pendingOutput->getName());
             }
 
             std::vector<Tablet *> updatedTablets;
             table->replaceDiskFragments(
-                j->second, newFragment, groupIndex, i->first,
+                oldFragments, newFragment, groupIndex, rows,
                 updatedTablets);
 
             // Notify event listeners
             table->issueFragmentEvent(
-                i->first,
+                rows,
                 FET_FRAGMENTS_REPLACED);
+
+            mcb->addCallback(
+                new CompactionStableCb(
+                    server, oldFragments, pendingOutput));
 
             // Hold on to pending file reference until all configs are saved
             for(std::vector<Tablet *>::const_iterator j = updatedTablets.begin();
                 j != updatedTablets.end(); ++j)
             {
-                scheduleConfigSave(new HoldPendingCb(i->second),
-                                   server, table, *j);
+                mcb->incrementCount();
+                scheduleConfigSave(mcb, server, table, *j);
             }
         }
+
+        tableLock.unlock();
+        mcb->done();
     }
 
 private:
@@ -1538,6 +1561,16 @@ Table * TabletServer::getTable(strref_t tableName) const
 void TabletServer::addPendingSerialization(int64_t pendingTxn)
 {
     pendingTxns.insert(pendingTxn);
+}
+
+void TabletServer::onCompactionStable(
+    std::vector<FragmentCPtr> const & oldFragments)
+{
+    for(std::vector<FragmentCPtr>::const_iterator i = oldFragments.begin();
+        i != oldFragments.end(); ++i)
+    {
+        log("Compaction stable, release %s", (*i)->getFilename());
+    }
 }
 
 void TabletServer::onSerializationStable(int pendingTxn)

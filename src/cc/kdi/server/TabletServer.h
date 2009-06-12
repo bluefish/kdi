@@ -236,6 +236,8 @@ public:                         // Must hold TabletServerLock
     void addPendingSerialization(int64_t pendingTxn);
 
 public:                         // Call without locks
+    void onCompactionStable(
+        std::vector<FragmentCPtr> const & oldFragments);
     void onSerializationStable(int pendingTxn);
 
 private:                        // No locks necessary
