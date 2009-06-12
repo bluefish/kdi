@@ -47,7 +47,13 @@ void MultipleCallback::maybeFinish()
         return;
 
     if(errors.empty())
-        cb->done();
+    {
+        for(std::vector<Callback *>::const_iterator i = callbacks.begin();
+            i != callbacks.end(); ++i)
+        {
+            (*i)->done();
+        }
+    }
     else
     {
         std::ostringstream oss;
@@ -57,7 +63,13 @@ void MultipleCallback::maybeFinish()
         {
             oss << std::endl << *i;
         }
-        cb->error(std::runtime_error(oss.str()));
+        std::runtime_error err(oss.str());
+
+        for(std::vector<Callback *>::const_iterator i = callbacks.begin();
+            i != callbacks.end(); ++i)
+        {
+            (*i)->error(err);
+        }
     }
     delete this;
 }

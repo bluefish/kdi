@@ -40,11 +40,19 @@ class warp::MultipleCallback
     : public warp::Callback
 {
 public:
-    explicit MultipleCallback(warp::Callback * cb) :
-        cb(cb), count(1) {}
+    MultipleCallback() : count(1) {}
 
-    MultipleCallback(warp::Callback * cb, size_t count) :
-        cb(cb), count(count) {}
+    explicit MultipleCallback(Callback * cb) :
+        count(1)
+    {
+        addCallback(cb);
+    }
+
+    void addCallback(Callback * cb)
+    {
+        boost::mutex::scoped_lock lock(mutex);
+        callbacks.push_back(cb);
+    }
 
     void incrementCount()
     {
@@ -59,7 +67,7 @@ private:
     void maybeFinish();
 
 private:
-    warp::Callback * cb;
+    std::vector<Callback *> callbacks;
     size_t count;
     std::vector<std::string> errors;
     boost::mutex mutex;
