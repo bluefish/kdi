@@ -21,6 +21,7 @@
 #include <kdi/server/TabletServer.h>
 #include <kdi/server/TabletServerI.h>
 #include <kdi/server/ScannerLocator.h>
+#include <kdi/server/TabletConfig.h>
 #include <warp/options.h>
 #include <warp/filestream.h>
 #include <warp/fs.h>
@@ -160,7 +161,17 @@ namespace {
             {
                 log("Found tablet: %s", warp::reprString(*i));
             }
-            
+
+            if(tablets.empty())
+            {
+                log("Found nothing, creating empty table 'foo'");
+                TabletConfigPtr cfg(new TabletConfig);
+                cfg->tableName = "foo";
+                cfg->rows.setInfinite();
+                configWriter->writeConfig(cfg);
+                tablets.push_back(cfg->getTabletName());
+            }
+
             log("Loading %d tablet(s)", tablets.size());
             LoadCb cb;
             server->load_async(&cb, tablets);
