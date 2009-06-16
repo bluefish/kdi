@@ -43,6 +43,7 @@
 #include <kdi/server/DiskLoader.h>
 #include <kdi/server/FileLogWriterFactory.h>
 #include <kdi/server/FileTracker.h>
+#include <kdi/server/FileFragmentRemover.h>
 
 using namespace kdi::server;
 using namespace kdi;
@@ -73,6 +74,7 @@ namespace {
 
         boost::scoped_ptr<DiskLoader> diskLoader;
         boost::scoped_ptr<CachedFragmentLoader> cachedLoader;
+        boost::scoped_ptr<FileFragmentRemover> fragmentRemover;
 
         boost::scoped_ptr<FileLogWriterFactory> logFactory;
 
@@ -136,6 +138,7 @@ namespace {
 
             diskLoader.reset(new DiskLoader(dataRoot));
             cachedLoader.reset(new CachedFragmentLoader(diskLoader.get()));
+            fragmentRemover.reset(new FileFragmentRemover(dataRoot));
 
             logFactory.reset(new FileLogWriterFactory(logDir));
 
@@ -146,6 +149,7 @@ namespace {
             bits.workerPool = workerPool.get();
             bits.fragmentFactory = fragmentFactory.get();
             bits.fragmentLoader = cachedLoader.get();
+            bits.fragmentRemover = fragmentRemover.get();
             bits.logFactory = logFactory.get();
             bits.serverLogDir = logDir;
             bits.serverLocation = location;
@@ -183,6 +187,8 @@ namespace {
         {
             cache.reset();
             server.reset();
+            logFactory.reset();
+            fragmentRemover.reset();
             cachedLoader.reset();
             diskLoader.reset();
             schemaReader.reset();

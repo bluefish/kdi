@@ -36,7 +36,6 @@ namespace server {
     class Tablet;
 
     enum TabletState {
-        TABLET_UNKNOWN,
         TABLET_CONFIG_LOADING,
         TABLET_LOG_REPLAYING,
         TABLET_CONFIG_SAVING,
@@ -44,6 +43,7 @@ namespace server {
         TABLET_ACTIVE,
         TABLET_UNLOAD_COMPACTING,
         TABLET_UNLOAD_CONFIG_SAVING,
+        TABLET_UNLOADED,
 
         TABLET_ERROR
     };

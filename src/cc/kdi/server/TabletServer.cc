@@ -848,6 +848,7 @@ public:
     {
         // Open new fragment
         FragmentCPtr newFrag = server->bits.fragmentLoader->load(outFn->getName());
+        newFrag = server->localGc.wrapLocalFragment(newFrag);
 
         TabletServerLock serverLock(server);
         Table * table = server->findTable(tableName);
@@ -1030,6 +1031,7 @@ public:
             {
                 newFragment = server->bits.fragmentLoader->load(
                     pendingOutput->getName());
+                newFragment = server->localGc.wrapLocalFragment(newFragment);
             }
 
             std::vector<Tablet *> updatedTablets;
@@ -1167,6 +1169,7 @@ public:
 TabletServer::TabletServer(Bits const & bits) :
     bits(bits),
     cellAllocator(bits.maxBufferSz),
+    localGc(bits.fragmentRemover),
     workers(new Workers(this))
 {
     threads.create_thread(
@@ -1266,6 +1269,10 @@ void TabletServer::load_async(LoadCb * cb, string_vec const & tablets)
 
 void TabletServer::unload_async(UnloadCb * cb, string_vec const & tablets)
 {
+    cb->error(std::runtime_error("unload not implemented"));
+    return;
+
+    warp::MultipleCallback * mcb = new warp::MultipleCallback(cb);
     try {
         // Unload phases:
         //  1) isolate tablets -- no more writes
@@ -1276,7 +1283,6 @@ void TabletServer::unload_async(UnloadCb * cb, string_vec const & tablets)
         //  5) disconnect readers
         //  6) drop tablet
         //  7) if table has no tablets, drop table too
-        cb->error(std::runtime_error("not implemented"));
 
         std::string tableName;
         warp::IntervalPoint<std::string> lastRow;
@@ -1288,28 +1294,62 @@ void TabletServer::unload_async(UnloadCb * cb, string_vec const & tablets)
         {
             decodeTabletName(*i, tableName, lastRow);
 
-            table_map::const_iterator j = tableMap.find(tableName);
-            if(j == tableMap.end())
+            Table * table = findTable(tableName);
+            if(!table)
+            {
+                // Table doesn't exist, nothing to do
                 continue;
-
-            Table * table = j->second;
+            }
             TableLock tableLock(table);
-
             Tablet * tablet = table->findTablet(lastRow);
             if(!tablet)
+            {
+                // Tablet doesn't exist, nothing to do
                 continue;
+            }
 
-            // And... unimplemented...
+            // We're return after all tablets get to the unloaded
+            // state.
+            mcb->incrementCount();
+            tablet->deferUntilState(mcb, TABLET_UNLOADED);
+
+            if(tablet->getState() < TABLET_ACTIVE)
+            {
+                // Tablet is still loading: wait until it is fully
+                // loaded before starting the unload prcess
+
+                // xxx -- implement DeferredUnloadCb
+
+                //tablet->deferUntilState(
+                //    new DeferredUnloadCb(this, tabletName),
+                //    TABLET_ACTIVE);
+            }
+            else if(tablet->getState() == TABLET_ACTIVE)
+            {
+                // Tablet exists and is active: start unload process
+                warp::Runnable * callbacks =
+                    tablet->setState(TABLET_UNLOAD_COMPACTING);
+
+                if(callbacks)
+                    bits.workerPool->submit(callbacks);
+
+                // xxx -- start final serialization
+            }
+            else
+            {
+                // xxx -- tablet should be unloading already.  if it's
+                // in an error state, that's not so good.
+            }
         }
 
-        // And... unimplemented...
-        throw std::runtime_error("unload: not implemented");
+        serverLock.unlock();
+        mcb->done();
     }
     catch(std::exception const & ex) {
-        cb->error(ex);
+        mcb->error(ex);
     }
     catch(...) {
-        cb->error(std::runtime_error("unload: unknown exception"));
+        mcb->error(std::runtime_error("unload: unknown exception"));
     }
 }
 
