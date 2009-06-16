@@ -36,6 +36,11 @@ RestrictedFragment::RestrictedFragment(
 {
 }
 
+void RestrictedFragment::exportFragment() const
+{
+    base->exportFragment();
+}
+
 std::string RestrictedFragment::getFilename() const
 {
     return base->getFilename();

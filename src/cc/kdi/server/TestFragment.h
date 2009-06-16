@@ -50,6 +50,8 @@ class kdi::server::TestFragment
       private boost::noncopyable
 {
 public:                         // Fragment API
+    virtual void exportFragment() const {}
+    
     virtual std::string getFilename() const { return name; }
 
     virtual size_t getDataSize() const { return dataSz; }

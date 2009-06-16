@@ -59,7 +59,7 @@ void addFragment(RangeFragmentMap & rf,
 
 BOOST_AUTO_TEST_CASE(compact_test)
 {
-    FileTracker tracker("memfs:");
+    FileTracker tracker(0, "memfs:");
     DiskWriterFactory diskFactory("memfs:", &tracker);
 
     DirectBlockCache blockCache;

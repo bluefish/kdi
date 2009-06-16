@@ -21,13 +21,14 @@
 #ifndef KDI_SERVER_FILETRACKER_H
 #define KDI_SERVER_FILETRACKER_H
 
+#include <kdi/server/FragmentLoader.h>
 #include <warp/timestamp.h>
 #include <boost/noncopyable.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition.hpp>
 #include <string>
-#include <map>
+#include <tr1/unordered_map>
 
 namespace kdi {
 namespace server {
@@ -45,10 +46,11 @@ namespace server {
 // FileTracker
 //----------------------------------------------------------------------------
 class kdi::server::FileTracker
-    : private boost::noncopyable
+    : public kdi::server::FragmentLoader,
+      private boost::noncopyable
 {
 public:
-    explicit FileTracker(std::string const & root);
+    FileTracker(FragmentLoader * loader, std::string const & rootDir);
 
     /// Create a new pending file and return it.
     PendingFilePtr createPending();
@@ -58,6 +60,45 @@ public:
     /// function will block while there are unassigned pending files
     /// in existence.
     warp::Timestamp getOldestPending() const;
+
+public:                     // FragmentLoader API
+
+    /// Load the fragment from the given file.  The loaded fragment
+    /// will be tracked so that its backing file will automatically be
+    /// deleted when the wrapped handle is destroyed.  To avoid this,
+    /// call exportFragment() on the loaded Fragment.  Exported
+    /// fragment files will be left to a global garbage collection
+    /// process.
+    virtual FragmentCPtr load(std::string const & filename);
+
+private:
+    class Wrapper;
+
+    class RefCount
+    {
+        uint32_t x;
+    public:
+        RefCount() : x(0) {}
+
+        bool isExported() const { return (x & 0x80000000) != 0; }
+        void setExported() { x |= 0x80000000; }
+        
+        size_t getCount() const { return x & 0x7fffffff; }
+        void incrementCount() { ++x; }
+        void decrementCount() { --x; }
+    };
+
+    typedef std::tr1::unordered_map<std::string, RefCount> filemap_t;
+    typedef std::tr1::unordered_map<std::string, warp::Timestamp> timemap_t;
+
+private:
+    /// Mark a filename as exported.  Exported files will be left for
+    /// the global file GC instead of being automatically deleted.
+    void setExported(std::string const & filename);
+
+    /// Release the given filename.  If the file has not been
+    /// previously exported, it will be deleted.
+    void release(std::string const & filename);
 
 private:
     friend class PendingFile;
@@ -70,11 +111,24 @@ private:
     void pendingReleased(PendingFile * p);
 
 private:
-    typedef std::map<std::string, warp::Timestamp> timemap_t;
-
-    std::string const root;
+    FragmentLoader * const loader;
+    std::string const rootDir;
+    
+    // Number of pending files that have yet to be assigned a name.
     size_t nUnknown;
+
+    // Contains (filename -> Timestamp)
+    // The creation time of outstanding named PendingFiles.
     timemap_t pendingCTimes;
+
+    // Contains (filename -> RefCount)
+    // Every time we hear about a file (through a PendingFile or a
+    // loaded Fragment) we add a reference.  When a PendingFile or
+    // Fragment goes away, we remove a reference.  If the refcount
+    // goes to zero, we remove the file from the map.  If the file has
+    // not been exported, we also delete the file.
+    filemap_t fileMap;
+
     mutable boost::mutex mutex;
     mutable boost::condition cond;
 };

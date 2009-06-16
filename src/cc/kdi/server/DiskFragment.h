@@ -67,6 +67,8 @@ public:
     explicit DiskFragment(std::string const & filename);
     DiskFragment(std::string const & loadPath, std::string const & filename);
 
+    virtual void exportFragment() const {}
+
     virtual std::string getFilename() const;
     virtual size_t getDataSize() const { return dataSize; };
 

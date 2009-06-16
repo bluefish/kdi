@@ -57,6 +57,10 @@ class kdi::server::Fragment
 public:
     virtual ~Fragment() {}
 
+    /// Mark fragment for export.  It will not be considered for local
+    /// garbage collection.
+    virtual void exportFragment() const = 0;
+
     /// Get the name of the file backing this Fragment.
     virtual std::string getFilename() const = 0;
 

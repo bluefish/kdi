@@ -55,7 +55,10 @@ public:
     /// for the lifetime of the buffer.
     void getRows(std::vector<warp::StringRange> & rows) const;
     
-    /// Get the approximate amount of memory used by this buffer.
+public:  // Fragment interface
+    
+    void exportFragment() const {}
+
     size_t getDataSize() const { return data.size(); }
 
     size_t getPartialDataSize(
@@ -66,8 +69,6 @@ public:
 
     /// Get the packed cell buffer.
     warp::StringRange getPacked() const { return data; }
-
-public:  // Fragment interface
 
     std::string getFilename() const;
 

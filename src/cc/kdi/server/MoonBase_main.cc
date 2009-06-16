@@ -43,7 +43,6 @@
 #include <kdi/server/DiskLoader.h>
 #include <kdi/server/FileLogWriterFactory.h>
 #include <kdi/server/FileTracker.h>
-#include <kdi/server/FileFragmentRemover.h>
 
 using namespace kdi::server;
 using namespace kdi;
@@ -63,7 +62,10 @@ namespace {
     class MainServerAssembly
         : private boost::noncopyable
     {
+        boost::scoped_ptr<DiskLoader> diskLoader;
         boost::scoped_ptr<FileTracker> fragFileTracker;
+        boost::scoped_ptr<CachedFragmentLoader> cachedLoader;
+
         boost::scoped_ptr<FileConfigWriter> configWriter;
         boost::scoped_ptr<FileConfigReader> configReader;
         boost::scoped_ptr<TestConfigReader> schemaReader;
@@ -71,10 +73,6 @@ namespace {
         boost::scoped_ptr<TabletServer> server;
         boost::scoped_ptr<DirectBlockCache> cache;
         boost::scoped_ptr<DiskWriterFactory> fragmentFactory;
-
-        boost::scoped_ptr<DiskLoader> diskLoader;
-        boost::scoped_ptr<CachedFragmentLoader> cachedLoader;
-        boost::scoped_ptr<FileFragmentRemover> fragmentRemover;
 
         boost::scoped_ptr<FileLogWriterFactory> logFactory;
 
@@ -126,7 +124,9 @@ namespace {
                   string const & configDir,
                   string const & location)
         {
-            fragFileTracker.reset(new FileTracker(dataRoot));
+            diskLoader.reset(new DiskLoader(dataRoot));
+            fragFileTracker.reset(new FileTracker(diskLoader.get(), dataRoot));
+            cachedLoader.reset(new CachedFragmentLoader(fragFileTracker.get()));
 
             workerPool.reset(new WorkerPool(4, "Pool", true));
             configWriter.reset(new FileConfigWriter(configDir));
@@ -136,9 +136,6 @@ namespace {
             fragmentFactory.reset(
                 new DiskWriterFactory(dataRoot, fragFileTracker.get()));
 
-            diskLoader.reset(new DiskLoader(dataRoot));
-            cachedLoader.reset(new CachedFragmentLoader(diskLoader.get()));
-            fragmentRemover.reset(new FileFragmentRemover(dataRoot));
 
             logFactory.reset(new FileLogWriterFactory(logDir));
 
@@ -149,7 +146,6 @@ namespace {
             bits.workerPool = workerPool.get();
             bits.fragmentFactory = fragmentFactory.get();
             bits.fragmentLoader = cachedLoader.get();
-            bits.fragmentRemover = fragmentRemover.get();
             bits.logFactory = logFactory.get();
             bits.serverLogDir = logDir;
             bits.serverLocation = location;
@@ -188,15 +184,15 @@ namespace {
             cache.reset();
             server.reset();
             logFactory.reset();
-            fragmentRemover.reset();
-            cachedLoader.reset();
-            diskLoader.reset();
             schemaReader.reset();
             configReader.reset();
             configWriter.reset();
             fragmentFactory.reset();
             workerPool.reset();
+
+            cachedLoader.reset();
             fragFileTracker.reset();
+            diskLoader.reset();
         }
     };
     

@@ -47,7 +47,7 @@ namespace {
     
     DiskWriterPtr openWriter(std::string const & fn, size_t blockSize)
     {
-        static FileTracker tracker("memfs:");
+        static FileTracker tracker(0, "memfs:");
         
         FilePtr fp = File::output(fn);
         PendingFilePtr pfn = tracker.createPending();

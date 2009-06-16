@@ -20,17 +20,95 @@
 
 #include <kdi/server/FileTracker.h>
 #include <kdi/server/PendingFile.h>
+#include <kdi/server/Fragment.h>
+#include <kdi/server/RestrictedFragment.h>
 #include <warp/fs.h>
+#include <warp/log.h>
+#include <boost/enable_shared_from_this.hpp>
 #include <cassert>
 
 using namespace kdi::server;
 typedef boost::mutex::scoped_lock lock_t;
 
 //----------------------------------------------------------------------------
+// FileTracker::Wrapper
+//----------------------------------------------------------------------------
+class FileTracker::Wrapper
+    : public Fragment,
+      public boost::enable_shared_from_this<FileTracker::Wrapper>
+{
+public:
+    Wrapper(FileTracker * tracker, FragmentCPtr const & base) :
+        tracker(tracker), base(base) {}
+
+    ~Wrapper()
+    {
+        std::string filename = base->getFilename();
+        base.reset();
+        tracker->release(filename);
+    }
+
+public:                         // Fragment API
+    virtual void exportFragment() const
+    {
+        tracker->setExported(getFilename());
+        base->exportFragment();
+    }
+    
+    virtual std::string getFilename() const
+    {
+        return base->getFilename();
+    }
+
+    virtual size_t getDataSize() const
+    {
+        return base->getDataSize();
+    }
+
+    virtual size_t getPartialDataSize(
+        warp::Interval<std::string> const & rows) const
+    {
+        return base->getPartialDataSize(rows);
+    }
+
+    virtual void getColumnFamilies(
+        std::vector<std::string> & families) const
+    {
+        return base->getColumnFamilies(families);
+    }
+
+    virtual FragmentCPtr getRestricted(
+        std::vector<std::string> const & families) const
+    {
+        return makeRestrictedFragment(
+            shared_from_this(),
+            families);
+    }
+
+    virtual size_t nextBlock(ScanPredicate const & pred,
+                             size_t minBlock) const
+    {
+        return base->nextBlock(pred, minBlock);
+    }
+
+    virtual std::auto_ptr<FragmentBlock>
+    loadBlock(size_t blockAddr) const
+    {
+        return base->loadBlock(blockAddr);
+    }
+
+private:
+    FileTracker * const tracker;
+    FragmentCPtr base;
+};
+
+
+//----------------------------------------------------------------------------
 // FileTracker
 //----------------------------------------------------------------------------
-FileTracker::FileTracker(std::string const & root) :
-    root(root), nUnknown(0)
+FileTracker::FileTracker(FragmentLoader * loader,
+                         std::string const & rootDir) :
+    loader(loader), rootDir(rootDir), nUnknown(0)
 {
 }
 
@@ -62,11 +140,58 @@ warp::Timestamp FileTracker::getOldestPending() const
     return oldest;
 }
 
+FragmentCPtr FileTracker::load(std::string const & filename)
+{
+    FragmentCPtr p(new Wrapper(this, loader->load(filename)));
+    {
+        boost::mutex::scoped_lock lock(mutex);
+        fileMap[p->getFilename()].incrementCount();
+    }
+    return p;
+}
+
+void FileTracker::setExported(std::string const & filename)
+{
+    lock_t lock(mutex);
+    
+    filemap_t::iterator i = fileMap.find(filename);
+    assert(i != fileMap.end());
+
+    i->second.setExported();
+}
+
+void FileTracker::release(std::string const & filename)
+{
+    lock_t lock(mutex);
+    
+    while(nUnknown)
+        cond.wait(lock);
+
+    filemap_t::iterator i = fileMap.find(filename);
+    assert(i != fileMap.end());
+
+    i->second.decrementCount();
+    if(i->second.getCount())
+        return;
+
+    bool isExported = i->second.isExported();
+
+    fileMap.erase(i);
+    lock.unlock();
+
+    if(!isExported)
+    {
+        warp::log("Removing local file: %s", filename);
+        warp::fs::remove(
+            warp::fs::resolve(rootDir, filename));
+    }
+}
+
 void FileTracker::pendingAssigned(PendingFile * p)
 {
     assert(p->tracker == this);
     warp::Timestamp ctime = warp::fs::creationTime(
-        warp::fs::resolve(root, p->name));
+        warp::fs::resolve(rootDir, p->name));
 
     lock_t lock(mutex);
 
@@ -75,6 +200,9 @@ void FileTracker::pendingAssigned(PendingFile * p)
 
     pendingCTimes[p->name] = ctime;
     --nUnknown;
+
+    fileMap[p->name].incrementCount();
+
     cond.notify_all();
 }
 
@@ -88,6 +216,9 @@ void FileTracker::pendingReleased(PendingFile * p)
     {
         assert(pendingCTimes.find(p->name) != pendingCTimes.end());
         pendingCTimes.erase(p->name);
+
+        lock.unlock();
+        release(p->name);
     }
     else
     {

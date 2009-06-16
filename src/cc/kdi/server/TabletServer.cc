@@ -425,8 +425,16 @@ namespace {
                 for(fvec::const_iterator f = frags.begin();
                     f != frags.end(); ++f)
                 {
+                    // Load fragment
                     FragmentCPtr frag = loader->load(f->filename);
+
+                    // Any fragment loaded from an external config is exported
+                    frag->exportFragment();
+
+                    // Get fragment restricted to config families
                     frag = frag->getRestricted(f->families);
+
+                    // Add to loaded vector
                     loaded.push_back(frag);
                 }
 
@@ -847,8 +855,8 @@ public:
                       PendingFileCPtr const & outFn)
     {
         // Open new fragment
-        FragmentCPtr newFrag = server->bits.fragmentLoader->load(outFn->getName());
-        newFrag = server->localGc.wrapLocalFragment(newFrag);
+        FragmentCPtr newFrag =
+            server->bits.fragmentLoader->load(outFn->getName());
 
         TabletServerLock serverLock(server);
         Table * table = server->findTable(tableName);
@@ -1031,7 +1039,6 @@ public:
             {
                 newFragment = server->bits.fragmentLoader->load(
                     pendingOutput->getName());
-                newFragment = server->localGc.wrapLocalFragment(newFragment);
             }
 
             std::vector<Tablet *> updatedTablets;
@@ -1169,7 +1176,6 @@ public:
 TabletServer::TabletServer(Bits const & bits) :
     bits(bits),
     cellAllocator(bits.maxBufferSz),
-    localGc(bits.fragmentRemover),
     workers(new Workers(this))
 {
     threads.create_thread(

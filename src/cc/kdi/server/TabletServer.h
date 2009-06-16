@@ -23,7 +23,6 @@
 
 #include <kdi/server/TransactionCounter.h>
 #include <kdi/server/CellBufferAllocator.h>
-#include <kdi/server/LocalFragmentGc.h>
 #include <warp/syncqueue.h>
 #include <warp/WorkerPool.h>
 #include <warp/Callback.h>
@@ -54,7 +53,6 @@ namespace server {
     class ConfigWriter;
     class LogPlayer;
     class FragmentLoader;
-    class FragmentRemover;
     class FragmentMaker;
     class TableSchema;
     class TabletConfig;
@@ -139,7 +137,6 @@ public:                         // Server components
         ConfigReader          * configReader;
         LogPlayer             * logPlayer;
         FragmentLoader        * fragmentLoader;
-        FragmentRemover       * fragmentRemover;
 
         warp::WorkerPool      * workerPool;
         std::string             serverLogDir;
@@ -155,7 +152,6 @@ public:                         // Server components
             configReader(0),
             logPlayer(0),
             fragmentLoader(0),
-            fragmentRemover(0),
 
             workerPool(0),
             maxBufferSz(size_t(512) << 20)
@@ -279,7 +275,6 @@ private:
 
     CellBufferAllocator cellAllocator;
     TransactionCounter txnCounter;
-    LocalFragmentGc localGc;
     table_map tableMap;
     txn_set pendingTxns;
 

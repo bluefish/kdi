@@ -52,6 +52,8 @@ public:
         warp::IntervalSet<std::string> const & columns);
 
 public:
+    virtual void exportFragment() const;
+
     virtual std::string getFilename() const;
 
     virtual size_t getDataSize() const;
