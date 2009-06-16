@@ -73,6 +73,16 @@ Tablet::Tablet(warp::IntervalPoint<std::string> const & lastRow) :
 
 Tablet::~Tablet()
 {
+    // Auto export all Fragments
+    for(fragvec_vec::const_iterator i = fragGroups.begin();
+        i != fragGroups.end(); ++i)
+    {
+        for(frag_vec::const_iterator j = i->begin();
+            j != i->end(); ++j)
+        {
+            (*j)->exportFragment();
+        }
+    }
 }
 
 std::string Tablet::getTabletName() const
