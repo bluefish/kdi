@@ -44,11 +44,29 @@ using boost::format;
 namespace {
 
     typedef boost::shared_ptr<DiskWriter> DiskWriterPtr;
+
+    std::string nextFilename()
+    {
+        static size_t n = 0;
+        static boost::mutex mutex;
+
+        std::ostringstream oss;
+        oss << "memfs:file-";
+
+        {
+            boost::mutex::scoped_lock lock(mutex);
+            oss << n;
+            ++n;
+        }
+
+        return oss.str();
+    }
     
-    DiskWriterPtr openWriter(std::string const & fn, size_t blockSize)
+    DiskWriterPtr openWriter(size_t blockSize)
     {
         static FileTracker tracker(0, "memfs:");
         
+        std::string fn = nextFilename();
         FilePtr fp = File::output(fn);
         PendingFilePtr pfn = tracker.createPending();
         pfn->assignName(fn);
@@ -60,7 +78,7 @@ namespace {
 
 BOOST_AUTO_TEST_CASE(output_test)
 {
-    DiskWriterPtr out = openWriter("memfs:output", 128);
+    DiskWriterPtr out = openWriter(128);
     BOOST_CHECK_EQUAL(0, out->getCellCount());
     size_t startSize = out->getDataSize();
 
@@ -71,8 +89,7 @@ BOOST_AUTO_TEST_CASE(output_test)
     out->emitErasure("erase", "col", 0);
     BOOST_CHECK_EQUAL(2, out->getCellCount());
 
-    PendingFileCPtr fn = out->finish();
-    BOOST_CHECK_EQUAL(fn->getName(), "memfs:output");
+    PendingFileCPtr pf = out->finish();
 }
 
 namespace {
@@ -151,15 +168,10 @@ class TestFragmentBuilder
 
 public:
     
-    explicit TestFragmentBuilder(string const & file, size_t blockSz=128) :
+    explicit TestFragmentBuilder(size_t blockSz=128) :
         memTable(MemoryTable::create(false)),
-        out(openWriter(file,blockSz))
+        out(openWriter(blockSz))
     {
-    }
-
-    ~TestFragmentBuilder()
-    {
-        write();
     }
 
     void set(strref_t row, strref_t column,
@@ -173,7 +185,7 @@ public:
         memTable->erase(row, column, timestamp);
     }
 
-    void write()
+    PendingFileCPtr write()
     {
         Cell x;
         CellStreamPtr scan = memTable->scan();
@@ -189,18 +201,19 @@ public:
                               x.getValue());
             }
         }
-        out->finish();
+        return out->finish();
     }
 };
 
 /// Fill a fragment with cells of the form:
 ///   ("row-i", "col-j", k, "val-i-j-k")
 /// for i in [1, nRows], j in [1, nCols], and k in [1, nRevs]
-void makeTestFragment(size_t blockSize, string const & filename, 
-                      size_t nRows, size_t nCols, size_t nRevs,
-                      string const & fmt = "%d")
+PendingFileCPtr makeTestFragment(
+    size_t blockSize,
+    size_t nRows, size_t nCols, size_t nRevs,
+    string const & fmt = "%d")
 {
-    TestFragmentBuilder out(filename, blockSize);
+    TestFragmentBuilder out(blockSize);
 
     string rowFmt = (format("row-%s") % fmt).str();
     string colFmt = (format("col-%s") % fmt).str();
@@ -219,6 +232,8 @@ void makeTestFragment(size_t blockSize, string const & filename,
             }
         }
     }
+
+    return out.write();
 }
  
 } // namespace
@@ -226,12 +241,13 @@ void makeTestFragment(size_t blockSize, string const & filename,
 BOOST_AUTO_TEST_CASE(empty_test)
 {
     // Make empty table
+    PendingFileCPtr pf;
     {
-        DiskWriterPtr out = openWriter("memfs:empty", 128);
-        out->finish();
+        DiskWriterPtr out = openWriter(128);
+        pf = out->finish();
     }
 
-    DiskFragment df("memfs:empty");
+    DiskFragment df(pf->getName());
     BOOST_CHECK_EQUAL(0, countCells(df));
 }
 
@@ -246,8 +262,9 @@ BOOST_AUTO_TEST_CASE(empty_test)
 BOOST_AUTO_TEST_CASE(simple_test)
 {
     // Write some cells
+    PendingFileCPtr pf;
     {
-        DiskWriterPtr out = openWriter("memfs:simple", 128);
+        DiskWriterPtr out = openWriter(128);
         out->emitCell("row1", "col1", 42, "val1");
         out->emitCell("row1", "col2", 42, "val2");
         out->emitCell("row1", "col2", 23, "val3");
@@ -255,13 +272,13 @@ BOOST_AUTO_TEST_CASE(simple_test)
         out->emitCell("row2", "col1", 42, "val4");
         out->emitCell("row2", "col3", 42, "val5");
         out->emitCell("row3", "col2", 23, "val6");
-        out->finish();
+        pf = out->finish();
     }
 
-    DiskFragment df("memfs:simple");
+    DiskFragment df(pf->getName());
     BOOST_CHECK_EQUAL(7, countCells(df));
 
-    CHECK_FRAGMENT("memfs:simple",
+    CHECK_FRAGMENT(pf->getName(),
         "(row1,col1,42,val1)"
         "(row1,col2,42,val2)"
         "(row1,col2,23,val3)"
@@ -275,8 +292,9 @@ BOOST_AUTO_TEST_CASE(simple_test)
 BOOST_AUTO_TEST_CASE(pred_test)
 {
     // Write some cells
+    PendingFileCPtr pf;
     {
-        DiskWriterPtr out = openWriter("memfs:pred", 128);
+        DiskWriterPtr out = openWriter(128);
         out->emitCell("row1", "col1", 42, "val1");
         out->emitCell("row1", "col2", 42, "val2");
         out->emitCell("row1", "col2", 23, "val3");
@@ -284,10 +302,10 @@ BOOST_AUTO_TEST_CASE(pred_test)
         out->emitCell("row2", "col1", 42, "val4");
         out->emitCell("row2", "col3", 42, "val5");
         out->emitCell("row3", "col2", 23, "val6");
-        out->finish();
+        pf = out->finish();
     }
 
-    CHECK_FRAGMENT("memfs:pred",
+    CHECK_FRAGMENT(pf->getName(),
         "(row1,col1,42,val1)"
         "(row1,col2,42,val2)"
         "(row1,col2,23,val3)"
@@ -300,23 +318,26 @@ BOOST_AUTO_TEST_CASE(pred_test)
 
 BOOST_AUTO_UNIT_TEST(rowscan_test)
 {
-    makeTestFragment(256, "memfs:rowscan", 1000, 30, 1, "%03d");
+    PendingFileCPtr pf = makeTestFragment(256, 1000, 30, 1, "%03d");
     
-    DiskFragment df("memfs:rowscan");
+    DiskFragment df(pf->getName());
     BOOST_CHECK_EQUAL(30000u, countCells(df));
     BOOST_CHECK_EQUAL(60u, countCells(df, "row = 'row-042' or row = 'row-700'"));
     BOOST_CHECK_EQUAL(150u, countCells(df, "row < 'row-004' or row >= 'row-998'"));
     BOOST_CHECK_EQUAL(210u, countCells(df, "'row-442' <  row <  'row-446' or "
                                            "'row-447' <= row <= 'row-450'"));
+}
 
+BOOST_AUTO_UNIT_TEST(rowscan_test_small)
+{
     // Need to test row scans on tiny tables as well
     // Single block tables can be a corner case
-    DiskWriterPtr out = openWriter("memfs:rowscan_small", 2056);
+    DiskWriterPtr out = openWriter(2056);
     out->emitCell("row1", "col1", 42, "one1");
     out->emitCell("row2", "col2", 42, "one2");
-    out->finish();
+    PendingFileCPtr pf = out->finish();
 
-    DiskFragment df_small("memfs:rowscan_small");
+    DiskFragment df_small(pf->getName());
     BOOST_CHECK_EQUAL(1u, countCells(df_small, "row = 'row2'")); 
 }
 
@@ -325,11 +346,12 @@ namespace {
 // Fill a table with cells of the form:
 //    ("row-i", "fam-j:qual-k", t, "val-i-j-k-t")
 // for i in [1, nRows], j in [1, nFams], k in [1, nQuals] and t in [1, nRevs]
-void makeColFamilyTestFragment(size_t blockSize, string const &filename,
-                               size_t nRows, size_t nFams, size_t nQuals, size_t nRevs,
-                               std::string const &fmt = "%d")
+PendingFileCPtr makeColFamilyTestFragment(
+    size_t blockSize,
+    size_t nRows, size_t nFams, size_t nQuals, size_t nRevs,
+    std::string const &fmt = "%d")
 {
-    TestFragmentBuilder out(filename, blockSize);
+    TestFragmentBuilder out(blockSize);
 
     string rowFmt = (format("row-%s") % fmt).str();
     string colFmt = (format("fam-%s:qual-%s") % fmt % fmt).str();
@@ -351,15 +373,17 @@ void makeColFamilyTestFragment(size_t blockSize, string const &filename,
             }
         }
     }
+
+    return out.write();
 }
 
 }
 
 BOOST_AUTO_UNIT_TEST(colscan_test)
 {
-    makeColFamilyTestFragment(33, "memfs:colscan", 30, 33, 2, 1, "%03d");
+    PendingFileCPtr pf = makeColFamilyTestFragment(33, 30, 33, 2, 1, "%03d");
 
-    DiskFragment df("memfs:colscan");
+    DiskFragment df(pf->getName());
     BOOST_CHECK_EQUAL(1980u, countCells(df));
     BOOST_CHECK_EQUAL(0u, countCells(df, "row > 'a' and column ~= 'not-a-fam:'"));
     BOOST_CHECK_EQUAL(60u, countCells(df, "row > 'a' and column ~= 'fam-001:'"));
@@ -369,9 +393,9 @@ BOOST_AUTO_UNIT_TEST(colscan_test)
 
 BOOST_AUTO_UNIT_TEST(timescan_test)
 {
-    makeTestFragment(256, "memfs:timescan", 1000, 1, 30, "%03d");
+    PendingFileCPtr pf = makeTestFragment(256, 1000, 1, 30, "%03d");
 
-    DiskFragment df("memfs:timescan");
+    DiskFragment df(pf->getName());
     BOOST_CHECK_EQUAL(30000u, countCells(df));
     BOOST_CHECK_EQUAL(1000u, countCells(df, "row > 'a' and time = @1"));
     BOOST_CHECK_EQUAL(30000u, countCells(df, "row > 'a' and @0 <= time <= @666"));
@@ -383,14 +407,14 @@ BOOST_AUTO_UNIT_TEST(filtering_test)
     // Try to make verify that filtering blocks doesn't skip data it shouldn't
     
     // Column filtering of the last block of a row predicate with subsequent row predicate
-    DiskWriterPtr out = openWriter("memfs:filtering", 1); // Force one cell per block
+    DiskWriterPtr out = openWriter(1); // Force one cell per block
     out->emitCell("row-A", "fam-1:col", 1, "val");
     out->emitCell("row-A", "fam-2:col", 1, "val");
     out->emitCell("row-Z", "fam-3:col", 1, "val");
     out->emitCell("row-Z", "fam-4:col", 1, "val");
-    out->finish();
+    PendingFileCPtr pf = out->finish();
 
-    DiskFragment df("memfs:filtering");
+    DiskFragment df(pf->getName());
     BOOST_CHECK_EQUAL(1u, countCells(df, "row = 'row-A' or row = 'row-Z' and " 
                                          "column = 'fam-1:col'"));
     BOOST_CHECK_EQUAL(1u, countCells(df, "row = 'row-A' or row = 'row-Z' and "
@@ -403,14 +427,14 @@ BOOST_AUTO_UNIT_TEST(advance_test)
     // Column filtering of the last block of a row predicate with subsequent 
     // row predicate
     
-    DiskWriterPtr out = openWriter("memfs:advance", 4096);  // Make sure they are all in the same block
+    DiskWriterPtr out = openWriter(4096);  // Make sure they are all in the same block
     out->emitCell("row-A", "col1", 1, "val");
     out->emitCell("row-A", "col2", 1, "val");
     out->emitCell("row-A", "col3", 2, "val");
-    out->finish();
+    PendingFileCPtr pf = out->finish();
 
     // Get the block out 
-    DiskFragment df("memfs:advance");
+    DiskFragment df(pf->getName());
     size_t blockAddr = df.nextBlock(ScanPredicate(""), 0);
     BOOST_CHECK(blockAddr != size_t(-1));
     FragmentBlockPtr block = df.loadBlock(blockAddr);
@@ -429,14 +453,14 @@ BOOST_AUTO_UNIT_TEST(advance_test)
 
 BOOST_AUTO_UNIT_TEST(column_family_test)
 {
-    DiskWriterPtr out = openWriter("memfs:colfam", 16);
+    DiskWriterPtr out = openWriter(16);
     out->emitCell("row-a", "foo:bar", 0, "val-x");
     out->emitCell("row-b", "foo:bar", 0, "val-x");
     out->emitErasure("row-a", "frip:", 0);
     out->emitCell("row-b", "spam:dingo", 0, "val-x");
-    out->finish();
+    PendingFileCPtr pf = out->finish();
 
-    FragmentCPtr f(new DiskFragment("memfs:colfam"));
+    FragmentCPtr f(new DiskFragment(pf->getName()));
 
     BOOST_CHECK(f->getDataSize() > 10u);
 
